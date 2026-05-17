@@ -1,0 +1,181 @@
+{% extends 'base.html' %}
+{% block title %}تحويلات {{ item.name_ar }} - همم{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+    <!-- Header -->
+    <div class="section-header mb-4">
+        <div class="section-icon"><i class="bi bi-arrow-left-right"></i></div>
+        <div>
+            <h4 class="mb-0">وحدات التحويل</h4>
+            <p class="text-muted mb-0 small">
+                {{ item.name_ar }}
+                {% if item.item_code %}
+                <span class="badge ms-1" style="background:var(--brand-olive);">{{ item.item_code }}</span>
+                {% endif %}
+            </p>
+        </div>
+        <a href="{{ url_for('admin.items') }}" class="btn btn-outline-secondary btn-sm ms-auto">
+            <i class="bi bi-arrow-right me-1"></i>الأصناف
+        </a>
+    </div>
+
+    <!-- Base unit info -->
+    <div class="alert d-flex align-items-center gap-3 mb-4"
+         style="background:rgba(242,135,5,0.1); border:none; border-right:4px solid var(--brand-orange);">
+        <i class="bi bi-info-circle fs-4" style="color:var(--brand-orange);"></i>
+        <div>
+            <strong>الوحدة الأساسية لهذا الصنف:</strong>
+            {{ item.effective_base_unit.name_ar }}
+            — جميع الكميات تُخزَّن داخلياً بهذه الوحدة بعد التحويل.
+        </div>
+    </div>
+
+    <div class="row g-4">
+
+        <!-- Current conversions -->
+        <div class="col-12 col-lg-7">
+            <div class="card">
+                <div class="card-header" style="background:var(--brand-olive); color:#fff;">
+                    <i class="bi bi-list-ul me-2"></i>وحدات مُعرَّفة لهذا الصنف
+                    <span class="badge bg-light text-dark ms-2">{{ conversions|length }}</span>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>الوحدة</th>
+                                <th class="text-center">المعامل</th>
+                                <th class="text-center">المكافئ</th>
+                                <th class="text-center">إجراء</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for conv in conversions %}
+                            <tr>
+                                <td class="fw-semibold">
+                                    {{ conv.unit.name_ar }}
+                                    {% if conv.unit_id == item.effective_base_unit_id and conv.multiplier == 1.0 %}
+                                    <span class="badge ms-1"
+                                          style="background:var(--brand-green); font-size:0.7rem;">
+                                        أساسية
+                                    </span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge" style="background:var(--brand-orange);">
+                                        × {{ conv.multiplier | int if conv.multiplier == conv.multiplier | int else conv.multiplier }}
+                                    </span>
+                                </td>
+                                <td class="text-center text-muted small">
+                                    1 {{ conv.unit.name_ar }}
+                                    = {{ conv.multiplier | int if conv.multiplier == conv.multiplier | int else conv.multiplier }}
+                                    {{ item.effective_base_unit.name_ar }}
+                                </td>
+                                <td class="text-center">
+                                    {% set is_base = (conv.unit_id == item.effective_base_unit_id and conv.multiplier == 1.0 and conversions|length <= 1) %}
+                                    {% if not is_base %}
+                                    <form method="POST" class="d-inline">
+                                        <input type="hidden" name="action"  value="delete">
+                                        <input type="hidden" name="conv_id" value="{{ conv.id }}">
+                                        <button type="submit"
+                                                class="btn btn-sm btn-outline-danger"
+                                                data-confirm="حذف وحدة {{ conv.unit.name_ar }}؟">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                    {% else %}
+                                    <span class="text-muted small">محمية</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="4" class="text-center text-muted py-4">
+                                    لا توجد وحدات — أضف الوحدة الأساسية أولاً
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add conversion form -->
+        <div class="col-12 col-lg-5">
+            <div class="card">
+                <div class="card-header" style="background:var(--brand-green); color:#fff;">
+                    <i class="bi bi-plus-circle me-2"></i>إضافة وحدة تحويل
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        <input type="hidden" name="action" value="add">
+                        <div class="mb-3">
+                            <label class="form-label">الوحدة</label>
+                            <select name="unit_id" class="form-select" required>
+                                <option value="">-- اختر الوحدة --</option>
+                                {% for u in units %}
+                                <option value="{{ u.id }}">{{ u.name_ar }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">المعامل
+                                <span class="text-muted small fw-normal">
+                                    (كم {{ item.effective_base_unit.name_ar }} في هذه الوحدة؟)
+                                </span>
+                            </label>
+                            <input type="number" name="multiplier" class="form-control"
+                                   required step="any" min="0.001" placeholder="مثال: 1000">
+                        </div>
+                        <div class="alert alert-info small mb-3">
+                            <strong>مثال:</strong> إذا كانت الوحدة الأساسية <em>غرام</em>،
+                            وتريد إضافة <em>كيلوغرام</em>، فالمعامل = <strong>1000</strong>
+                            (لأن 1 كيلو = 1000 غرام).
+                        </div>
+                        <button type="submit" class="btn btn-success w-100 fw-bold">
+                            <i class="bi bi-plus-circle me-2"></i>إضافة وحدة
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Live preview table -->
+            <div class="card mt-3">
+                <div class="card-header fw-bold"
+                     style="background:var(--brand-light); color:var(--brand-olive);">
+                    <i class="bi bi-calculator me-2"></i>جدول التحويل السريع
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0" style="font-size:0.88rem;">
+                        <thead>
+                            <tr>
+                                <th>الكمية المُدخَلة</th>
+                                <th>تساوي ({{ item.effective_base_unit.name_ar }})</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for conv in conversions %}
+                            {% for qty in [1, 2, 5] %}
+                            <tr>
+                                <td>{{ qty }} {{ conv.unit.name_ar }}</td>
+                                <td class="fw-bold" style="color:var(--brand-orange);">
+                                    {{ (qty * conv.multiplier) | int
+                                       if (qty * conv.multiplier) == (qty * conv.multiplier) | int
+                                       else (qty * conv.multiplier) | round(3) }}
+                                    {{ item.effective_base_unit.name_ar }}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}

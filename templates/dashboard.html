@@ -1,0 +1,126 @@
+{% extends 'base.html' %}
+{% block title %}لوحة التحكم - همم{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+    <!-- Dashboard Header -->
+    <div class="dashboard-header d-flex justify-content-between align-items-center">
+        <div class="d-flex align-items-center gap-3">
+            <img src="{{ url_for('static', filename='images/logo-icon.svg') }}"
+                 alt="همم" style="height:52px; width:auto; filter:brightness(0) invert(1);">
+            <div>
+                <h4 class="mb-0">لوحة التحكم</h4>
+                <p class="mb-0">
+                    جرد شهر
+                    {{ ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'][month-1] }}
+                    {{ year }}
+                </p>
+            </div>
+        </div>
+        <a href="{{ url_for('inventory.count') }}" class="btn btn-light fw-bold">
+            <i class="bi bi-plus-circle me-2"></i>بدء الجرد
+        </a>
+    </div>
+
+    <!-- Summary Stat Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="card stat-card primary p-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-muted small fw-semibold">إجمالي الأصناف</div>
+                        <div class="fw-bold fs-2 mt-1">{{ total_items }}</div>
+                    </div>
+                    <div class="stat-icon"><i class="bi bi-box"></i></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card stat-card success p-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-muted small fw-semibold">تم جرده</div>
+                        <div class="fw-bold fs-2 mt-1 text-success">{{ total_counted }}</div>
+                    </div>
+                    <div class="stat-icon"><i class="bi bi-check-circle"></i></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card stat-card warning p-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-muted small fw-semibold">المتبقي</div>
+                        <div class="fw-bold fs-2 mt-1" style="color:#e6a817;">{{ total_items - total_counted }}</div>
+                    </div>
+                    <div class="stat-icon"><i class="bi bi-hourglass-split"></i></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card stat-card info p-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-muted small fw-semibold">نسبة الإنجاز</div>
+                        <div class="fw-bold fs-2 mt-1" style="color:var(--brand-olive);">
+                            {{ ((total_counted / total_items * 100) | int) if total_items else 0 }}%
+                        </div>
+                    </div>
+                    <div class="stat-icon"><i class="bi bi-pie-chart"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Branch Cards -->
+    <div class="section-header">
+        <div class="section-icon"><i class="bi bi-building"></i></div>
+        <h5>تقدم الجرد بالفروع</h5>
+    </div>
+
+    <div class="row g-3">
+        {% for stat in branch_stats %}
+        <div class="col-12 col-md-6 col-lg-4">
+            <div class="card h-100">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center"
+                     style="border-bottom:2px solid var(--brand-light);">
+                    <span class="fw-bold" style="color:var(--brand-olive);">
+                        <i class="bi bi-building me-2" style="color:var(--brand-orange);"></i>
+                        {{ stat.branch.name_ar }}
+                    </span>
+                    <span class="badge" style="background:{% if stat.percent == 100 %}var(--brand-green){% else %}var(--brand-orange){% endif %};">
+                        {{ stat.percent }}%
+                    </span>
+                </div>
+                <div class="card-body">
+                    <div class="progress mb-2">
+                        <div class="progress-bar {% if stat.percent == 100 %}bg-success{% endif %}"
+                             style="width:{{ stat.percent }}%;{% if stat.percent < 100 %}background:var(--brand-orange);{% endif %}"></div>
+                    </div>
+                    <div class="d-flex justify-content-between text-muted small mb-3">
+                        <span>تم: <strong>{{ stat.counted }}</strong></span>
+                        <span>الإجمالي: <strong>{{ stat.total }}</strong></span>
+                    </div>
+                    <div>
+                        {% for dept in stat.branch.departments %}
+                        <div class="dept-link">
+                            <span><i class="bi bi-tag me-1" style="color:var(--brand-orange);"></i>{{ dept.name_ar }}</span>
+                            <a href="{{ url_for('inventory.count', branch_id=stat.branch.id, dept_id=dept.id) }}"
+                               class="btn btn-sm btn-primary py-0 px-2">
+                                <i class="bi bi-pencil-fill"></i>
+                            </a>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="col-12">
+            <div class="alert alert-info">لا توجد فروع مسجلة بعد.</div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

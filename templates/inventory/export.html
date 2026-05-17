@@ -1,0 +1,217 @@
+{% extends 'base.html' %}
+{% block title %}تصدير الجرد Excel - همم{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+    <!-- Page header -->
+    <div class="section-header mb-4">
+        <div class="section-icon"><i class="bi bi-file-earmark-excel"></i></div>
+        <div>
+            <h4 class="mb-0">تصدير تقرير الجرد</h4>
+            <p class="text-muted mb-0 small">تنزيل ملف Excel مُنسَّق يحتوي على بيانات الجرد</p>
+        </div>
+        <a href="{{ url_for('reports.index') }}" class="btn btn-outline-secondary btn-sm ms-auto">
+            <i class="bi bi-arrow-right me-1"></i>التقارير
+        </a>
+    </div>
+
+    <div class="row g-4">
+
+        <!-- ── Filter Form ──────────────────────────────────────────────── -->
+        <div class="col-12 col-lg-7">
+            <div class="card">
+                <div class="card-header" style="background:var(--brand-olive); color:#fff;">
+                    <i class="bi bi-funnel me-2"></i>فلترة البيانات قبل التصدير
+                </div>
+                <div class="card-body">
+                    <form method="GET" action="{{ url_for('reports.export_page') }}" id="filterForm">
+
+                        <!-- Period -->
+                        <div class="row g-3 mb-3">
+                            <div class="col-6">
+                                <label class="form-label">الشهر</label>
+                                <select name="month" class="form-select">
+                                    {% for i in range(1, 13) %}
+                                    <option value="{{ i }}" {% if i == sel_month %}selected{% endif %}>
+                                        {{ months_ar[i-1] }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">السنة</label>
+                                <select name="year" class="form-select">
+                                    {% for y in range(now.year - 2, now.year + 2) %}
+                                    <option value="{{ y }}" {% if y == sel_year %}selected{% endif %}>{{ y }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Branch / Department -->
+                        <div class="row g-3 mb-3">
+                            <div class="col-12 col-md-6">
+                                <label class="form-label">الفرع</label>
+                                <select name="branch_id" class="form-select" onchange="filterDepts(this.value); this.form.submit();">
+                                    <option value="">جميع الفروع</option>
+                                    {% for b in branches %}
+                                    <option value="{{ b.id }}"
+                                            {% if b.id == selected_branch %}selected{% endif %}>
+                                        {{ b.name_ar }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label class="form-label">القسم</label>
+                                <select name="dept_id" class="form-select">
+                                    <option value="">جميع الأقسام</option>
+                                    {% for d in departments %}
+                                    <option value="{{ d.id }}"
+                                            data-branch="{{ d.branch_id }}"
+                                            {% if d.id == selected_dept %}selected{% endif %}>
+                                        {{ d.name_ar }}
+                                        {% if not selected_branch %} — {{ d.branch.name_ar }}{% endif %}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Employee -->
+                        <div class="mb-3">
+                            <label class="form-label">الموظف</label>
+                            <select name="user_id" class="form-select">
+                                <option value="">جميع الموظفين</option>
+                                {% for emp in employees %}
+                                <option value="{{ emp.id }}"
+                                        {% if emp.id == selected_user %}selected{% endif %}>
+                                    {{ emp.full_name }}
+                                    <span class="text-muted">({{ emp.branch.name_ar if emp.branch else 'عام' }})</span>
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Preview button -->
+                        <button type="submit" class="btn btn-outline-primary w-100 mb-2">
+                            <i class="bi bi-eye me-2"></i>معاينة عدد السجلات
+                        </button>
+                    </form>
+
+                    <!-- Preview badge -->
+                    {% if preview_count is not none %}
+                    <div class="alert d-flex align-items-center gap-3 mt-2
+                                {% if preview_count > 0 %}alert-success{% else %}alert-warning{% endif %}">
+                        <i class="bi bi-{% if preview_count > 0 %}check-circle{% else %}exclamation-triangle{% endif %} fs-4"></i>
+                        <div>
+                            {% if preview_count > 0 %}
+                            <strong>{{ preview_count }}</strong> سجل جرد مطابق للفلتر
+                            {% else %}
+                            لا توجد بيانات مطابقة لهذا الفلتر
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Download button -->
+                    {% if preview_count %}
+                    <a href="{{ url_for('reports.export_download',
+                                        branch_id=selected_branch or '',
+                                        dept_id=selected_dept or '',
+                                        user_id=selected_user or '',
+                                        month=sel_month,
+                                        year=sel_year) }}"
+                       class="btn btn-success w-100 btn-lg fw-bold mt-1">
+                        <i class="bi bi-file-earmark-excel me-2"></i>
+                        تحميل Excel  ({{ preview_count }} سجل)
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Info Panel ───────────────────────────────────────────────── -->
+        <div class="col-12 col-lg-5">
+
+            <!-- What's included -->
+            <div class="card mb-3">
+                <div class="card-header fw-bold" style="background:var(--brand-light); color:var(--brand-olive);">
+                    <i class="bi bi-file-earmark-check me-2"></i>محتوى ملف Excel
+                </div>
+                <ul class="list-group list-group-flush">
+                    {% set cols = [
+                        ('box',           'اسم الصنف',          'الاسم العربي للمادة'),
+                        ('building',      'الفرع',               'اسم الفرع'),
+                        ('diagram-3',     'القسم',               'المخبز / المستودع / إلخ'),
+                        ('123',           'الكمية',              'الكمية التي تم جردها بالرقم'),
+                        ('rulers',        'وحدة القياس',        'كيلوغرام / لتر / إلخ'),
+                        ('person',        'اسم الموظف',         'من قام بإدخال الجرد'),
+                        ('calendar-date', 'تاريخ ووقت الجرد',   'التاريخ والوقت الدقيق'),
+                        ('chat-left-text','ملاحظات',             'أي ملاحظات مُدخَلة'),
+                    ] %}
+                    {% for icon, col, desc in cols %}
+                    <li class="list-group-item d-flex align-items-center gap-3 py-2">
+                        <div class="stat-icon" style="width:34px;height:34px;font-size:1rem;
+                             background:rgba(242,135,5,0.1);color:var(--brand-orange);border-radius:8px;
+                             display:flex;align-items:center;justify-content:center;">
+                            <i class="bi bi-{{ icon }}"></i>
+                        </div>
+                        <div>
+                            <div class="fw-semibold" style="color:var(--brand-olive);">{{ col }}</div>
+                            <div class="text-muted small">{{ desc }}</div>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+
+            <!-- Excel format features -->
+            <div class="card">
+                <div class="card-header fw-bold" style="background:var(--brand-light); color:var(--brand-olive);">
+                    <i class="bi bi-stars me-2"></i>مميزات ملف Excel
+                </div>
+                <div class="card-body">
+                    {% set features = [
+                        ('check-circle-fill text-success', 'اتجاه RTL عربي كامل'),
+                        ('check-circle-fill text-success', 'رؤوس أعمدة ملوّنة بألوان الشركة'),
+                        ('check-circle-fill text-success', 'عرض أعمدة تلقائي حسب المحتوى'),
+                        ('check-circle-fill text-success', 'صف إجمالي مع مجموع الكميات'),
+                        ('check-circle-fill text-success', 'تجميد رؤوس الأعمدة عند التمرير'),
+                        ('check-circle-fill text-success', 'صفوف بألوان متناوبة للقراءة السهلة'),
+                        ('check-circle-fill text-success', 'تنسيق أرقام احترافي للكميات'),
+                        ('check-circle-fill text-success', 'يعمل مع Excel و Google Sheets'),
+                    ] %}
+                    {% for icon, text in features %}
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <i class="bi bi-{{ icon }}"></i>
+                        <span class="small fw-semibold">{{ text }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterDepts(branchId) {
+    var sel = document.getElementById ? document.querySelector('select[name="dept_id"]') : null;
+    if (!sel) return;
+    Array.from(sel.options).forEach(function (opt) {
+        if (!opt.value) return;
+        opt.style.display = (!branchId || opt.dataset.branch === branchId) ? '' : 'none';
+    });
+    sel.value = '';
+}
+// Apply filter on load if branch already selected
+(function () {
+    var branchSel = document.querySelector('select[name="branch_id"]');
+    if (branchSel && branchSel.value) filterDepts(branchSel.value);
+})();
+</script>
+{% endblock %}

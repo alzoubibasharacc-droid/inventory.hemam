@@ -1,0 +1,307 @@
+{% extends 'base.html' %}
+{% block title %}استيراد الأصناف - همم{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+    <!-- Header -->
+    <div class="section-header mb-4">
+        <div class="section-icon"><i class="bi bi-file-earmark-excel"></i></div>
+        <h4>استيراد الأصناف من Excel</h4>
+        <a href="{{ url_for('admin.items') }}" class="btn btn-outline-secondary btn-sm ms-auto">
+            <i class="bi bi-arrow-right me-1"></i>إدارة الأصناف
+        </a>
+    </div>
+
+    <div class="row g-4">
+
+        <!-- Upload Form -->
+        <div class="col-12 col-lg-6">
+            <div class="card">
+                <div class="card-header" style="background:var(--brand-olive); color:#fff;">
+                    <i class="bi bi-upload me-2"></i>رفع الملف
+                </div>
+                <div class="card-body">
+                    <form method="POST" enctype="multipart/form-data" id="importForm">
+
+                        <div class="mb-4">
+                            <label class="form-label">الفرع</label>
+                            <select id="branch-sel" class="form-select mb-2"
+                                    onchange="filterDepts(this.value)">
+                                <option value="">-- اختر الفرع --</option>
+                                {% for b in branches %}
+                                <option value="{{ b.id }}">{{ b.name_ar }}</option>
+                                {% endfor %}
+                            </select>
+
+                            <label class="form-label">القسم *</label>
+                            <select name="department_id" id="dept-sel"
+                                    class="form-select" required>
+                                <option value="">-- اختر القسم --</option>
+                                {% for d in departments %}
+                                <option value="{{ d.id }}" data-branch="{{ d.branch_id }}">
+                                    {{ d.name_ar }} — {{ d.branch.name_ar }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="upload-zone mb-3" id="uploadZone"
+                             onclick="document.getElementById('fileInput').click()">
+                            <i class="bi bi-cloud-upload d-block fs-1"
+                               style="color:var(--brand-olive);"></i>
+                            <p class="fw-bold mt-2 mb-1">اضغط هنا لاختيار الملف</p>
+                            <p class="text-muted small mb-0">أو اسحب الملف وأفلته هنا</p>
+                            <p class="text-muted small">.xlsx و .csv مدعومان</p>
+                        </div>
+                        <input type="file" name="file" id="fileInput"
+                               accept=".xlsx,.csv" class="d-none"
+                               onchange="showFileName(this)">
+                        <div id="fileNameDisplay" class="alert alert-info d-none fw-semibold">
+                            <i class="bi bi-file-earmark-check me-2"></i>
+                            <span id="fileNameText"></span>
+                        </div>
+
+                        <button type="submit"
+                                class="btn btn-primary w-100 btn-lg fw-bold mt-2">
+                            <i class="bi bi-cloud-upload me-2"></i>ابدأ الاستيراد
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Instructions Panel -->
+        <div class="col-12 col-lg-6">
+
+            <!-- Column guide -->
+            <div class="card mb-3">
+                <div class="card-header fw-bold"
+                     style="background:var(--brand-light); color:var(--brand-olive);">
+                    <i class="bi bi-info-circle me-2"></i>أعمدة الملف المدعومة
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered align-middle mb-0"
+                               style="font-size:0.85rem;">
+                            <thead style="background:var(--brand-olive); color:#fff;">
+                                <tr>
+                                    <th>اسم العمود</th>
+                                    <th>الوصف</th>
+                                    <th class="text-center">إلزامي</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td class="fw-bold font-monospace">الصنف</td>
+                                    <td>اسم الصنف بالعربية</td>
+                                    <td class="text-center">
+                                        <span class="badge bg-danger">نعم</span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="fw-bold font-monospace">الوحدة</td>
+                                    <td>الوحدة الأساسية للتخزين</td>
+                                    <td class="text-center">
+                                        <span class="badge bg-danger">نعم</span>
+                                    </td>
+                                </tr>
+                                <tr style="background:rgba(242,135,5,0.06);">
+                                    <td class="fw-bold font-monospace">الكود</td>
+                                    <td>كود الصنف (للإدارة فقط — لا يراه الموظفون)</td>
+                                    <td class="text-center">
+                                        <span class="badge bg-secondary">لا</span>
+                                    </td>
+                                </tr>
+                                <tr style="background:rgba(41,88,49,0.06);">
+                                    <td class="fw-bold font-monospace">ملاحظة التغليف</td>
+                                    <td>وصف التغليف أو طريقة التعرف على المنتج — يظهر للموظفين</td>
+                                    <td class="text-center">
+                                        <span class="badge bg-secondary">لا</span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="fw-bold font-monospace">الحد الأدنى</td>
+                                    <td>الحد الأدنى للكمية (رقم)</td>
+                                    <td class="text-center">
+                                        <span class="badge bg-secondary">لا</span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="fw-bold font-monospace">الوحدة2 / المعامل2</td>
+                                    <td>وحدة تحويل إضافية ومعاملها (كم وحدة أساسية في هذه الوحدة)</td>
+                                    <td class="text-center">
+                                        <span class="badge bg-secondary">لا</span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="fw-bold font-monospace">الوحدة3 / المعامل3</td>
+                                    <td>وحدة تحويل ثالثة ومعاملها</td>
+                                    <td class="text-center">
+                                        <span class="badge bg-secondary">لا</span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="fw-bold font-monospace">name_en</td>
+                                    <td>اسم الصنف بالإنجليزية</td>
+                                    <td class="text-center">
+                                        <span class="badge bg-secondary">لا</span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Example table -->
+            <div class="card mb-3">
+                <div class="card-header fw-bold"
+                     style="background:var(--brand-light); color:var(--brand-olive);">
+                    <i class="bi bi-table me-1"></i>مثال على تنسيق الملف
+                </div>
+                <div class="card-body p-2">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered mb-0"
+                               style="font-size:0.78rem; white-space:nowrap;">
+                            <thead style="background:#f8f9fa;">
+                                <tr>
+                                    <th>الصنف</th>
+                                    <th>الكود</th>
+                                    <th>ملاحظة التغليف</th>
+                                    <th>الوحدة</th>
+                                    <th>الوحدة2</th>
+                                    <th>المعامل2</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>بيبسي</td>
+                                    <td>DRK-001</td>
+                                    <td>24 زجاجة في الكرتون</td>
+                                    <td>قطعة</td>
+                                    <td>كرتون</td>
+                                    <td>24</td>
+                                </tr>
+                                <tr>
+                                    <td>أرز</td>
+                                    <td>GRN-005</td>
+                                    <td>كيس أحمر كبير</td>
+                                    <td>كيلوغرام</td>
+                                    <td>كيس</td>
+                                    <td>50</td>
+                                </tr>
+                                <tr>
+                                    <td>زيت دوار الشمس</td>
+                                    <td></td>
+                                    <td>زجاجة بلاستيك صفراء</td>
+                                    <td>لتر</td>
+                                    <td></td>
+                                    <td></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="text-muted small mt-2 mb-0">
+                        <i class="bi bi-lightbulb me-1"
+                           style="color:var(--brand-orange);"></i>
+                        المعامل = عدد الوحدات الأساسية داخل الوحدة الكبيرة.
+                        مثال: 1 كرتون بيبسي = 24 قطعة ← المعامل = 24
+                    </p>
+                </div>
+            </div>
+
+            <!-- Available units -->
+            <div class="card">
+                <div class="card-body py-2 px-3">
+                    <p class="fw-semibold mb-2 small" style="color:var(--brand-olive);">
+                        <i class="bi bi-rulers me-1"></i>وحدات القياس المتاحة:
+                    </p>
+                    <div class="d-flex flex-wrap gap-1">
+                        {% for u in units %}
+                        <span class="badge bg-secondary">{{ u.name_ar }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Results -->
+    {% if imported is not none %}
+    <div class="mt-4">
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-md-3">
+                <div class="card stat-card success p-3 text-center">
+                    <div class="fw-bold fs-2" style="color:var(--brand-green);">
+                        {{ imported }}
+                    </div>
+                    <div class="text-muted small fw-semibold">تم استيراده</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card stat-card warning p-3 text-center">
+                    <div class="fw-bold fs-2" style="color:#e6a817;">{{ skipped }}</div>
+                    <div class="text-muted small fw-semibold">تم تخطيه</div>
+                </div>
+            </div>
+        </div>
+
+        {% if errors %}
+        <div class="card">
+            <div class="card-header fw-bold" style="background:#fff3cd; color:#856404;">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                تفاصيل الأخطاء والتخطي ({{ errors|length }})
+            </div>
+            <div class="card-body p-0">
+                <ul class="list-group list-group-flush">
+                    {% for err in errors %}
+                    <li class="list-group-item list-group-item-warning small py-2">
+                        <i class="bi bi-dash-circle me-2"></i>{{ err }}
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterDepts(branchId) {
+    var sel = document.getElementById('dept-sel');
+    Array.from(sel.options).forEach(function (opt) {
+        if (!opt.value) return;
+        opt.style.display = (!branchId || opt.dataset.branch === branchId) ? '' : 'none';
+    });
+    sel.value = '';
+}
+
+function showFileName(input) {
+    if (input.files.length > 0) {
+        document.getElementById('fileNameText').textContent = input.files[0].name;
+        document.getElementById('fileNameDisplay').classList.remove('d-none');
+    }
+}
+
+var zone = document.getElementById('uploadZone');
+zone.addEventListener('dragover', function (e) {
+    e.preventDefault();
+    zone.classList.add('dragover');
+});
+zone.addEventListener('dragleave', function () { zone.classList.remove('dragover'); });
+zone.addEventListener('drop', function (e) {
+    e.preventDefault();
+    zone.classList.remove('dragover');
+    var files = e.dataTransfer.files;
+    if (files.length) {
+        document.getElementById('fileInput').files = files;
+        showFileName(document.getElementById('fileInput'));
+    }
+});
+</script>
+{% endblock %}

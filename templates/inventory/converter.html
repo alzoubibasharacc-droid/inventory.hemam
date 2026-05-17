@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block title %}محول الوحدات - مطاعم حمام{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width:600px;">
+    <h4 class="fw-bold mb-4"><i class="bi bi-rulers text-primary me-2"></i>محول وحدات القياس</h4>
+    <div class="card shadow-sm">
+        <div class="card-body p-4">
+            <div class="mb-3">
+                <label class="form-label fw-semibold">الكمية</label>
+                <input type="number" id="conv-value" class="form-control form-control-lg"
+                       placeholder="أدخل الكمية" step="any" min="0">
+            </div>
+            <div class="row g-3 mb-3">
+                <div class="col-6">
+                    <label class="form-label fw-semibold">من وحدة</label>
+                    <select id="conv-from" class="form-select form-select-lg">
+                        {% for u in units %}
+                        <option value="{{ u.id }}">{{ u.name_ar }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-6">
+                    <label class="form-label fw-semibold">إلى وحدة</label>
+                    <select id="conv-to" class="form-select form-select-lg">
+                        {% for u in units %}
+                        <option value="{{ u.id }}">{{ u.name_ar }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="alert alert-primary text-center fs-4 fw-bold">
+                النتيجة: <span id="conv-result">-</span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

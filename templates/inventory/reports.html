@@ -1,0 +1,210 @@
+{% extends 'base.html' %}
+{% block title %}التقارير - همم{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+    <!-- Header -->
+    <div class="section-header mb-4 no-print">
+        <div class="section-icon"><i class="bi bi-bar-chart-line"></i></div>
+        <h4>تقارير الجرد</h4>
+        <div class="d-flex gap-2 ms-auto">
+            {% if current_user.is_admin %}
+            <a href="{{ url_for('reports.export_page',
+                                branch_id=selected_branch or '',
+                                dept_id=selected_dept or '',
+                                month=month, year=year) }}"
+               class="btn btn-success btn-sm fw-bold">
+                <i class="bi bi-file-earmark-excel me-1"></i>تصدير Excel
+            </a>
+            {% endif %}
+            <button onclick="window.print()" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-printer me-1"></i>طباعة
+            </button>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card mb-4 no-print">
+        <div class="card-body">
+            <form method="GET" class="row g-3 align-items-end">
+                <div class="col-6 col-md-2">
+                    <label class="form-label">الشهر</label>
+                    <select name="month" class="form-select">
+                        {% for i in range(1, 13) %}
+                        <option value="{{ i }}" {% if i == month %}selected{% endif %}>{{ months_ar[i-1] }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label">السنة</label>
+                    <select name="year" class="form-select">
+                        {% for y in range(now.year - 1, now.year + 2) %}
+                        <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% if current_user.is_admin or current_user.is_manager %}
+                <div class="col-12 col-md-3">
+                    <label class="form-label">الفرع</label>
+                    <select name="branch_id" class="form-select" onchange="this.form.submit()">
+                        <option value="">جميع الفروع</option>
+                        {% for b in branches %}
+                        <option value="{{ b.id }}" {% if b.id == selected_branch %}selected{% endif %}>{{ b.name_ar }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
+                <div class="col-12 col-md-3">
+                    <label class="form-label">القسم</label>
+                    <select name="dept_id" class="form-select">
+                        <option value="">جميع الأقسام</option>
+                        {% for d in departments %}
+                        <option value="{{ d.id }}" {% if d.id == selected_dept %}selected{% endif %}>{{ d.name_ar }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12 col-md-2">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-search me-1"></i>بحث
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Print header -->
+    <div class="d-none d-print-block mb-4 text-center">
+        <img src="{{ url_for('static', filename='images/logo.svg') }}" alt="همم" style="height:80px;">
+        <h4 class="fw-bold mt-2">مطاعم همم - تقرير الجرد الشهري</h4>
+        <p class="text-muted">{{ months_ar[month-1] }} {{ year }}</p>
+        <hr>
+    </div>
+
+    {% if grouped %}
+        {% for dept_name, rows in grouped.items() %}
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center"
+                 style="background:var(--brand-olive); color:#fff;">
+                <span class="fw-bold">
+                    <i class="bi bi-building me-2"></i>{{ dept_name }}
+                </span>
+                <span class="badge bg-light text-dark">{{ rows|length }} صنف</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            {% if current_user.is_manager %}
+                            <th>الكود</th>
+                            {% endif %}
+                            <th>الصنف</th>
+                            <th>ملاحظة التغليف</th>
+                            <th class="text-center">إجمالي الكمية</th>
+                            <th class="text-center">الوحدة الأساسية</th>
+                            <th class="text-center">عدد الإدخالات</th>
+                            <th class="no-print">تفاصيل</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in rows %}
+                        {% set item = row.item %}
+                        {% set total = row.total_base %}
+                        {% set entries = row.entries %}
+                        <tr>
+                            <td class="text-muted small">{{ loop.index }}</td>
+                            {% if current_user.is_manager %}
+                            <td>
+                                {% if item.item_code %}
+                                <span class="badge"
+                                      style="background:var(--brand-olive); font-family:monospace; font-size:0.72rem;">
+                                    {{ item.item_code }}
+                                </span>
+                                {% else %}
+                                <span class="text-muted small">—</span>
+                                {% endif %}
+                            </td>
+                            {% endif %}
+                            <td class="fw-semibold">{{ item.name_ar }}</td>
+                            <td class="text-muted small">
+                                {% if item.packaging_note %}
+                                <i class="bi bi-tag me-1"
+                                   style="color:var(--brand-orange);"></i>{{ item.packaging_note }}
+                                {% else %}—{% endif %}
+                            </td>
+                            <td class="text-center">
+                                <span class="fw-bold" style="color:var(--brand-orange);">
+                                    {{ total | int if total == total | int else total | round(3) }}
+                                </span>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge bg-secondary">
+                                    {{ item.effective_base_unit.name_ar }}
+                                </span>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge"
+                                      style="background:{% if entries|length > 1 %}var(--brand-green){% else %}var(--brand-light); color:var(--brand-olive);{% endif %}">
+                                    {{ entries|length }}
+                                </span>
+                            </td>
+                            <td class="no-print">
+                                {% if entries|length > 0 %}
+                                <button class="btn btn-sm btn-outline-secondary py-0"
+                                        type="button"
+                                        data-bs-toggle="collapse"
+                                        data-bs-target="#entries-{{ item.id }}">
+                                    <i class="bi bi-chevron-down"></i>
+                                </button>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% if entries %}
+                        <tr class="collapse no-print" id="entries-{{ item.id }}">
+                            <td colspan="{{ 8 if current_user.is_manager else 7 }}" class="p-0">
+                                <div class="px-3 pb-2 pt-1"
+                                     style="background:rgba(41,88,49,0.04);">
+                                    {% for e in entries %}
+                                    <div class="d-flex align-items-center gap-2 py-1 border-bottom">
+                                        <i class="bi bi-check2-circle"
+                                           style="color:var(--brand-green);"></i>
+                                        <span class="fw-semibold">
+                                            {{ e.entered_quantity | int
+                                               if e.entered_quantity and e.entered_quantity == e.entered_quantity | int
+                                               else (e.entered_quantity or e.quantity) }}
+                                            {{ e.entered_unit.name_ar if e.entered_unit else item.effective_base_unit.name_ar }}
+                                        </span>
+                                        <span class="text-muted small">
+                                            →
+                                            {{ e.quantity | int if e.quantity == e.quantity | int else e.quantity | round(3) }}
+                                            {{ item.effective_base_unit.name_ar }}
+                                        </span>
+                                        <span class="text-muted small ms-auto">
+                                            {{ e.user.full_name }}
+                                            · {{ e.created_at.strftime('%H:%M') if e.created_at else '' }}
+                                        </span>
+                                        {% if e.notes %}
+                                        <span class="badge bg-light text-muted border">{{ e.notes }}</span>
+                                        {% endif %}
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endif %}
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+    <div class="alert alert-info text-center py-5">
+        <i class="bi bi-inbox fs-1 d-block mb-3" style="color:var(--brand-orange);"></i>
+        <h5 class="fw-bold">لا توجد بيانات جرد لهذه الفترة</h5>
+        <p class="text-muted mb-0">اختر فترة مختلفة أو تأكد من إدخال بيانات الجرد</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

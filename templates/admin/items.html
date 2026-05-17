@@ -1,0 +1,251 @@
+{% extends 'base.html' %}
+{% block title %}إدارة الأصناف - همم{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+    <div class="section-header mb-4">
+        <div class="section-icon"><i class="bi bi-list-ul"></i></div>
+        <h4>إدارة الأصناف</h4>
+        <a href="{{ url_for('admin.import_items') }}" class="btn btn-success ms-auto">
+            <i class="bi bi-file-earmark-excel me-2"></i>استيراد Excel
+        </a>
+    </div>
+
+    <!-- Add Item -->
+    <div class="card mb-4">
+        <div class="card-header" style="background:var(--brand-green); color:#fff;">
+            <i class="bi bi-plus-circle me-2"></i>إضافة صنف جديد
+        </div>
+        <div class="card-body">
+            <form method="POST">
+                <input type="hidden" name="action" value="add">
+                <div class="row g-3">
+                    <div class="col-12 col-md-3">
+                        <label class="form-label">كود الصنف
+                            <span class="text-muted small">(للإدارة فقط)</span>
+                        </label>
+                        <input type="text" name="item_code" class="form-control"
+                               placeholder="مثال: ITM-001" maxlength="50">
+                    </div>
+                    <div class="col-12 col-md-5">
+                        <label class="form-label">اسم الصنف (عربي) *</label>
+                        <input type="text" name="name_ar" class="form-control"
+                               required placeholder="مثال: حمص">
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label">الفرع</label>
+                        <select name="_branch_filter" class="form-select"
+                                onchange="filterDepts(this.value)">
+                            <option value="">-- اختر الفرع --</option>
+                            {% for b in branches %}
+                            <option value="{{ b.id }}">{{ b.name_ar }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label">القسم *</label>
+                        <select name="department_id" id="dept-select"
+                                class="form-select" required>
+                            <option value="">-- اختر القسم --</option>
+                            {% for d in departments %}
+                            <option value="{{ d.id }}" data-branch="{{ d.branch_id }}">
+                                {{ d.name_ar }} — {{ d.branch.name_ar }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label">الوحدة الأساسية *
+                            <span class="text-muted small">(وحدة التخزين الداخلي)</span>
+                        </label>
+                        <select name="base_unit_id" class="form-select" required>
+                            <option value="">-- اختر الوحدة --</option>
+                            {% for u in units %}
+                            <option value="{{ u.id }}">{{ u.name_ar }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label">وحدة العرض</label>
+                        <select name="unit_id" class="form-select" required>
+                            {% for u in units %}
+                            <option value="{{ u.id }}">{{ u.name_ar }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">
+                            ملاحظة التغليف
+                            <span class="text-muted small">
+                                (مرئية للموظفين أثناء الجرد — تساعد على التعرف على المنتج)
+                            </span>
+                        </label>
+                        <input type="text" name="packaging_note" class="form-control"
+                               placeholder="مثال: 24 زجاجة في الكرتون، كيس أحمر كبير، علبة زرقاء..."
+                               maxlength="300">
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-plus-circle me-2"></i>إضافة الصنف
+                    </button>
+                    <span class="text-muted small ms-3">
+                        <i class="bi bi-info-circle me-1"></i>
+                        بعد الإضافة، اضغط "تحويلات" لإضافة وحدات إضافية للصنف
+                    </span>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Filter + Search -->
+    <form method="GET" class="row g-2 mb-3 align-items-end no-print">
+        <div class="col-auto">
+            <select name="branch_id" class="form-select form-select-sm"
+                    onchange="this.form.submit()">
+                <option value="">جميع الفروع</option>
+                {% for b in branches %}
+                <option value="{{ b.id }}"
+                        {% if b.id == selected_branch %}selected{% endif %}>
+                    {{ b.name_ar }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-auto">
+            <select name="dept_id" class="form-select form-select-sm"
+                    onchange="this.form.submit()">
+                <option value="">جميع الأقسام</option>
+                {% for d in departments %}
+                <option value="{{ d.id }}"
+                        {% if d.id == selected_dept %}selected{% endif %}>
+                    {{ d.name_ar }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-auto">
+            <div class="input-group input-group-sm">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <input type="text" name="q" class="form-control"
+                       placeholder="بحث بالاسم أو الكود..."
+                       value="{{ search_q or '' }}" style="min-width:180px;">
+                {% if search_q %}
+                <a href="{{ url_for('admin.items', branch_id=selected_branch or '', dept_id=selected_dept or '') }}"
+                   class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-x"></i>
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        <div class="col-auto text-muted small fw-semibold">
+            {{ items|length }} صنف
+        </div>
+    </form>
+
+    <!-- Items Table -->
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>كود الصنف</th>
+                        <th>الصنف</th>
+                        <th>ملاحظة التغليف</th>
+                        <th>الفرع / القسم</th>
+                        <th>الوحدة الأساسية</th>
+                        <th>وحدات التحويل</th>
+                        <th>الحالة</th>
+                        <th>إجراء</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in items %}
+                    <tr class="{{ 'table-secondary opacity-75' if not item.is_active else '' }}">
+                        <td class="text-muted small">{{ loop.index }}</td>
+                        <td>
+                            {% if item.item_code %}
+                            <span class="badge"
+                                  style="background:var(--brand-olive); font-family:monospace;">
+                                {{ item.item_code }}
+                            </span>
+                            {% else %}
+                            <span class="text-muted small">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="fw-semibold">{{ item.name_ar }}</td>
+                        <td class="text-muted small" style="max-width:180px;">
+                            {% if item.packaging_note %}
+                            <i class="bi bi-tag me-1" style="color:var(--brand-orange);"></i>
+                            {{ item.packaging_note }}
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="text-muted small">
+                                {{ item.department.branch.name_ar }}
+                            </span>
+                            <br>{{ item.department.name_ar }}
+                        </td>
+                        <td>
+                            <span class="badge bg-secondary">
+                                {{ item.effective_base_unit.name_ar }}
+                            </span>
+                        </td>
+                        <td>
+                            {% set n = item.conversions | length %}
+                            <a href="{{ url_for('admin.item_conversions', item_id=item.id) }}"
+                               class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-arrow-left-right me-1"></i>
+                                {{ n }} وحدة
+                            </a>
+                        </td>
+                        <td>
+                            {% if item.is_active %}
+                            <span class="badge"
+                                  style="background:var(--brand-green);">نشط</span>
+                            {% else %}
+                            <span class="badge bg-secondary">موقوف</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <form method="POST" class="d-inline">
+                                <input type="hidden" name="action"  value="toggle">
+                                <input type="hidden" name="item_id" value="{{ item.id }}">
+                                <button type="submit"
+                                    class="btn btn-sm btn-outline-{{ 'danger' if item.is_active else 'success' }}"
+                                    data-confirm="{{ 'إيقاف' if item.is_active else 'تفعيل' }} هذا الصنف؟">
+                                    {{ 'إيقاف' if item.is_active else 'تفعيل' }}
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="9" class="text-center text-muted py-5">
+                            <i class="bi bi-inbox fs-2 d-block mb-2"></i>لا توجد أصناف
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterDepts(branchId) {
+    var select = document.getElementById('dept-select');
+    Array.from(select.options).forEach(function (opt) {
+        if (!opt.value) return;
+        opt.style.display = (!branchId || opt.dataset.branch === branchId) ? '' : 'none';
+    });
+    select.value = '';
+}
+</script>
+{% endblock %}

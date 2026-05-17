@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+{% block title %}تسجيل الدخول - همم{% endblock %}
+
+{% block content %}
+<div class="login-wrapper">
+    <div class="login-card">
+        <!-- Card header with logo -->
+        <div class="login-card-header">
+            <img src="{{ url_for('static', filename='images/logo.svg') }}"
+                 alt="همم" class="login-logo">
+            <h4>نظام إدارة الجرد</h4>
+            <p>مطاعم همم</p>
+        </div>
+
+        <!-- Login form -->
+        <div class="login-card-body">
+            <form method="POST" action="{{ url_for('auth.login') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+
+                <div class="mb-4">
+                    <label class="form-label">اسم المستخدم</label>
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="bi bi-person-fill"></i></span>
+                        <input type="text" name="username" class="form-control form-control-lg"
+                               placeholder="أدخل اسم المستخدم" required autofocus>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <label class="form-label">كلمة المرور</label>
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="bi bi-lock-fill"></i></span>
+                        <input type="password" name="password" class="form-control form-control-lg"
+                               placeholder="أدخل كلمة المرور" required id="pwdInput">
+                        <button type="button" class="btn btn-outline-secondary" id="togglePwd" tabindex="-1"
+                                style="border-radius: 8px 0 0 8px !important;">
+                            <i class="bi bi-eye" id="eyeIcon"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="mb-4 form-check">
+                    <input type="checkbox" class="form-check-input" name="remember" id="remember">
+                    <label class="form-check-label fw-semibold" for="remember">تذكرني</label>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-lg w-100 fw-bold">
+                    <i class="bi bi-box-arrow-in-right me-2"></i>دخول
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('togglePwd').addEventListener('click', function () {
+    var pwd = document.getElementById('pwdInput');
+    var icon = document.getElementById('eyeIcon');
+    if (pwd.type === 'password') {
+        pwd.type = 'text';
+        icon.className = 'bi bi-eye-slash';
+    } else {
+        pwd.type = 'password';
+        icon.className = 'bi bi-eye';
+    }
+});
+</script>
+{% endblock %}

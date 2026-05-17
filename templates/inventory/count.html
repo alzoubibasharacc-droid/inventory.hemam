@@ -1,0 +1,933 @@
+{% extends 'base.html' %}
+{% block title %}الجرد الشهري - همم{% endblock %}
+
+{% block content %}
+<style>
+/* ── Count page – mobile-first ─────────────────────────────── */
+.count-page { background:#f5f6f5; min-height:calc(100vh - 70px); padding-bottom:80px; }
+
+/* Filter bar */
+.count-filter-bar {
+    background:#fff;
+    border-bottom:2px solid var(--brand-light);
+    padding:12px 16px;
+    position:sticky; top:0; z-index:200;
+}
+.count-filter-bar select { font-size:0.88rem; border-radius:8px; border-color:#dee2e6; }
+
+/* Progress */
+.progress-card {
+    background:#fff;
+    border-radius:14px;
+    padding:14px 18px;
+    box-shadow:0 1px 6px rgba(0,0,0,0.06);
+}
+.progress { height:10px; border-radius:99px; }
+.progress-bar {
+    background:linear-gradient(90deg, var(--brand-green), #4CAF50);
+    border-radius:99px;
+    transition:width .6s ease;
+}
+
+/* Search */
+.search-wrapper { position:relative; }
+.search-input {
+    font-size:1.15rem;
+    padding:14px 18px 14px 50px;
+    border-radius:14px;
+    border:2px solid #dee2e6;
+    background:#fff;
+    box-shadow:0 2px 8px rgba(0,0,0,0.06);
+    width:100%;
+    transition:border-color .2s, box-shadow .2s;
+    direction:rtl;
+}
+.search-input:focus {
+    outline:none;
+    border-color:var(--brand-green);
+    box-shadow:0 0 0 4px rgba(41,88,49,0.12);
+}
+.search-icon {
+    position:absolute;
+    left:16px; top:50%;
+    transform:translateY(-50%);
+    color:#9aaa9a;
+    font-size:1.15rem;
+    pointer-events:none;
+}
+.search-clear {
+    position:absolute;
+    right:14px; top:50%;
+    transform:translateY(-50%);
+    background:none; border:none;
+    color:#9aaa9a; font-size:1.1rem;
+    cursor:pointer; padding:4px;
+    display:none;
+}
+
+/* Search results */
+.search-results {
+    position:absolute;
+    top:calc(100% + 6px); left:0; right:0;
+    background:#fff;
+    border-radius:14px;
+    box-shadow:0 8px 32px rgba(0,0,0,0.14);
+    overflow:hidden;
+    z-index:500;
+    max-height:60vh;
+    overflow-y:auto;
+}
+.result-item {
+    padding:13px 18px;
+    cursor:pointer;
+    border-bottom:1px solid #f0f2f0;
+    transition:background .15s;
+    -webkit-tap-highlight-color:transparent;
+}
+.result-item:last-child { border-bottom:none; }
+.result-item:hover, .result-item:focus { background:rgba(41,88,49,0.07); outline:none; }
+.result-item:active { background:rgba(41,88,49,0.14); }
+.result-name { font-size:1rem; font-weight:600; color:#1a2e1a; }
+.result-note { font-size:0.82rem; color:var(--brand-orange); margin-top:2px; }
+.result-dept { font-size:0.78rem; color:#888; margin-top:1px; }
+.result-counted-badge {
+    background:var(--brand-green);
+    color:#fff;
+    font-size:0.65rem;
+    border-radius:20px;
+    padding:2px 7px;
+    margin-right:6px;
+    vertical-align:middle;
+}
+.result-empty { padding:20px; text-align:center; color:#999; }
+
+/* Entry form */
+.entry-panel { animation:slideUp .22s ease-out; }
+@keyframes slideUp {
+    from { opacity:0; transform:translateY(18px); }
+    to   { opacity:1; transform:translateY(0); }
+}
+
+/* Item card in entry form */
+.item-card-entry {
+    background:linear-gradient(135deg, var(--brand-olive) 0%, var(--brand-green) 100%);
+    color:#fff;
+    border-radius:16px;
+    padding:18px 20px;
+}
+.item-card-entry .item-name { font-size:1.35rem; font-weight:700; line-height:1.3; }
+.item-card-entry .item-note {
+    font-size:0.9rem;
+    opacity:0.9;
+    margin-top:4px;
+    display:flex;
+    align-items:center;
+    gap:6px;
+}
+.item-card-entry .item-note::before {
+    content:'🏷️';
+    font-size:0.85rem;
+}
+.item-card-entry .item-dept { font-size:0.8rem; opacity:0.72; margin-top:6px; }
+.item-card-entry .item-code-badge {
+    font-size:0.7rem;
+    background:rgba(255,255,255,0.22);
+    border-radius:6px;
+    padding:2px 8px;
+    font-family:monospace;
+    margin-top:6px;
+    display:inline-block;
+}
+.item-card-entry .already-counted-tag {
+    background:rgba(255,255,255,0.2);
+    border-radius:20px;
+    font-size:0.75rem;
+    padding:3px 10px;
+    margin-top:6px;
+    display:inline-block;
+}
+
+/* Quantity input */
+.qty-input {
+    font-size:2.4rem;
+    font-weight:700;
+    text-align:center;
+    height:90px;
+    border-radius:14px;
+    border:2px solid #dee2e6;
+    color:var(--brand-green);
+    letter-spacing:2px;
+    transition:border-color .2s, box-shadow .2s;
+}
+.qty-input:focus {
+    border-color:var(--brand-green);
+    box-shadow:0 0 0 4px rgba(41,88,49,0.12);
+    outline:none;
+}
+.qty-input.is-invalid { border-color:#dc3545; box-shadow:0 0 0 4px rgba(220,53,69,0.12); }
+
+/* Unit select */
+.unit-select {
+    font-size:1.15rem;
+    height:58px;
+    border-radius:12px;
+    border:2px solid #dee2e6;
+    padding:0 14px;
+    cursor:pointer;
+    transition:border-color .2s;
+}
+.unit-select:focus { border-color:var(--brand-green); box-shadow:0 0 0 4px rgba(41,88,49,0.12); }
+
+/* Notes input */
+.notes-input {
+    border-radius:12px;
+    border:2px solid #dee2e6;
+    padding:12px 14px;
+    font-size:1rem;
+    transition:border-color .2s;
+}
+.notes-input:focus { border-color:var(--brand-green); box-shadow:0 0 0 3px rgba(41,88,49,0.1); }
+
+/* Buttons */
+.btn-save {
+    height:64px;
+    font-size:1.15rem;
+    font-weight:700;
+    border-radius:14px;
+    background:var(--brand-green);
+    border:none;
+    color:#fff;
+    transition:transform .1s, box-shadow .2s;
+    box-shadow:0 4px 16px rgba(41,88,49,0.28);
+}
+.btn-save:hover { background:#1e6626; box-shadow:0 6px 20px rgba(41,88,49,0.36); color:#fff; }
+.btn-save:active { transform:scale(0.98); }
+.btn-save:disabled { opacity:.65; transform:none; }
+.btn-cancel {
+    height:52px;
+    font-size:1rem;
+    border-radius:12px;
+    color:var(--brand-olive);
+    border-color:#c8d4c8;
+}
+
+/* Recent entries */
+.recent-card {
+    background:#fff;
+    border-radius:14px;
+    box-shadow:0 1px 6px rgba(0,0,0,0.06);
+    overflow:hidden;
+}
+.recent-entry {
+    padding:12px 16px;
+    border-bottom:1px solid #f0f2f0;
+    animation:fadeIn .3s ease;
+}
+.recent-entry:last-child { border-bottom:none; }
+@keyframes fadeIn { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:none} }
+.recent-item-name { font-weight:600; font-size:0.95rem; color:#1a2e1a; }
+.recent-meta { font-size:0.8rem; color:#888; margin-top:2px; }
+.recent-qty { font-weight:700; color:var(--brand-orange); font-size:0.95rem; }
+.btn-delete-entry {
+    color:#ccc;
+    border:none;
+    background:none;
+    padding:4px 8px;
+    border-radius:8px;
+    transition:color .15s, background .15s;
+    font-size:1rem;
+}
+.btn-delete-entry:hover { color:#dc3545; background:rgba(220,53,69,0.08); }
+
+/* Section headers */
+.section-label {
+    font-size:0.78rem;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    color:#9aaa9a;
+    margin-bottom:8px;
+    padding:0 2px;
+}
+
+/* Toast notifications */
+#toastContainer {
+    position:fixed;
+    bottom:24px; left:50%;
+    transform:translateX(-50%);
+    z-index:9999;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    align-items:center;
+    pointer-events:none;
+}
+.count-toast {
+    background:#1a2e1a;
+    color:#fff;
+    border-radius:12px;
+    padding:12px 24px;
+    font-size:0.95rem;
+    font-weight:600;
+    box-shadow:0 4px 20px rgba(0,0,0,0.25);
+    border-right:4px solid var(--brand-green);
+    white-space:nowrap;
+    animation:toastIn .25s ease-out;
+    pointer-events:none;
+    max-width:90vw;
+    text-align:center;
+}
+.count-toast.danger { border-right-color:#dc3545; }
+.count-toast.info   { border-right-color:var(--brand-orange); }
+.count-toast.fade-out { animation:toastOut .25s ease-in forwards; }
+@keyframes toastIn  { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:none} }
+@keyframes toastOut { from{opacity:1;transform:none} to{opacity:0;transform:translateY(12px)} }
+
+/* No-branch prompt */
+.branch-prompt {
+    background:#fff;
+    border-radius:16px;
+    padding:40px 24px;
+    text-align:center;
+    box-shadow:0 2px 12px rgba(0,0,0,0.06);
+}
+
+/* Mobile tweaks */
+@media (max-width:576px) {
+    .qty-input  { font-size:2rem; height:76px; }
+    .btn-save   { height:58px; font-size:1.05rem; }
+    .count-page { padding-bottom:40px; }
+    .item-card-entry .item-name { font-size:1.2rem; }
+}
+</style>
+
+<div class="count-page">
+
+  <!-- ── Sticky filter bar ─────────────────────────────────── -->
+  <div class="count-filter-bar no-print">
+    <form method="GET" id="filterForm"
+          class="d-flex flex-wrap gap-2 align-items-center">
+
+      {% if current_user.is_admin or current_user.is_manager %}
+      <div class="flex-grow-1" style="min-width:140px;">
+        <select name="branch_id" class="form-select form-select-sm"
+                onchange="this.form.submit()">
+          <option value="">-- اختر الفرع --</option>
+          {% for b in branches %}
+          <option value="{{ b.id }}"
+                  {% if b.id == selected_branch %}selected{% endif %}>
+            {{ b.name_ar }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+
+      <div>
+        <select name="month" class="form-select form-select-sm"
+                onchange="this.form.submit()">
+          {% for i in range(1, 13) %}
+          <option value="{{ i }}" {% if i == month %}selected{% endif %}>
+            {{ months_ar[i-1] }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <select name="year" class="form-select form-select-sm"
+                onchange="this.form.submit()">
+          {% for y in range(now.year - 1, now.year + 2) %}
+          <option value="{{ y }}" {% if y == year %}selected{% endif %}>
+            {{ y }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <a href="{{ url_for('inventory.dashboard') }}"
+         class="btn btn-outline-secondary btn-sm ms-auto d-flex align-items-center gap-1">
+        <i class="bi bi-arrow-right"></i>
+        <span class="d-none d-sm-inline">رجوع</span>
+      </a>
+    </form>
+  </div>
+
+  <div class="container-fluid px-3 px-md-4 mt-3">
+
+    {% if not selected_branch and (current_user.is_admin or current_user.is_manager) %}
+    <!-- ── No branch selected ─── -->
+    <div class="branch-prompt">
+      <i class="bi bi-building fs-1 mb-3 d-block"
+         style="color:var(--brand-olive); opacity:.5;"></i>
+      <h5 class="fw-bold mb-2">اختر الفرع لبدء الجرد</h5>
+      <p class="text-muted mb-0">استخدم القائمة أعلاه لتحديد الفرع</p>
+    </div>
+
+    {% else %}
+
+    <!-- ── Progress ───────────────────────────────────────── -->
+    <div class="progress-card mb-3" id="progressCard">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="fw-semibold" style="color:var(--brand-olive); font-size:0.95rem;">
+          <i class="bi bi-clipboard-check me-1"></i>
+          <span id="progressText">
+            تم جرد <strong>{{ counted_items }}</strong>
+            من <strong>{{ total_items }}</strong> صنف
+          </span>
+        </span>
+        <span id="progressPct" class="fw-bold"
+              style="color:var(--brand-green); font-size:1rem;">
+          {% if total_items %}
+            {{ (counted_items / total_items * 100) | int }}%
+          {% else %}0%{% endif %}
+        </span>
+      </div>
+      <div class="progress">
+        <div id="progressBar"
+             class="progress-bar"
+             role="progressbar"
+             style="width:{{ (counted_items / total_items * 100) | int if total_items else 0 }}%"
+             aria-valuenow="{{ counted_items }}"
+             aria-valuemin="0"
+             aria-valuemax="{{ total_items }}">
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Search section ────────────────────────────────── -->
+    <div id="searchSection">
+
+      <div class="search-wrapper mb-3">
+        <i class="bi bi-search search-icon"></i>
+        <input type="search"
+               id="searchInput"
+               class="search-input"
+               placeholder="ابحث عن صنف بالاسم..."
+               autocomplete="off"
+               inputmode="search">
+        <button class="search-clear" id="searchClear" type="button"
+                aria-label="مسح">
+          <i class="bi bi-x-circle-fill"></i>
+        </button>
+        <div id="searchResults" class="search-results" style="display:none;"></div>
+      </div>
+
+      <!-- Recent entries list -->
+      {% if recent_entries %}
+      <div class="section-label">آخر الإدخالات</div>
+      {% endif %}
+
+      <div class="recent-card" id="recentCard"
+           {% if not recent_entries %}style="display:none;"{% endif %}>
+        <div id="recentList">
+          {% for entry in recent_entries %}
+          <div class="recent-entry" id="recent-{{ entry.id }}">
+            <div class="d-flex align-items-center gap-2">
+              <div class="flex-grow-1 min-w-0">
+                <div class="recent-item-name text-truncate">
+                  {{ entry.item.name_ar }}
+                </div>
+                <div class="recent-meta">
+                  <span class="recent-qty">
+                    {{ entry.entered_quantity | int
+                       if entry.entered_quantity and entry.entered_quantity == entry.entered_quantity | int
+                       else (entry.entered_quantity or entry.quantity) }}
+                    {{ entry.entered_unit.name_ar
+                       if entry.entered_unit
+                       else entry.item.effective_base_unit.name_ar }}
+                  </span>
+                  <span class="text-muted">
+                    · {{ entry.created_at.strftime('%H:%M') if entry.created_at else '' }}
+                  </span>
+                  {% if current_user.is_manager and entry.user_id != current_user.id %}
+                  <span class="text-muted">· {{ entry.user.full_name }}</span>
+                  {% endif %}
+                </div>
+              </div>
+              {% if entry.user_id == current_user.id or current_user.is_manager %}
+              <button class="btn-delete-entry"
+                      data-entry-id="{{ entry.id }}"
+                      title="حذف">
+                <i class="bi bi-x-lg"></i>
+              </button>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      {% if not recent_entries %}
+      <div class="text-center py-5 text-muted" id="emptyState">
+        <i class="bi bi-search fs-1 d-block mb-3" style="opacity:.3;"></i>
+        <p class="mb-0">
+          ابحث عن الأصناف التي تعدّها وأدخل الكميات
+        </p>
+      </div>
+      {% endif %}
+
+    </div>
+
+    <!-- ── Entry form (hidden until item selected) ────────── -->
+    <div id="entrySection" style="display:none;" class="entry-panel">
+
+      <!-- Item card -->
+      <div class="item-card-entry mb-3" id="entryItemCard">
+        <div class="item-name" id="entryItemName">—</div>
+        <div class="item-note" id="entryItemNote" style="display:none;"></div>
+        <div class="item-dept" id="entryItemDept"></div>
+        <div id="entryItemCode" style="display:none;"></div>
+        <div id="entryAlreadyCounted" style="display:none;" class="already-counted-tag">
+          <i class="bi bi-check2-circle me-1"></i>تم جرده مسبقاً — يمكنك إضافة إدخال جديد
+        </div>
+      </div>
+
+      <!-- Form card -->
+      <div class="bg-white rounded-4 shadow-sm p-4 mb-3">
+
+        <div id="entryError"
+             class="alert alert-danger mb-3"
+             style="display:none; border-radius:10px;">
+        </div>
+
+        <!-- Quantity -->
+        <div class="mb-4">
+          <label class="form-label fw-bold" style="color:var(--brand-olive);">
+            الكمية
+          </label>
+          <input type="number"
+                 id="entryQty"
+                 class="form-control qty-input"
+                 step="any" min="0"
+                 placeholder="0"
+                 inputmode="decimal">
+        </div>
+
+        <!-- Unit -->
+        <div class="mb-4">
+          <label class="form-label fw-bold" style="color:var(--brand-olive);">
+            الوحدة
+          </label>
+          <select id="entryUnit" class="form-select unit-select"></select>
+        </div>
+
+        <!-- Notes -->
+        <div class="mb-4">
+          <label class="form-label fw-semibold text-muted">
+            ملاحظة <span class="fw-normal">(اختياري)</span>
+          </label>
+          <input type="text"
+                 id="entryNotes"
+                 class="form-control notes-input"
+                 placeholder="مثال: موقع الرف أ3">
+        </div>
+
+        <!-- Buttons -->
+        <button id="saveBtn" class="btn btn-save w-100 mb-2">
+          <i class="bi bi-check-lg me-2"></i>حفظ الإدخال
+        </button>
+        <button id="cancelBtn" class="btn btn-outline-secondary btn-cancel w-100">
+          <i class="bi bi-arrow-right me-2"></i>رجوع إلى البحث
+        </button>
+
+      </div>
+    </div>
+    {% endif %}
+
+  </div><!-- /container -->
+</div><!-- /count-page -->
+
+<!-- Toast container -->
+<div id="toastContainer"></div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  'use strict';
+
+  /* ── State ──────────────────────────────────────────────── */
+  const STATE = {
+    selectedItem: null,
+    branchId:     {{ selected_branch | tojson }},
+    month:        {{ month }},
+    year:         {{ year }},
+    countedItems: {{ counted_items }},
+    totalItems:   {{ total_items }},
+  };
+
+  /* ── Elements ───────────────────────────────────────────── */
+  const $ = id => document.getElementById(id);
+  const searchInput    = $('searchInput');
+  const searchResults  = $('searchResults');
+  const searchClear    = $('searchClear');
+  const searchSection  = $('searchSection');
+  const entrySection   = $('entrySection');
+  const entryItemName  = $('entryItemName');
+  const entryItemNote  = $('entryItemNote');
+  const entryItemDept  = $('entryItemDept');
+  const entryItemCode  = $('entryItemCode');
+  const entryAlready   = $('entryAlreadyCounted');
+  const entryQty       = $('entryQty');
+  const entryUnit      = $('entryUnit');
+  const entryNotes     = $('entryNotes');
+  const saveBtn        = $('saveBtn');
+  const cancelBtn      = $('cancelBtn');
+  const recentList     = $('recentList');
+  const recentCard     = $('recentCard');
+  const emptyState     = $('emptyState');
+  const progressBar    = $('progressBar');
+  const progressText   = $('progressText');
+  const progressPct    = $('progressPct');
+
+  if (!searchInput) return;   // not rendered (no-branch state for non-admin)
+
+  /* ── Search ─────────────────────────────────────────────── */
+  let searchTimer;
+
+  searchInput.addEventListener('input', function () {
+    const q = this.value.trim();
+    searchClear.style.display = q ? 'block' : 'none';
+    clearTimeout(searchTimer);
+    if (!q) { hideResults(); return; }
+    searchTimer = setTimeout(() => doSearch(q), 220);
+  });
+
+  searchClear.addEventListener('click', function () {
+    searchInput.value = '';
+    searchClear.style.display = 'none';
+    hideResults();
+    searchInput.focus();
+  });
+
+  searchInput.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowDown') {
+      const first = searchResults.querySelector('.result-item');
+      if (first) { first.focus(); e.preventDefault(); }
+    }
+    if (e.key === 'Escape') { hideResults(); }
+    if (e.key === 'Enter') {
+      const first = searchResults.querySelector('.result-item');
+      if (first) { first.click(); e.preventDefault(); }
+    }
+  });
+
+  /* Close results when clicking outside */
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('.search-wrapper')) hideResults();
+  });
+
+  async function doSearch(q) {
+    const params = new URLSearchParams({
+      q,
+      branch_id: STATE.branchId || '',
+      month:     STATE.month,
+      year:      STATE.year,
+    });
+    try {
+      const res   = await fetch(`/inventory/count/search?${params}`);
+      const items = await res.json();
+      renderResults(items, q);
+    } catch (_) {
+      renderError();
+    }
+  }
+
+  function renderResults(items, q) {
+    searchResults.innerHTML = '';
+    if (!items.length) {
+      searchResults.innerHTML =
+        `<div class="result-empty"><i class="bi bi-inbox me-2"></i>لا توجد نتائج لـ "${escHtml(q)}"</div>`;
+      showResults();
+      return;
+    }
+    items.forEach(item => {
+      const div = document.createElement('div');
+      div.className = 'result-item';
+      div.setAttribute('tabindex', '0');
+      div.setAttribute('role', 'button');
+
+      const codeBadge = (item.item_code)
+        ? `<span style="font-size:0.7rem;font-family:monospace;color:#888;margin-right:6px;">${escHtml(item.item_code)}</span>`
+        : '';
+      const countedBadge = item.already_counted
+        ? `<span class="result-counted-badge">✓ مجرود</span>`
+        : '';
+      const noteHtml = item.packaging_note
+        ? `<div class="result-note"><i class="bi bi-tag me-1"></i>${escHtml(item.packaging_note)}</div>`
+        : '';
+
+      div.innerHTML = `
+        <div class="d-flex align-items-center gap-2">
+          <div class="flex-grow-1 min-w-0">
+            <div class="result-name">
+              ${escHtml(item.name)} ${codeBadge}${countedBadge}
+            </div>
+            ${noteHtml}
+            <div class="result-dept">${escHtml(item.dept)}</div>
+          </div>
+          <i class="bi bi-chevron-left text-muted" style="font-size:0.85rem;flex-shrink:0;"></i>
+        </div>
+      `;
+      div.addEventListener('click',   () => selectItem(item));
+      div.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { selectItem(item); e.preventDefault(); } });
+      div.addEventListener('keydown', e => {
+        if (e.key === 'ArrowDown') { const next = div.nextSibling; if (next) next.focus(); e.preventDefault(); }
+        if (e.key === 'ArrowUp')   { const prev = div.previousSibling; if (prev) prev.focus(); else searchInput.focus(); e.preventDefault(); }
+      });
+      searchResults.appendChild(div);
+    });
+    showResults();
+  }
+
+  function renderError() {
+    searchResults.innerHTML = `<div class="result-empty text-danger"><i class="bi bi-wifi-off me-2"></i>خطأ في الاتصال</div>`;
+    showResults();
+  }
+
+  function showResults() { searchResults.style.display = 'block'; }
+  function hideResults()  { searchResults.style.display = 'none'; searchResults.innerHTML = ''; }
+
+  /* ── Select item → show entry form ─────────────────────── */
+  function selectItem(item) {
+    STATE.selectedItem = item;
+    hideResults();
+    searchInput.value = '';
+    searchClear.style.display = 'none';
+
+    /* Populate item card */
+    entryItemName.textContent = item.name;
+
+    if (item.packaging_note) {
+      entryItemNote.textContent = item.packaging_note;
+      entryItemNote.style.display = 'flex';
+    } else {
+      entryItemNote.style.display = 'none';
+    }
+    entryItemDept.textContent = item.dept;
+
+    if (item.item_code) {
+      entryItemCode.textContent = item.item_code;
+      entryItemCode.style.display = 'inline-block';
+      entryItemCode.className = 'item-code-badge';
+    } else {
+      entryItemCode.style.display = 'none';
+    }
+
+    entryAlready.style.display = item.already_counted ? 'inline-block' : 'none';
+
+    /* Populate unit select */
+    entryUnit.innerHTML = '';
+    (item.allowed_units || []).forEach(u => {
+      const opt = document.createElement('option');
+      opt.value       = u.id;
+      opt.textContent = u.name;
+      entryUnit.appendChild(opt);
+    });
+
+    /* Reset form fields */
+    entryQty.value   = '';
+    entryNotes.value = '';
+    entryQty.classList.remove('is-invalid');
+    if ($('entryError')) $('entryError').style.display = 'none';
+
+    /* Swap panels */
+    searchSection.style.display = 'none';
+    entrySection.style.display  = 'block';
+
+    /* Auto-focus qty after transition */
+    setTimeout(() => entryQty.focus(), 80);
+  }
+
+  /* ── Cancel → back to search ────────────────────────────── */
+  cancelBtn.addEventListener('click', backToSearch);
+
+  function backToSearch() {
+    STATE.selectedItem = null;
+    entrySection.style.display  = 'none';
+    searchSection.style.display = 'block';
+    setTimeout(() => searchInput.focus(), 80);
+  }
+
+  /* ── Save entry ─────────────────────────────────────────── */
+  saveBtn.addEventListener('click', saveEntry);
+
+  entryQty.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      if (entryUnit.options.length > 1) entryUnit.focus();
+      else saveEntry();
+      e.preventDefault();
+    }
+  });
+  entryUnit.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { saveEntry(); e.preventDefault(); }
+  });
+  entryNotes.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { saveEntry(); e.preventDefault(); }
+  });
+
+  async function saveEntry() {
+    if (!STATE.selectedItem) return;
+
+    const qty = entryQty.value.trim();
+    if (!qty || isNaN(parseFloat(qty)) || parseFloat(qty) <= 0) {
+      entryQty.classList.add('is-invalid');
+      entryQty.focus();
+      return;
+    }
+    entryQty.classList.remove('is-invalid');
+
+    const unitId = parseInt(entryUnit.value);
+    const notes  = entryNotes.value.trim();
+
+    /* Loading state */
+    saveBtn.disabled    = true;
+    saveBtn.innerHTML   = '<span class="spinner-border spinner-border-sm me-2"></span>جاري الحفظ...';
+
+    try {
+      const res = await fetch('/inventory/count/entry', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          item_id: STATE.selectedItem.id,
+          qty:     parseFloat(qty),
+          unit_id: unitId,
+          notes,
+          month:   STATE.month,
+          year:    STATE.year,
+        }),
+      });
+      const data = await res.json();
+
+      if (data.ok) {
+        showToast(`${data.item_name} — ${fmtNum(data.entered_qty)} ${data.entered_unit}`, 'success');
+        prependRecentEntry(data);
+        if (data.entry_count === 1) {
+          STATE.countedItems++;
+          renderProgress();
+        }
+        backToSearch();
+      } else {
+        showEntryError(data.error || 'خطأ في الحفظ');
+      }
+    } catch (_) {
+      showEntryError('خطأ في الاتصال — تحقق من الشبكة');
+    } finally {
+      saveBtn.disabled  = false;
+      saveBtn.innerHTML = '<i class="bi bi-check-lg me-2"></i>حفظ الإدخال';
+    }
+  }
+
+  function showEntryError(msg) {
+    const el = $('entryError');
+    if (!el) return;
+    el.textContent    = msg;
+    el.style.display  = 'block';
+    setTimeout(() => { el.style.display = 'none'; }, 4000);
+  }
+
+  /* ── Prepend to recent list ─────────────────────────────── */
+  function prependRecentEntry(data) {
+    if (emptyState) emptyState.style.display = 'none';
+    if (recentCard) recentCard.style.display = 'block';
+
+    const div = document.createElement('div');
+    div.className = 'recent-entry';
+    div.id = `recent-${data.entry_id}`;
+    div.innerHTML = `
+      <div class="d-flex align-items-center gap-2">
+        <div class="flex-grow-1 min-w-0">
+          <div class="recent-item-name text-truncate">${escHtml(data.item_name)}</div>
+          <div class="recent-meta">
+            <span class="recent-qty">${fmtNum(data.entered_qty)} ${escHtml(data.entered_unit)}</span>
+            <span class="text-muted">· ${escHtml(data.time)}</span>
+          </div>
+        </div>
+        <button class="btn-delete-entry" data-entry-id="${data.entry_id}" title="حذف">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+    `;
+    div.querySelector('.btn-delete-entry').addEventListener('click', function () {
+      deleteEntry(this.dataset.entryId, div);
+    });
+    recentList.prepend(div);
+  }
+
+  /* ── Delete entry ───────────────────────────────────────── */
+  async function deleteEntry(entryId, cardEl) {
+    if (!confirm('حذف هذا الإدخال؟')) return;
+    try {
+      const res  = await fetch(`/inventory/count/delete-entry/${entryId}`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (data.ok) {
+        cardEl.style.opacity    = '0';
+        cardEl.style.transition = 'opacity .2s';
+        setTimeout(() => cardEl.remove(), 200);
+        showToast('تم حذف الإدخال', 'info');
+      }
+    } catch (_) {
+      showToast('خطأ في الحذف', 'danger');
+    }
+  }
+
+  /* Wire up existing delete buttons (server-rendered entries) */
+  document.querySelectorAll('.btn-delete-entry').forEach(btn => {
+    btn.addEventListener('click', function () {
+      const card = this.closest('.recent-entry');
+      deleteEntry(this.dataset.entryId, card);
+    });
+  });
+
+  /* ── Progress bar ───────────────────────────────────────── */
+  function renderProgress() {
+    const pct = STATE.totalItems > 0
+      ? Math.round(STATE.countedItems / STATE.totalItems * 100)
+      : 0;
+    if (progressBar) {
+      progressBar.style.width = `${pct}%`;
+      progressBar.setAttribute('aria-valuenow', STATE.countedItems);
+    }
+    if (progressText) {
+      progressText.innerHTML =
+        `تم جرد <strong>${STATE.countedItems}</strong> من <strong>${STATE.totalItems}</strong> صنف`;
+    }
+    if (progressPct) progressPct.textContent = `${pct}%`;
+  }
+
+  /* ── Toast notifications ────────────────────────────────── */
+  function showToast(msg, type) {
+    const container = $('toastContainer');
+    if (!container) return;
+    const div = document.createElement('div');
+    div.className = `count-toast${type === 'danger' ? ' danger' : type === 'info' ? ' info' : ''}`;
+    div.textContent = msg;
+    container.appendChild(div);
+    setTimeout(() => {
+      div.classList.add('fade-out');
+      setTimeout(() => div.remove(), 260);
+    }, 2400);
+  }
+
+  /* ── Helpers ────────────────────────────────────────────── */
+  function fmtNum(n) {
+    const f = parseFloat(n);
+    if (isNaN(f)) return String(n);
+    return f === Math.floor(f) ? f.toFixed(0) : f.toFixed(3).replace(/\.?0+$/, '');
+  }
+
+  function escHtml(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+})();
+</script>
+{% endblock %}

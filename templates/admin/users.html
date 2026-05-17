@@ -1,0 +1,127 @@
+{% extends 'base.html' %}
+{% block title %}إدارة المستخدمين - همم{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+    <div class="section-header mb-4">
+        <div class="section-icon"><i class="bi bi-people"></i></div>
+        <h4>إدارة المستخدمين</h4>
+    </div>
+
+    <!-- Add User -->
+    <div class="card mb-4">
+        <div class="card-header" style="background:var(--brand-olive); color:#fff;">
+            <i class="bi bi-person-plus me-2"></i>إضافة مستخدم جديد
+        </div>
+        <div class="card-body">
+            <form method="POST">
+                <input type="hidden" name="action" value="add">
+                <div class="row g-3">
+                    <div class="col-12 col-md-4">
+                        <label class="form-label">الاسم الكامل *</label>
+                        <input type="text" name="full_name" class="form-control" required>
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label">اسم المستخدم *</label>
+                        <input type="text" name="username" class="form-control" required>
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label">كلمة المرور *</label>
+                        <input type="password" name="password" class="form-control" required minlength="6">
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label">الصلاحية</label>
+                        <select name="role" class="form-select">
+                            <option value="employee">موظف</option>
+                            <option value="manager">مدير فرع</option>
+                            <option value="admin">مدير عام</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label">الفرع</label>
+                        <select name="branch_id" class="form-select">
+                            <option value="">جميع الفروع</option>
+                            {% for b in branches %}
+                            <option value="{{ b.id }}">{{ b.name_ar }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label">القسم</label>
+                        <select name="department_id" class="form-select">
+                            <option value="">جميع الأقسام</option>
+                            {% for d in departments %}
+                            <option value="{{ d.id }}">{{ d.name_ar }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-person-plus me-2"></i>إضافة مستخدم
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Users Table -->
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>الاسم</th>
+                        <th>اسم المستخدم</th>
+                        <th>الصلاحية</th>
+                        <th>الفرع</th>
+                        <th>الحالة</th>
+                        <th>إجراء</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr class="{{ 'table-secondary opacity-75' if not user.is_active else '' }}">
+                        <td class="fw-semibold">{{ user.full_name }}</td>
+                        <td class="text-muted">{{ user.username }}</td>
+                        <td>
+                            {% if user.role == 'admin' %}
+                            <span class="badge bg-danger">مدير عام</span>
+                            {% elif user.role == 'manager' %}
+                            <span class="badge" style="background:var(--brand-orange);">مدير فرع</span>
+                            {% else %}
+                            <span class="badge bg-secondary">موظف</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ user.branch.name_ar if user.branch else 'جميع الفروع' }}</td>
+                        <td>
+                            {% if user.is_active %}
+                            <span class="badge" style="background:var(--brand-green);">نشط</span>
+                            {% else %}
+                            <span class="badge bg-secondary">موقوف</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if user.id != current_user.id %}
+                            <form method="POST" class="d-inline">
+                                <input type="hidden" name="action" value="toggle">
+                                <input type="hidden" name="user_id" value="{{ user.id }}">
+                                <button type="submit"
+                                        class="btn btn-sm btn-outline-{{ 'danger' if user.is_active else 'success' }}"
+                                        data-confirm="{{ 'إيقاف' if user.is_active else 'تفعيل' }} هذا المستخدم؟">
+                                    {{ 'إيقاف' if user.is_active else 'تفعيل' }}
+                                </button>
+                            </form>
+                            {% else %}
+                            <span class="text-muted small">(حسابك الحالي)</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

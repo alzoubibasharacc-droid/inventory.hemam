@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 220" width="200" height="220">
+  <!-- Bottom dark bowl/boat shape -->
+  <ellipse cx="100" cy="118" rx="72" ry="22" fill="#295831"/>
+  <!-- Upper dark leaf/boat shape -->
+  <path d="M30 95 Q100 48 170 95 Q130 82 100 80 Q70 82 30 95Z" fill="#4B5947"/>
+  <!-- Orange triangle/wedge (the slice) -->
+  <path d="M100 52 L148 92 L100 88 Z" fill="#F28705"/>
+  <!-- Small orange accent top -->
+  <path d="M100 52 L120 70 L100 68 Z" fill="#F28705" opacity="0.7"/>
+  <!-- Arabic text: همم -->
+  <text x="100" y="162" text-anchor="middle"
+        font-family="Cairo, Arial, sans-serif"
+        font-size="34" font-weight="700"
+        fill="#4B5947" letter-spacing="2">همم</text>
+  <!-- English sub-text -->
+  <text x="100" y="185" text-anchor="middle"
+        font-family="Cairo, Arial, sans-serif"
+        font-size="15" font-weight="600"
+        fill="#F28705" letter-spacing="3">Hamem</text>
+</svg>
