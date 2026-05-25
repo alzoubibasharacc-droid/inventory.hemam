@@ -2,6 +2,7 @@ services:
   - type: web
     name: inventory-app
     env: python
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn "app:create_app()"
     envVars:
@@ -14,5 +15,6 @@ services:
 
 databases:
   - name: inventory-db
+    plan: free
     databaseName: inventory
     user: inventory
