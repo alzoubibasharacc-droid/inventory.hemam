@@ -1,0 +1,452 @@
+{% extends 'base.html' %}
+{% block title %}تحليل الجرد - همم{% endblock %}
+
+{%- macro fmtnum(n) -%}
+  {%- if n == n | int -%}{{ n | int }}{%- else -%}{{ n | round(3) }}{%- endif -%}
+{%- endmacro -%}
+
+{% block content %}
+<style>
+/* ── Analytics page styles ──────────────────────────────────────────── */
+.analytics-table th {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--brand-olive);
+    white-space: nowrap;
+    padding: 10px 12px;
+}
+.analytics-table td { padding: 10px 12px; font-size: 0.88rem; vertical-align: middle; }
+
+/* Movement badges */
+.mv-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    border-radius: 20px;
+    padding: 3px 10px;
+    white-space: nowrap;
+}
+.mv-up   { background: rgba(25,135,84,0.12);  color: #198754; }
+.mv-down { background: rgba(220,53,69,0.12);  color: #dc3545; }
+.mv-flat { background: rgba(108,117,125,0.1); color: #6c757d; }
+
+/* Subtle row tints */
+.row-up   { background: rgba(25,135,84,0.03);  }
+.row-down { background: rgba(220,53,69,0.03); }
+.row-low  { background: rgba(255,193,7,0.08);  }
+
+/* Summary stat cards */
+.summary-stat {
+    background: #fff;
+    border-radius: 14px;
+    padding: 16px 20px;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.07);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+.summary-stat .ss-icon {
+    width: 44px; height: 44px;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.3rem;
+    flex-shrink: 0;
+}
+.summary-stat .ss-value { font-size: 1.5rem; font-weight: 800; line-height: 1.1; }
+.summary-stat .ss-label { font-size: 0.75rem; color: #888; margin-top: 1px; }
+
+/* Date sub-display in cells */
+.date-sub { font-size: 0.72rem; color: #9aaa9a; margin-top: 1px; }
+
+/* Filter card header */
+.filter-header {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--brand-olive);
+    margin-bottom: 10px;
+}
+
+/* Print overrides */
+@media print {
+    .no-print { display: none !important; }
+    .analytics-table td, .analytics-table th { font-size: 0.75rem; padding: 6px 8px; }
+}
+
+@media (max-width: 768px) {
+    .analytics-table th, .analytics-table td { font-size: 0.78rem; padding: 8px 8px; }
+    .summary-stat { padding: 12px 14px; }
+    .summary-stat .ss-value { font-size: 1.25rem; }
+}
+</style>
+
+<div class="container-fluid">
+
+  <!-- ── Page header ──────────────────────────────────────────────────── -->
+  <div class="section-header mb-4">
+    <div class="section-icon"><i class="bi bi-graph-up-arrow"></i></div>
+    <div>
+      <h4 class="mb-0">تحليل حركة الجرد</h4>
+      <p class="text-muted mb-0 small">
+        {{ date_from }} — {{ date_to }}
+        {% if selected_branch %}
+          · <span style="color:var(--brand-orange);">فرع محدد</span>
+        {% endif %}
+      </p>
+    </div>
+    <div class="d-flex gap-2 ms-auto no-print">
+      <button onclick="window.print()" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-printer me-1"></i>طباعة
+      </button>
+      {% if current_user.is_manager %}
+      <div class="dropdown">
+        <button class="btn btn-success btn-sm dropdown-toggle" type="button"
+                id="exportDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+          <i class="bi bi-download me-1"></i>تصدير
+        </button>
+        <ul class="dropdown-menu" aria-labelledby="exportDropdown">
+          <li>
+            <a class="dropdown-item" id="excelExportLink"
+               href="{{ url_for('analytics.export_excel',
+                                branch_id=selected_branch or '',
+                                dept_id=selected_dept or '',
+                                date_from=date_from,
+                                date_to=date_to) }}">
+              <i class="bi bi-file-earmark-excel me-2 text-success"></i>تصدير Excel
+            </a>
+          </li>
+          <li>
+            <a class="dropdown-item"
+               href="{{ url_for('analytics.export_pdf',
+                                branch_id=selected_branch or '',
+                                dept_id=selected_dept or '',
+                                date_from=date_from,
+                                date_to=date_to) }}"
+               target="_blank">
+              <i class="bi bi-file-earmark-pdf me-2 text-danger"></i>تصدير PDF
+            </a>
+          </li>
+        </ul>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ── Filter form ──────────────────────────────────────────────────── -->
+  <div class="card mb-4 no-print">
+    <div class="card-body py-3">
+      <div class="filter-header"><i class="bi bi-funnel me-1"></i>فلترة التحليل</div>
+      <form method="GET" class="row g-2 align-items-end">
+
+        <div class="col-6 col-sm-3 col-md-2">
+          <label class="form-label small mb-1">من تاريخ</label>
+          <input type="date" name="date_from" class="form-control form-control-sm"
+                 value="{{ date_from }}">
+        </div>
+        <div class="col-6 col-sm-3 col-md-2">
+          <label class="form-label small mb-1">إلى تاريخ</label>
+          <input type="date" name="date_to" class="form-control form-control-sm"
+                 value="{{ date_to }}">
+        </div>
+
+        {% if current_user.is_admin %}
+        <div class="col-12 col-sm-4 col-md-3">
+          <label class="form-label small mb-1">الفرع</label>
+          <select name="branch_id" class="form-select form-select-sm"
+                  onchange="this.form.submit()">
+            <option value="">جميع الفروع</option>
+            {% for b in branches %}
+            <option value="{{ b.id }}"
+                    {% if b.id == selected_branch %}selected{% endif %}>{{ b.name_ar }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
+
+        <div class="col-12 col-sm-4 col-md-3">
+          <label class="form-label small mb-1">القسم</label>
+          <select name="dept_id" class="form-select form-select-sm">
+            <option value="">جميع الأقسام</option>
+            {% for d in departments %}
+            <option value="{{ d.id }}"
+                    {% if d.id == selected_dept %}selected{% endif %}>
+              {{ d.name_ar }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-12 col-sm-2 col-md-2">
+          <button type="submit" class="btn btn-primary btn-sm w-100">
+            <i class="bi bi-search me-1"></i>تحليل
+          </button>
+        </div>
+
+      </form>
+    </div>
+  </div>
+
+  {% if total_items == 0 %}
+  <!-- ── Empty state ──────────────────────────────────────────────────── -->
+  <div class="alert alert-info text-center py-5">
+    <i class="bi bi-inbox fs-1 d-block mb-3" style="color:var(--brand-orange);"></i>
+    <h5 class="fw-bold">لا توجد بيانات جرد لهذه الفترة</h5>
+    <p class="text-muted mb-0">اختر فترة زمنية مختلفة أو تأكد من إدخال بيانات الجرد</p>
+  </div>
+
+  {% else %}
+
+  <!-- ── Summary cards ─────────────────────────────────────────────────── -->
+  <div class="row g-3 mb-4">
+
+    <div class="col-6 col-md-3">
+      <div class="summary-stat">
+        <div class="ss-icon" style="background:rgba(75,89,71,0.1);">
+          <i class="bi bi-box-seam" style="color:var(--brand-olive);"></i>
+        </div>
+        <div>
+          <div class="ss-value" style="color:var(--brand-olive);">{{ total_items }}</div>
+          <div class="ss-label">إجمالي الأصناف المحللة</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-md-3">
+      <div class="summary-stat" style="border-right:4px solid #198754;">
+        <div class="ss-icon" style="background:rgba(25,135,84,0.1);">
+          <i class="bi bi-arrow-up-circle-fill" style="color:#198754; font-size:1.4rem;"></i>
+        </div>
+        <div>
+          <div class="ss-value" style="color:#198754;">{{ increases }}</div>
+          <div class="ss-label">صنف ارتفعت كميته</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-md-3">
+      <div class="summary-stat" style="border-right:4px solid #dc3545;">
+        <div class="ss-icon" style="background:rgba(220,53,69,0.1);">
+          <i class="bi bi-arrow-down-circle-fill" style="color:#dc3545; font-size:1.4rem;"></i>
+        </div>
+        <div>
+          <div class="ss-value" style="color:#dc3545;">{{ decreases }}</div>
+          <div class="ss-label">صنف انخفضت كميته</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-md-3">
+      <div class="summary-stat" style="border-right:4px solid #6c757d;">
+        <div class="ss-icon" style="background:rgba(108,117,125,0.1);">
+          <i class="bi bi-dash-circle-fill" style="color:#6c757d; font-size:1.4rem;"></i>
+        </div>
+        <div>
+          <div class="ss-value" style="color:#6c757d;">{{ unchanged }}</div>
+          <div class="ss-label">صنف بدون تغيير</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Data tables grouped by branch → department ────────────────────── -->
+  {% for group in groups %}
+  <div class="card mb-4">
+
+    <div class="card-header d-flex justify-content-between align-items-center"
+         style="background:var(--brand-olive); color:#fff;">
+      <span class="fw-bold">
+        <i class="bi bi-diagram-3 me-2"></i>{{ group.dept_name }}
+        <span class="opacity-75 fw-normal small ms-2">— {{ group.branch_name }}</span>
+      </span>
+      <span class="badge bg-light text-dark">{{ group.rows | length }} صنف</span>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 analytics-table">
+        <thead class="table-light">
+          <tr>
+            <th style="width:2.2rem;">#</th>
+            {% if current_user.is_manager %}<th>الكود</th>{% endif %}
+            <th>الصنف</th>
+            <th class="text-center">الإدخالات</th>
+            <th class="text-center">أول جرد</th>
+            <th class="text-center">آخر جرد</th>
+            <th class="text-center">الحركة الصافية</th>
+            <th class="text-center">الحد الأدنى</th>
+            <th class="text-center d-none d-md-table-cell">أقل يومي</th>
+            <th class="text-center d-none d-md-table-cell">أعلى يومي</th>
+            <th class="text-center">الوحدة</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in group.rows %}
+          {% set abs_ch = row.net_change | abs %}
+          <tr class="{% if row.low_stock %}row-low{% elif row.trend == 'up' %}row-up{% elif row.trend == 'down' %}row-down{% endif %}">
+
+            <td class="text-muted small">{{ loop.index }}</td>
+
+            {% if current_user.is_manager %}
+            <td>
+              {% if row.item.item_code %}
+              <span class="badge"
+                    style="background:var(--brand-olive); font-family:monospace; font-size:0.68rem;">
+                {{ row.item.item_code }}
+              </span>
+              {% else %}<span class="text-muted">—</span>{% endif %}
+            </td>
+            {% endif %}
+
+            <td>
+              <div class="fw-semibold" style="color:#1a2e1a;">{{ row.item.name_ar }}</div>
+              {% if row.item.packaging_note %}
+              <div class="text-muted small mt-1">
+                <i class="bi bi-tag me-1" style="color:var(--brand-orange);"></i>{{ row.item.packaging_note }}
+              </div>
+              {% endif %}
+            </td>
+
+            <td class="text-center">
+              <span class="badge"
+                    style="background:var(--brand-light); color:var(--brand-olive); font-size:0.78rem;">
+                {{ row.entry_count }}
+              </span>
+            </td>
+
+            <td class="text-center">
+              <div class="fw-semibold">{{ fmtnum(row.first_qty) }}</div>
+              <div class="date-sub">{{ row.first_date.strftime('%Y-%m-%d') if row.first_date else '—' }}</div>
+            </td>
+
+            <td class="text-center">
+              <div class="fw-semibold">{{ fmtnum(row.last_qty) }}</div>
+              <div class="date-sub">{{ row.last_date.strftime('%Y-%m-%d') if row.last_date else '—' }}</div>
+            </td>
+
+            <td class="text-center">
+              {% if row.trend == 'up' %}
+              <span class="mv-badge mv-up">
+                <i class="bi bi-arrow-up-short fs-6"></i>+{{ fmtnum(abs_ch) }}
+              </span>
+              {% elif row.trend == 'down' %}
+              <span class="mv-badge mv-down">
+                <i class="bi bi-arrow-down-short fs-6"></i>-{{ fmtnum(abs_ch) }}
+              </span>
+              {% else %}
+              <span class="mv-badge mv-flat">
+                <i class="bi bi-dash me-1"></i>لا تغيير
+              </span>
+              {% endif %}
+            </td>
+
+            <td class="text-center">
+              {% if row.minimum_stock > 0 %}
+                {% if row.low_stock %}
+                <span style="color:#dc3545; font-weight:700;">
+                  <i class="bi bi-exclamation-triangle-fill me-1"></i>{{ fmtnum(row.minimum_stock) }}
+                </span>
+                {% else %}
+                <span style="color:var(--brand-orange-dark); font-size:0.85rem;">
+                  {{ fmtnum(row.minimum_stock) }}
+                </span>
+                {% endif %}
+              {% else %}
+              <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td class="text-center text-muted d-none d-md-table-cell">
+              {{ fmtnum(row.min_qty) }}
+            </td>
+            <td class="text-center text-muted d-none d-md-table-cell">
+              {{ fmtnum(row.max_qty) }}
+            </td>
+
+            <td class="text-center">
+              <span class="badge bg-secondary" style="font-size:0.72rem;">
+                {{ row.item.effective_base_unit.name_ar }}
+              </span>
+            </td>
+
+          </tr>
+          {% endfor %}
+        </tbody>
+
+        <!-- Department totals footer -->
+        {% set dept_first  = namespace(v=0) %}
+        {% set dept_last   = namespace(v=0) %}
+        {% set dept_change = namespace(v=0) %}
+        {% for row in group.rows %}
+          {% set dept_first.v  = dept_first.v  + row.first_qty %}
+          {% set dept_last.v   = dept_last.v   + row.last_qty %}
+          {% set dept_change.v = dept_change.v + row.net_change %}
+        {% endfor %}
+        <tfoot>
+          <tr style="background:rgba(75,89,71,0.06); font-weight:700;">
+            <td colspan="{% if current_user.is_manager %}3{% else %}2{% endif %}"
+                class="text-end" style="color:var(--brand-olive);">
+              إجمالي القسم
+            </td>
+            <td></td>
+            <td class="text-center" style="color:var(--brand-olive);">
+              {{ fmtnum(dept_first.v) }}
+            </td>
+            <td class="text-center" style="color:var(--brand-olive);">
+              {{ fmtnum(dept_last.v) }}
+            </td>
+            <td class="text-center">
+              {% set abs_dept = dept_change.v | abs %}
+              {% if dept_change.v > 0.001 %}
+              <span class="mv-badge mv-up">+{{ fmtnum(abs_dept) }}</span>
+              {% elif dept_change.v < -0.001 %}
+              <span class="mv-badge mv-down">-{{ fmtnum(abs_dept) }}</span>
+              {% else %}
+              <span class="mv-badge mv-flat">—</span>
+              {% endif %}
+            </td>
+            <td></td>
+            <td class="d-none d-md-table-cell"></td>
+            <td class="d-none d-md-table-cell"></td>
+            <td></td>
+          </tr>
+        </tfoot>
+
+      </table>
+    </div>
+  </div>
+  {% endfor %}
+
+  {% endif %}
+
+</div>
+
+<!-- ── Print-only header ────────────────────────────────────────────── -->
+<div class="d-none d-print-block mb-4 text-center">
+  <h4 class="fw-bold">مطاعم همم — تحليل حركة الجرد</h4>
+  <p class="text-muted mb-0">{{ date_from }} — {{ date_to }}</p>
+  <hr>
+</div>
+
+<script>
+(function () {
+  var link = document.getElementById('excelExportLink');
+  if (!link) return;
+  link.addEventListener('click', function () {
+    var btn = document.getElementById('exportDropdown');
+    if (!btn) return;
+    var orig = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>جاري التصدير...';
+    btn.disabled = true;
+    setTimeout(function () {
+      btn.innerHTML = orig;
+      btn.disabled = false;
+    }, 3500);
+  });
+}());
+</script>
+
+{% endblock %}

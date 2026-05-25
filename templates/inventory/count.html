@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}الجرد الشهري - همم{% endblock %}
+{% block title %}إدخال الجرد - همم{% endblock %}
 
 {% block content %}
 <style>
@@ -238,6 +238,22 @@
     font-size:1rem;
 }
 .btn-delete-entry:hover { color:#dc3545; background:rgba(220,53,69,0.08); }
+.btn-edit-entry {
+    color:#bbb;
+    border:none;
+    background:none;
+    padding:4px 8px;
+    border-radius:8px;
+    transition:color .15s, background .15s;
+    font-size:0.9rem;
+}
+.btn-edit-entry:hover { color:var(--brand-green); background:rgba(41,88,49,0.08); }
+
+.entry-edit-form {
+    padding:10px 0 4px;
+    border-top:1px solid #f0f2f0;
+    animation:fadeIn .2s ease;
+}
 
 /* Section headers */
 .section-label {
@@ -283,6 +299,24 @@
 @keyframes toastIn  { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:none} }
 @keyframes toastOut { from{opacity:1;transform:none} to{opacity:0;transform:translateY(12px)} }
 
+/* Session chip (locked date display) */
+.session-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(41,88,49,0.08);
+    border: 1px solid rgba(41,88,49,0.2);
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--brand-olive);
+    white-space: nowrap;
+    cursor: default;
+    user-select: none;
+}
+.session-chip i { color: var(--brand-green); font-size: 0.85rem; }
+
 /* No-branch prompt */
 .branch-prompt {
     background:#fff;
@@ -323,26 +357,27 @@
       </div>
       {% endif %}
 
-      <div>
-        <select name="month" class="form-select form-select-sm"
-                onchange="this.form.submit()">
-          {% for i in range(1, 13) %}
-          <option value="{{ i }}" {% if i == month %}selected{% endif %}>
-            {{ months_ar[i-1] }}
-          </option>
-          {% endfor %}
-        </select>
+      {% set today = now.strftime('%Y-%m-%d') %}
+      {% if count_date != today %}
+      {# Session is from a previous day — show a prominent stale-session warning #}
+      <form method="POST" action="{{ url_for('inventory.new_count_session') }}"
+            id="newSessionForm" class="d-inline">
+        {% if selected_branch %}
+        <input type="hidden" name="branch_id" value="{{ selected_branch }}">
+        {% endif %}
+        <button type="button" class="btn btn-warning btn-sm fw-bold"
+                onclick="document.getElementById('newSessionForm').submit();">
+          <i class="bi bi-calendar-exclamation me-1"></i>
+          <span>جلسة قديمة: {{ count_date }} — ابدأ جديدة</span>
+        </button>
+      </form>
+      {% else %}
+      {# Session is today — just show a clean locked-date chip, no button needed #}
+      <div class="session-chip" title="تاريخ جلسة الجرد مؤمَّن">
+        <i class="bi bi-calendar-check"></i>
+        <strong>{{ count_date }}</strong>
       </div>
-      <div>
-        <select name="year" class="form-select form-select-sm"
-                onchange="this.form.submit()">
-          {% for y in range(now.year - 1, now.year + 2) %}
-          <option value="{{ y }}" {% if y == year %}selected{% endif %}>
-            {{ y }}
-          </option>
-          {% endfor %}
-        </select>
-      </div>
+      {% endif %}
 
       <a href="{{ url_for('inventory.dashboard') }}"
          class="btn btn-outline-secondary btn-sm ms-auto d-flex align-items-center gap-1">
@@ -421,8 +456,20 @@
            {% if not recent_entries %}style="display:none;"{% endif %}>
         <div id="recentList">
           {% for entry in recent_entries %}
-          <div class="recent-entry" id="recent-{{ entry.id }}">
-            <div class="d-flex align-items-center gap-2">
+          {% set au = [] %}
+          {% for c in entry.item.conversions %}
+            {% if au.append({'id': c.unit_id, 'name': c.unit.name_ar}) %}{% endif %}
+          {% endfor %}
+          {% if not au %}
+            {% if au.append({'id': entry.item.effective_base_unit_id, 'name': entry.item.effective_base_unit.name_ar}) %}{% endif %}
+          {% endif %}
+          <div class="recent-entry" id="recent-{{ entry.id }}"
+               data-entry-id="{{ entry.id }}"
+               data-entered-qty="{{ entry.entered_quantity if entry.entered_quantity is not none else entry.quantity }}"
+               data-entered-unit-id="{{ entry.entered_unit_id or entry.item.effective_base_unit_id }}"
+               data-notes="{{ entry.notes or '' }}"
+               data-allowed-units='{{ au | tojson }}'>
+            <div class="entry-display d-flex align-items-center gap-2">
               <div class="flex-grow-1 min-w-0">
                 <div class="recent-item-name text-truncate">
                   {{ entry.item.name_ar }}
@@ -442,15 +489,24 @@
                   {% if current_user.is_manager and entry.user_id != current_user.id %}
                   <span class="text-muted">· {{ entry.user.full_name }}</span>
                   {% endif %}
+                  {% if entry.notes %}
+                  <span class="text-muted d-block text-truncate entry-notes-meta"
+                        style="max-width:220px;">· {{ entry.notes }}</span>
+                  {% endif %}
                 </div>
               </div>
-              {% if entry.user_id == current_user.id or current_user.is_manager %}
-              <button class="btn-delete-entry"
-                      data-entry-id="{{ entry.id }}"
-                      title="حذف">
-                <i class="bi bi-x-lg"></i>
-              </button>
-              {% endif %}
+              <div class="d-flex gap-1">
+                {% if entry.user_id == current_user.id or current_user.is_manager %}
+                <button class="btn-edit-entry" data-entry-id="{{ entry.id }}" title="تعديل">
+                  <i class="bi bi-pencil-fill"></i>
+                </button>
+                {% endif %}
+                {% if current_user.is_admin %}
+                <button class="btn-delete-entry" data-entry-id="{{ entry.id }}" title="حذف">
+                  <i class="bi bi-x-lg"></i>
+                </button>
+                {% endif %}
+              </div>
             </div>
           </div>
           {% endfor %}
@@ -511,15 +567,16 @@
           <select id="entryUnit" class="form-select unit-select"></select>
         </div>
 
-        <!-- Notes -->
+        <!-- Notes (required) -->
         <div class="mb-4">
-          <label class="form-label fw-semibold text-muted">
-            ملاحظة <span class="fw-normal">(اختياري)</span>
+          <label class="form-label fw-bold" style="color:var(--brand-olive);">
+            ملاحظة <span class="text-danger">*</span>
           </label>
           <input type="text"
                  id="entryNotes"
                  class="form-control notes-input"
-                 placeholder="مثال: موقع الرف أ3">
+                 placeholder="مثال: موقع الرف أ3 — مطلوب">
+          <div class="invalid-feedback">الملاحظة مطلوبة</div>
         </div>
 
         <!-- Buttons -->
@@ -543,391 +600,18 @@
 {% endblock %}
 
 {% block scripts %}
+{# Pass server-side values to the external JS file via a window config object. #}
 <script>
-(function () {
-  'use strict';
-
-  /* ── State ──────────────────────────────────────────────── */
-  const STATE = {
-    selectedItem: null,
+  window.COUNT_CONFIG = {
     branchId:     {{ selected_branch | tojson }},
-    month:        {{ month }},
-    year:         {{ year }},
     countedItems: {{ counted_items }},
     totalItems:   {{ total_items }},
+    countDate:    {{ count_date | tojson }},
+    isAdmin:      {{ current_user.is_admin | tojson }},
+    isManager:    {{ current_user.is_manager | tojson }},
+    userId:       {{ current_user.id }},
   };
-
-  /* ── Elements ───────────────────────────────────────────── */
-  const $ = id => document.getElementById(id);
-  const searchInput    = $('searchInput');
-  const searchResults  = $('searchResults');
-  const searchClear    = $('searchClear');
-  const searchSection  = $('searchSection');
-  const entrySection   = $('entrySection');
-  const entryItemName  = $('entryItemName');
-  const entryItemNote  = $('entryItemNote');
-  const entryItemDept  = $('entryItemDept');
-  const entryItemCode  = $('entryItemCode');
-  const entryAlready   = $('entryAlreadyCounted');
-  const entryQty       = $('entryQty');
-  const entryUnit      = $('entryUnit');
-  const entryNotes     = $('entryNotes');
-  const saveBtn        = $('saveBtn');
-  const cancelBtn      = $('cancelBtn');
-  const recentList     = $('recentList');
-  const recentCard     = $('recentCard');
-  const emptyState     = $('emptyState');
-  const progressBar    = $('progressBar');
-  const progressText   = $('progressText');
-  const progressPct    = $('progressPct');
-
-  if (!searchInput) return;   // not rendered (no-branch state for non-admin)
-
-  /* ── Search ─────────────────────────────────────────────── */
-  let searchTimer;
-
-  searchInput.addEventListener('input', function () {
-    const q = this.value.trim();
-    searchClear.style.display = q ? 'block' : 'none';
-    clearTimeout(searchTimer);
-    if (!q) { hideResults(); return; }
-    searchTimer = setTimeout(() => doSearch(q), 220);
-  });
-
-  searchClear.addEventListener('click', function () {
-    searchInput.value = '';
-    searchClear.style.display = 'none';
-    hideResults();
-    searchInput.focus();
-  });
-
-  searchInput.addEventListener('keydown', function (e) {
-    if (e.key === 'ArrowDown') {
-      const first = searchResults.querySelector('.result-item');
-      if (first) { first.focus(); e.preventDefault(); }
-    }
-    if (e.key === 'Escape') { hideResults(); }
-    if (e.key === 'Enter') {
-      const first = searchResults.querySelector('.result-item');
-      if (first) { first.click(); e.preventDefault(); }
-    }
-  });
-
-  /* Close results when clicking outside */
-  document.addEventListener('click', function (e) {
-    if (!e.target.closest('.search-wrapper')) hideResults();
-  });
-
-  async function doSearch(q) {
-    const params = new URLSearchParams({
-      q,
-      branch_id: STATE.branchId || '',
-      month:     STATE.month,
-      year:      STATE.year,
-    });
-    try {
-      const res   = await fetch(`/inventory/count/search?${params}`);
-      const items = await res.json();
-      renderResults(items, q);
-    } catch (_) {
-      renderError();
-    }
-  }
-
-  function renderResults(items, q) {
-    searchResults.innerHTML = '';
-    if (!items.length) {
-      searchResults.innerHTML =
-        `<div class="result-empty"><i class="bi bi-inbox me-2"></i>لا توجد نتائج لـ "${escHtml(q)}"</div>`;
-      showResults();
-      return;
-    }
-    items.forEach(item => {
-      const div = document.createElement('div');
-      div.className = 'result-item';
-      div.setAttribute('tabindex', '0');
-      div.setAttribute('role', 'button');
-
-      const codeBadge = (item.item_code)
-        ? `<span style="font-size:0.7rem;font-family:monospace;color:#888;margin-right:6px;">${escHtml(item.item_code)}</span>`
-        : '';
-      const countedBadge = item.already_counted
-        ? `<span class="result-counted-badge">✓ مجرود</span>`
-        : '';
-      const noteHtml = item.packaging_note
-        ? `<div class="result-note"><i class="bi bi-tag me-1"></i>${escHtml(item.packaging_note)}</div>`
-        : '';
-
-      div.innerHTML = `
-        <div class="d-flex align-items-center gap-2">
-          <div class="flex-grow-1 min-w-0">
-            <div class="result-name">
-              ${escHtml(item.name)} ${codeBadge}${countedBadge}
-            </div>
-            ${noteHtml}
-            <div class="result-dept">${escHtml(item.dept)}</div>
-          </div>
-          <i class="bi bi-chevron-left text-muted" style="font-size:0.85rem;flex-shrink:0;"></i>
-        </div>
-      `;
-      div.addEventListener('click',   () => selectItem(item));
-      div.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { selectItem(item); e.preventDefault(); } });
-      div.addEventListener('keydown', e => {
-        if (e.key === 'ArrowDown') { const next = div.nextSibling; if (next) next.focus(); e.preventDefault(); }
-        if (e.key === 'ArrowUp')   { const prev = div.previousSibling; if (prev) prev.focus(); else searchInput.focus(); e.preventDefault(); }
-      });
-      searchResults.appendChild(div);
-    });
-    showResults();
-  }
-
-  function renderError() {
-    searchResults.innerHTML = `<div class="result-empty text-danger"><i class="bi bi-wifi-off me-2"></i>خطأ في الاتصال</div>`;
-    showResults();
-  }
-
-  function showResults() { searchResults.style.display = 'block'; }
-  function hideResults()  { searchResults.style.display = 'none'; searchResults.innerHTML = ''; }
-
-  /* ── Select item → show entry form ─────────────────────── */
-  function selectItem(item) {
-    STATE.selectedItem = item;
-    hideResults();
-    searchInput.value = '';
-    searchClear.style.display = 'none';
-
-    /* Populate item card */
-    entryItemName.textContent = item.name;
-
-    if (item.packaging_note) {
-      entryItemNote.textContent = item.packaging_note;
-      entryItemNote.style.display = 'flex';
-    } else {
-      entryItemNote.style.display = 'none';
-    }
-    entryItemDept.textContent = item.dept;
-
-    if (item.item_code) {
-      entryItemCode.textContent = item.item_code;
-      entryItemCode.style.display = 'inline-block';
-      entryItemCode.className = 'item-code-badge';
-    } else {
-      entryItemCode.style.display = 'none';
-    }
-
-    entryAlready.style.display = item.already_counted ? 'inline-block' : 'none';
-
-    /* Populate unit select */
-    entryUnit.innerHTML = '';
-    (item.allowed_units || []).forEach(u => {
-      const opt = document.createElement('option');
-      opt.value       = u.id;
-      opt.textContent = u.name;
-      entryUnit.appendChild(opt);
-    });
-
-    /* Reset form fields */
-    entryQty.value   = '';
-    entryNotes.value = '';
-    entryQty.classList.remove('is-invalid');
-    if ($('entryError')) $('entryError').style.display = 'none';
-
-    /* Swap panels */
-    searchSection.style.display = 'none';
-    entrySection.style.display  = 'block';
-
-    /* Auto-focus qty after transition */
-    setTimeout(() => entryQty.focus(), 80);
-  }
-
-  /* ── Cancel → back to search ────────────────────────────── */
-  cancelBtn.addEventListener('click', backToSearch);
-
-  function backToSearch() {
-    STATE.selectedItem = null;
-    entrySection.style.display  = 'none';
-    searchSection.style.display = 'block';
-    setTimeout(() => searchInput.focus(), 80);
-  }
-
-  /* ── Save entry ─────────────────────────────────────────── */
-  saveBtn.addEventListener('click', saveEntry);
-
-  entryQty.addEventListener('keydown', e => {
-    if (e.key === 'Enter') {
-      if (entryUnit.options.length > 1) entryUnit.focus();
-      else saveEntry();
-      e.preventDefault();
-    }
-  });
-  entryUnit.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { saveEntry(); e.preventDefault(); }
-  });
-  entryNotes.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { saveEntry(); e.preventDefault(); }
-  });
-
-  async function saveEntry() {
-    if (!STATE.selectedItem) return;
-
-    const qty = entryQty.value.trim();
-    if (!qty || isNaN(parseFloat(qty)) || parseFloat(qty) <= 0) {
-      entryQty.classList.add('is-invalid');
-      entryQty.focus();
-      return;
-    }
-    entryQty.classList.remove('is-invalid');
-
-    const unitId = parseInt(entryUnit.value);
-    const notes  = entryNotes.value.trim();
-
-    /* Loading state */
-    saveBtn.disabled    = true;
-    saveBtn.innerHTML   = '<span class="spinner-border spinner-border-sm me-2"></span>جاري الحفظ...';
-
-    try {
-      const res = await fetch('/inventory/count/entry', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          item_id: STATE.selectedItem.id,
-          qty:     parseFloat(qty),
-          unit_id: unitId,
-          notes,
-          month:   STATE.month,
-          year:    STATE.year,
-        }),
-      });
-      const data = await res.json();
-
-      if (data.ok) {
-        showToast(`${data.item_name} — ${fmtNum(data.entered_qty)} ${data.entered_unit}`, 'success');
-        prependRecentEntry(data);
-        if (data.entry_count === 1) {
-          STATE.countedItems++;
-          renderProgress();
-        }
-        backToSearch();
-      } else {
-        showEntryError(data.error || 'خطأ في الحفظ');
-      }
-    } catch (_) {
-      showEntryError('خطأ في الاتصال — تحقق من الشبكة');
-    } finally {
-      saveBtn.disabled  = false;
-      saveBtn.innerHTML = '<i class="bi bi-check-lg me-2"></i>حفظ الإدخال';
-    }
-  }
-
-  function showEntryError(msg) {
-    const el = $('entryError');
-    if (!el) return;
-    el.textContent    = msg;
-    el.style.display  = 'block';
-    setTimeout(() => { el.style.display = 'none'; }, 4000);
-  }
-
-  /* ── Prepend to recent list ─────────────────────────────── */
-  function prependRecentEntry(data) {
-    if (emptyState) emptyState.style.display = 'none';
-    if (recentCard) recentCard.style.display = 'block';
-
-    const div = document.createElement('div');
-    div.className = 'recent-entry';
-    div.id = `recent-${data.entry_id}`;
-    div.innerHTML = `
-      <div class="d-flex align-items-center gap-2">
-        <div class="flex-grow-1 min-w-0">
-          <div class="recent-item-name text-truncate">${escHtml(data.item_name)}</div>
-          <div class="recent-meta">
-            <span class="recent-qty">${fmtNum(data.entered_qty)} ${escHtml(data.entered_unit)}</span>
-            <span class="text-muted">· ${escHtml(data.time)}</span>
-          </div>
-        </div>
-        <button class="btn-delete-entry" data-entry-id="${data.entry_id}" title="حذف">
-          <i class="bi bi-x-lg"></i>
-        </button>
-      </div>
-    `;
-    div.querySelector('.btn-delete-entry').addEventListener('click', function () {
-      deleteEntry(this.dataset.entryId, div);
-    });
-    recentList.prepend(div);
-  }
-
-  /* ── Delete entry ───────────────────────────────────────── */
-  async function deleteEntry(entryId, cardEl) {
-    if (!confirm('حذف هذا الإدخال؟')) return;
-    try {
-      const res  = await fetch(`/inventory/count/delete-entry/${entryId}`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      const data = await res.json();
-      if (data.ok) {
-        cardEl.style.opacity    = '0';
-        cardEl.style.transition = 'opacity .2s';
-        setTimeout(() => cardEl.remove(), 200);
-        showToast('تم حذف الإدخال', 'info');
-      }
-    } catch (_) {
-      showToast('خطأ في الحذف', 'danger');
-    }
-  }
-
-  /* Wire up existing delete buttons (server-rendered entries) */
-  document.querySelectorAll('.btn-delete-entry').forEach(btn => {
-    btn.addEventListener('click', function () {
-      const card = this.closest('.recent-entry');
-      deleteEntry(this.dataset.entryId, card);
-    });
-  });
-
-  /* ── Progress bar ───────────────────────────────────────── */
-  function renderProgress() {
-    const pct = STATE.totalItems > 0
-      ? Math.round(STATE.countedItems / STATE.totalItems * 100)
-      : 0;
-    if (progressBar) {
-      progressBar.style.width = `${pct}%`;
-      progressBar.setAttribute('aria-valuenow', STATE.countedItems);
-    }
-    if (progressText) {
-      progressText.innerHTML =
-        `تم جرد <strong>${STATE.countedItems}</strong> من <strong>${STATE.totalItems}</strong> صنف`;
-    }
-    if (progressPct) progressPct.textContent = `${pct}%`;
-  }
-
-  /* ── Toast notifications ────────────────────────────────── */
-  function showToast(msg, type) {
-    const container = $('toastContainer');
-    if (!container) return;
-    const div = document.createElement('div');
-    div.className = `count-toast${type === 'danger' ? ' danger' : type === 'info' ? ' info' : ''}`;
-    div.textContent = msg;
-    container.appendChild(div);
-    setTimeout(() => {
-      div.classList.add('fade-out');
-      setTimeout(() => div.remove(), 260);
-    }, 2400);
-  }
-
-  /* ── Helpers ────────────────────────────────────────────── */
-  function fmtNum(n) {
-    const f = parseFloat(n);
-    if (isNaN(f)) return String(n);
-    return f === Math.floor(f) ? f.toFixed(0) : f.toFixed(3).replace(/\.?0+$/, '');
-  }
-
-  function escHtml(str) {
-    return String(str ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
-
-})();
 </script>
+<script src="{{ url_for('static', filename='js/count.js') }}"></script>
 {% endblock %}
+

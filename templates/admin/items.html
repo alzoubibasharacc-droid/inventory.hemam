@@ -34,6 +34,17 @@
                                required placeholder="مثال: حمص">
                     </div>
                     <div class="col-12 col-md-4">
+                        <label class="form-label">الحد الأدنى للمخزون</label>
+                        <div class="input-group">
+                            <input type="number" name="minimum_stock" class="form-control"
+                                   min="0" step="any" value="0" placeholder="0">
+                            <span class="input-group-text">
+                                <i class="bi bi-exclamation-triangle"></i>
+                            </span>
+                        </div>
+                        <div class="form-text">تحذير عند انخفاض المخزون تحت هذا الرقم</div>
+                    </div>
+                    <div class="col-12 col-md-4">
                         <label class="form-label">الفرع</label>
                         <select name="_branch_filter" class="form-select"
                                 onchange="filterDepts(this.value)">
@@ -61,14 +72,6 @@
                         </label>
                         <select name="base_unit_id" class="form-select" required>
                             <option value="">-- اختر الوحدة --</option>
-                            {% for u in units %}
-                            <option value="{{ u.id }}">{{ u.name_ar }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="col-12 col-md-4">
-                        <label class="form-label">وحدة العرض</label>
-                        <select name="unit_id" class="form-select" required>
                             {% for u in units %}
                             <option value="{{ u.id }}">{{ u.name_ar }}</option>
                             {% endfor %}
@@ -156,6 +159,7 @@
                         <th>ملاحظة التغليف</th>
                         <th>الفرع / القسم</th>
                         <th>الوحدة الأساسية</th>
+                        <th class="text-center">الحد الأدنى</th>
                         <th>وحدات التحويل</th>
                         <th>الحالة</th>
                         <th>إجراء</th>
@@ -163,6 +167,7 @@
                 </thead>
                 <tbody>
                     {% for item in items %}
+                    {% set ms = item.effective_minimum_stock %}
                     <tr class="{{ 'table-secondary opacity-75' if not item.is_active else '' }}">
                         <td class="text-muted small">{{ loop.index }}</td>
                         <td>
@@ -195,6 +200,17 @@
                                 {{ item.effective_base_unit.name_ar }}
                             </span>
                         </td>
+                        <td class="text-center">
+                            {% if ms > 0 %}
+                            <span class="badge"
+                                  style="background:rgba(242,135,5,0.12); color:var(--brand-orange-dark); border:1px solid rgba(242,135,5,0.3); font-size:0.78rem;">
+                                {{ ms | int if ms == ms | int else ms | round(3) }}
+                                <span class="text-muted ms-1" style="font-size:0.7rem;">{{ item.effective_base_unit.name_ar }}</span>
+                            </span>
+                            {% else %}
+                            <span class="text-muted small">—</span>
+                            {% endif %}
+                        </td>
                         <td>
                             {% set n = item.conversions | length %}
                             <a href="{{ url_for('admin.item_conversions', item_id=item.id) }}"
@@ -212,26 +228,80 @@
                             {% endif %}
                         </td>
                         <td>
-                            <form method="POST" class="d-inline">
-                                <input type="hidden" name="action"  value="toggle">
-                                <input type="hidden" name="item_id" value="{{ item.id }}">
-                                <button type="submit"
-                                    class="btn btn-sm btn-outline-{{ 'danger' if item.is_active else 'success' }}"
-                                    data-confirm="{{ 'إيقاف' if item.is_active else 'تفعيل' }} هذا الصنف؟">
-                                    {{ 'إيقاف' if item.is_active else 'تفعيل' }}
+                            <div class="d-flex gap-1">
+                                <!-- Edit button -->
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-secondary"
+                                        onclick="openEditModal({{ item.id }}, '{{ item.packaging_note | default('', true) | replace("'", "\\'") }}', {{ ms }})">
+                                    <i class="bi bi-pencil"></i>
                                 </button>
-                            </form>
+                                <!-- Toggle button -->
+                                <form method="POST" class="d-inline">
+                                    <input type="hidden" name="action"  value="toggle">
+                                    <input type="hidden" name="item_id" value="{{ item.id }}">
+                                    <button type="submit"
+                                        class="btn btn-sm btn-outline-{{ 'danger' if item.is_active else 'success' }}">
+                                        {{ 'إيقاف' if item.is_active else 'تفعيل' }}
+                                    </button>
+                                </form>
+                            </div>
                         </td>
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="9" class="text-center text-muted py-5">
+                        <td colspan="10" class="text-center text-muted py-5">
                             <i class="bi bi-inbox fs-2 d-block mb-2"></i>لا توجد أصناف
                         </td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Item Modal -->
+<div class="modal fade" id="editItemModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" id="editItemForm">
+                <input type="hidden" name="action"  value="edit">
+                <input type="hidden" name="item_id" id="editItemId">
+                <div class="modal-header" style="background:var(--brand-olive); color:#fff;">
+                    <h5 class="modal-title">
+                        <i class="bi bi-pencil me-2"></i>تعديل الصنف
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white"
+                            data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">ملاحظة التغليف</label>
+                        <input type="text" name="packaging_note" id="editPkgNote"
+                               class="form-control" maxlength="300"
+                               placeholder="مثال: 24 زجاجة في الكرتون...">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">
+                            <i class="bi bi-exclamation-triangle me-1 text-warning"></i>
+                            الحد الأدنى للمخزون
+                        </label>
+                        <input type="number" name="minimum_stock" id="editMinStock"
+                               class="form-control" min="0" step="any" value="0">
+                        <div class="form-text">
+                            يظهر تحذير في التقارير عندما ينخفض المخزون عن هذا الرقم.
+                            اتركه 0 لتعطيل التحذير.
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary"
+                            data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-check2 me-1"></i>حفظ التغييرات
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
@@ -246,6 +316,14 @@ function filterDepts(branchId) {
         opt.style.display = (!branchId || opt.dataset.branch === branchId) ? '' : 'none';
     });
     select.value = '';
+}
+
+function openEditModal(itemId, pkgNote, minStock) {
+    document.getElementById('editItemId').value   = itemId;
+    document.getElementById('editPkgNote').value  = pkgNote;
+    document.getElementById('editMinStock').value = minStock;
+    var modal = new bootstrap.Modal(document.getElementById('editItemModal'));
+    modal.show();
 }
 </script>
 {% endblock %}

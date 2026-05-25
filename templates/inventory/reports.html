@@ -13,7 +13,8 @@
             <a href="{{ url_for('reports.export_page',
                                 branch_id=selected_branch or '',
                                 dept_id=selected_dept or '',
-                                month=month, year=year) }}"
+                                date_from=date_from,
+                                date_to=date_to) }}"
                class="btn btn-success btn-sm fw-bold">
                 <i class="bi bi-file-earmark-excel me-1"></i>تصدير Excel
             </a>
@@ -28,21 +29,13 @@
     <div class="card mb-4 no-print">
         <div class="card-body">
             <form method="GET" class="row g-3 align-items-end">
-                <div class="col-6 col-md-2">
-                    <label class="form-label">الشهر</label>
-                    <select name="month" class="form-select">
-                        {% for i in range(1, 13) %}
-                        <option value="{{ i }}" {% if i == month %}selected{% endif %}>{{ months_ar[i-1] }}</option>
-                        {% endfor %}
-                    </select>
+                <div class="col-6 col-md-3">
+                    <label class="form-label">من تاريخ</label>
+                    <input type="date" name="date_from" class="form-control" value="{{ date_from }}">
                 </div>
-                <div class="col-6 col-md-2">
-                    <label class="form-label">السنة</label>
-                    <select name="year" class="form-select">
-                        {% for y in range(now.year - 1, now.year + 2) %}
-                        <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
-                        {% endfor %}
-                    </select>
+                <div class="col-6 col-md-3">
+                    <label class="form-label">إلى تاريخ</label>
+                    <input type="date" name="date_to" class="form-control" value="{{ date_to }}">
                 </div>
                 {% if current_user.is_admin or current_user.is_manager %}
                 <div class="col-12 col-md-3">
@@ -76,8 +69,8 @@
     <!-- Print header -->
     <div class="d-none d-print-block mb-4 text-center">
         <img src="{{ url_for('static', filename='images/logo.svg') }}" alt="همم" style="height:80px;">
-        <h4 class="fw-bold mt-2">مطاعم همم - تقرير الجرد الشهري</h4>
-        <p class="text-muted">{{ months_ar[month-1] }} {{ year }}</p>
+        <h4 class="fw-bold mt-2">مطاعم همم - تقرير الجرد</h4>
+        <p class="text-muted">{{ date_from }} — {{ date_to }}</p>
         <hr>
     </div>
 
@@ -112,7 +105,7 @@
                         {% set item = row.item %}
                         {% set total = row.total_base %}
                         {% set entries = row.entries %}
-                        <tr>
+                        <tr{% if row.low_stock %} style="background:rgba(255,193,7,0.1);"{% endif %}>
                             <td class="text-muted small">{{ loop.index }}</td>
                             {% if current_user.is_manager %}
                             <td>
@@ -134,9 +127,17 @@
                                 {% else %}—{% endif %}
                             </td>
                             <td class="text-center">
-                                <span class="fw-bold" style="color:var(--brand-orange);">
+                                <span class="fw-bold" style="color:{% if row.low_stock %}#dc3545{% else %}var(--brand-orange){% endif %};">
                                     {{ total | int if total == total | int else total | round(3) }}
                                 </span>
+                                {% if row.low_stock %}
+                                <br>
+                                <span class="badge"
+                                      style="background:rgba(220,53,69,0.1); color:#dc3545; border:1px solid rgba(220,53,69,0.3); font-size:0.68rem;">
+                                    <i class="bi bi-exclamation-triangle-fill me-1"></i>أدنى من
+                                    {{ row.minimum_stock | int if row.minimum_stock == row.minimum_stock | int else row.minimum_stock | round(3) }}
+                                </span>
+                                {% endif %}
                             </td>
                             <td class="text-center">
                                 <span class="badge bg-secondary">

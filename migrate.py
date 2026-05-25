@@ -1,8 +1,12 @@
 """
-Migration: add ItemUnitConversion system + item_code + multi-entry counts.
+Migration script — safe to run multiple times.
 
-Safe to run multiple times — checks for existing columns before altering.
-Run once after pulling this version:
+Cumulative changes applied:
+  v1  ItemUnitConversion system, item_code, multi-entry counts (SQLite only)
+  v2  Performance indexes, base_unit_id backfill (SQLite + PostgreSQL)
+  v3  minimum_stock column, backfilled from min_quantity (SQLite + PostgreSQL)
+
+Run after pulling a new version:
     python migrate.py
 """
 from app import create_app
@@ -11,122 +15,238 @@ from models import db
 app = create_app()
 
 
-def column_exists(conn, table, column):
-    rows = conn.execute(db.text(f"PRAGMA table_info({table})")).fetchall()
+# ── Database helpers ──────────────────────────────────────────────────────────
+
+def _is_sqlite(conn):
+    return conn.engine.dialect.name == 'sqlite'
+
+
+def _column_exists_sqlite(conn, table, column):
+    rows = conn.execute(db.text(f'PRAGMA table_info({table})')).fetchall()
     return any(r[1] == column for r in rows)
 
+
+def _column_exists_pg(conn, table, column):
+    row = conn.execute(db.text(
+        'SELECT 1 FROM information_schema.columns '
+        'WHERE table_name = :t AND column_name = :c'
+    ), {'t': table, 'c': column}).fetchone()
+    return row is not None
+
+
+def column_exists(conn, table, column):
+    if _is_sqlite(conn):
+        return _column_exists_sqlite(conn, table, column)
+    return _column_exists_pg(conn, table, column)
+
+
+def _index_exists_sqlite(conn, name):
+    row = conn.execute(db.text(
+        "SELECT 1 FROM sqlite_master WHERE type='index' AND name=:n"
+    ), {'n': name}).fetchone()
+    return row is not None
+
+
+def _index_exists_pg(conn, name):
+    row = conn.execute(db.text(
+        'SELECT 1 FROM pg_indexes WHERE indexname = :n'
+    ), {'n': name}).fetchone()
+    return row is not None
+
+
+def index_exists(conn, name):
+    if _is_sqlite(conn):
+        return _index_exists_sqlite(conn, name)
+    return _index_exists_pg(conn, name)
+
+
+# ── Migration steps ───────────────────────────────────────────────────────────
+
+def run_v1_sqlite(conn):
+    """
+    Original SQLite-only migration.
+    Adds item_code, base_unit_id, audit fields, removes unique constraint,
+    creates item_unit_conversions, and seeds default conversions.
+    """
+    if not _is_sqlite(conn):
+        print('  (v1 SQLite steps skipped — running on PostgreSQL)')
+        return
+
+    # 1. items.item_code
+    if not column_exists(conn, 'items', 'item_code'):
+        conn.execute(db.text('ALTER TABLE items ADD COLUMN item_code TEXT'))
+        print('  + items.item_code')
+
+    # 2. items.base_unit_id
+    if not column_exists(conn, 'items', 'base_unit_id'):
+        conn.execute(db.text('ALTER TABLE items ADD COLUMN base_unit_id INTEGER'))
+        conn.execute(db.text('UPDATE items SET base_unit_id = unit_id'))
+        print('  + items.base_unit_id  (seeded from unit_id)')
+
+    # 3. inventory_counts audit fields
+    if not column_exists(conn, 'inventory_counts', 'entered_quantity'):
+        conn.execute(db.text(
+            'ALTER TABLE inventory_counts ADD COLUMN entered_quantity REAL'
+        ))
+        conn.execute(db.text(
+            'UPDATE inventory_counts SET entered_quantity = quantity'
+        ))
+        print('  + inventory_counts.entered_quantity')
+
+    if not column_exists(conn, 'inventory_counts', 'entered_unit_id'):
+        conn.execute(db.text(
+            'ALTER TABLE inventory_counts ADD COLUMN entered_unit_id INTEGER'
+        ))
+        conn.execute(db.text('''
+            UPDATE inventory_counts
+            SET entered_unit_id = (
+                SELECT unit_id FROM items WHERE items.id = inventory_counts.item_id
+            )
+        '''))
+        print('  + inventory_counts.entered_unit_id  (seeded from item.unit_id)')
+
+    # 4. Remove unique constraint on inventory_counts (recreate table)
+    schema_row = conn.execute(db.text(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='inventory_counts'"
+    )).fetchone()
+    if schema_row and 'UNIQUE' in (schema_row[0] or '').upper():
+        print('  ~ removing unique constraint on inventory_counts …')
+        conn.execute(db.text(
+            'ALTER TABLE inventory_counts RENAME TO inventory_counts_old'
+        ))
+        conn.execute(db.text('''
+            CREATE TABLE inventory_counts (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_id          INTEGER NOT NULL REFERENCES items(id),
+                quantity         REAL    NOT NULL,
+                entered_quantity REAL,
+                entered_unit_id  INTEGER REFERENCES units(id),
+                count_date       DATE    NOT NULL,
+                month            INTEGER NOT NULL,
+                year             INTEGER NOT NULL,
+                user_id          INTEGER NOT NULL REFERENCES users(id),
+                notes            TEXT,
+                created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        '''))
+        conn.execute(db.text('''
+            INSERT INTO inventory_counts
+                (id, item_id, quantity, entered_quantity, entered_unit_id,
+                 count_date, month, year, user_id, notes, created_at, updated_at)
+            SELECT
+                id, item_id, quantity,
+                COALESCE(entered_quantity, quantity),
+                COALESCE(entered_unit_id,
+                    (SELECT unit_id FROM items WHERE items.id = item_id)),
+                count_date, month, year, user_id, notes, created_at, updated_at
+            FROM inventory_counts_old
+        '''))
+        conn.execute(db.text('DROP TABLE inventory_counts_old'))
+        print('  ~ unique constraint removed, data preserved')
+    else:
+        print('  = inventory_counts unique constraint already removed')
+
+    # 4b. items.packaging_note
+    if not column_exists(conn, 'items', 'packaging_note'):
+        conn.execute(db.text('ALTER TABLE items ADD COLUMN packaging_note TEXT'))
+        print('  + items.packaging_note')
+
+    # 5. item_unit_conversions table
+    conn.execute(db.text('''
+        CREATE TABLE IF NOT EXISTS item_unit_conversions (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_id     INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+            unit_id     INTEGER NOT NULL REFERENCES units(id),
+            multiplier  REAL    NOT NULL DEFAULT 1.0,
+            UNIQUE(item_id, unit_id)
+        )
+    '''))
+    print('  + item_unit_conversions table (or already exists)')
+
+    # 6. Seed base-unit conversion (multiplier=1) for any item that has none
+    inserted = conn.execute(db.text('''
+        INSERT OR IGNORE INTO item_unit_conversions (item_id, unit_id, multiplier)
+        SELECT id, unit_id, 1.0 FROM items WHERE unit_id IS NOT NULL
+    '''))
+    print(f'  + seeded {inserted.rowcount} default conversions (base unit × 1)')
+
+
+def run_v2(conn):
+    """
+    v2: Performance indexes + base_unit_id backfill. SQLite + PostgreSQL safe.
+    """
+    # ── Backfill base_unit_id from unit_id where still NULL ──────────────────
+    result = conn.execute(db.text(
+        'UPDATE items SET base_unit_id = unit_id '
+        'WHERE base_unit_id IS NULL AND unit_id IS NOT NULL'
+    ))
+    if result.rowcount:
+        print(f'  + backfilled items.base_unit_id for {result.rowcount} rows')
+    else:
+        print('  = items.base_unit_id already backfilled')
+
+    # ── Performance indexes ───────────────────────────────────────────────────
+    # CREATE INDEX IF NOT EXISTS is supported by SQLite 3.3.0+ and PostgreSQL 9.5+
+    indexes = [
+        ('ix_inv_counts_month_year',      'inventory_counts', '(month, year)'),
+        ('ix_inv_counts_item_month_year',  'inventory_counts', '(item_id, month, year)'),
+        ('ix_items_department_id',         'items',            '(department_id)'),
+        ('ix_inv_counts_count_date',       'inventory_counts', '(count_date)'),
+    ]
+    for idx_name, table, cols in indexes:
+        if not index_exists(conn, idx_name):
+            conn.execute(db.text(
+                f'CREATE INDEX IF NOT EXISTS {idx_name} ON {table} {cols}'
+            ))
+            print(f'  + index {idx_name}')
+        else:
+            print(f'  = index {idx_name} already exists')
+
+
+def run_v3(conn):
+    """
+    v3: Add minimum_stock column, backfill from min_quantity.
+    Safe to run on SQLite and PostgreSQL.
+    """
+    if not column_exists(conn, 'items', 'minimum_stock'):
+        conn.execute(db.text(
+            'ALTER TABLE items ADD COLUMN minimum_stock FLOAT DEFAULT 0'
+        ))
+        conn.execute(db.text(
+            'UPDATE items SET minimum_stock = COALESCE(min_quantity, 0)'
+        ))
+        print('  + items.minimum_stock  (backfilled from min_quantity)')
+    else:
+        # Backfill any NULLs that may have slipped through
+        result = conn.execute(db.text(
+            'UPDATE items SET minimum_stock = COALESCE(min_quantity, 0) '
+            'WHERE minimum_stock IS NULL'
+        ))
+        if result.rowcount:
+            print(f'  + backfilled minimum_stock for {result.rowcount} NULL rows')
+        else:
+            print('  = items.minimum_stock already present')
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
 
 def run():
     with app.app_context():
         conn = db.engine.connect()
         trans = conn.begin()
-
         try:
-            # ── 1. items: add item_code ───────────────────────────────────────
-            if not column_exists(conn, 'items', 'item_code'):
-                conn.execute(db.text('ALTER TABLE items ADD COLUMN item_code TEXT'))
-                print('  + items.item_code')
+            print('\n-- v1 (ItemUnitConversion + audit fields) --')
+            run_v1_sqlite(conn)
 
-            # ── 2. items: add base_unit_id (defaults to existing unit_id) ─────
-            if not column_exists(conn, 'items', 'base_unit_id'):
-                conn.execute(db.text('ALTER TABLE items ADD COLUMN base_unit_id INTEGER'))
-                conn.execute(db.text('UPDATE items SET base_unit_id = unit_id'))
-                print('  + items.base_unit_id  (seeded from unit_id)')
+            print('\n-- v2 (indexes + base_unit_id backfill) --')
+            run_v2(conn)
 
-            # ── 3. inventory_counts: add entered_quantity / entered_unit_id ───
-            if not column_exists(conn, 'inventory_counts', 'entered_quantity'):
-                conn.execute(db.text(
-                    'ALTER TABLE inventory_counts ADD COLUMN entered_quantity REAL'
-                ))
-                conn.execute(db.text(
-                    'UPDATE inventory_counts SET entered_quantity = quantity'
-                ))
-                print('  + inventory_counts.entered_quantity')
-
-            if not column_exists(conn, 'inventory_counts', 'entered_unit_id'):
-                conn.execute(db.text(
-                    'ALTER TABLE inventory_counts ADD COLUMN entered_unit_id INTEGER'
-                ))
-                # Back-fill: set entered_unit_id = item's unit_id for each existing row
-                conn.execute(db.text('''
-                    UPDATE inventory_counts
-                    SET entered_unit_id = (
-                        SELECT unit_id FROM items WHERE items.id = inventory_counts.item_id
-                    )
-                '''))
-                print('  + inventory_counts.entered_unit_id  (seeded from item.unit_id)')
-
-            # ── 4. Remove unique constraint on inventory_counts ───────────────
-            #    SQLite can't DROP CONSTRAINT, so we recreate the table.
-            #    Detect: if the old CREATE TABLE still contains the UNIQUE clause.
-            schema_row = conn.execute(db.text(
-                "SELECT sql FROM sqlite_master WHERE type='table' AND name='inventory_counts'"
-            )).fetchone()
-            if schema_row and 'UNIQUE' in (schema_row[0] or '').upper():
-                print('  ~ removing unique constraint on inventory_counts …')
-                conn.execute(db.text(
-                    'ALTER TABLE inventory_counts RENAME TO inventory_counts_old'
-                ))
-                conn.execute(db.text('''
-                    CREATE TABLE inventory_counts (
-                        id               INTEGER PRIMARY KEY AUTOINCREMENT,
-                        item_id          INTEGER NOT NULL REFERENCES items(id),
-                        quantity         REAL    NOT NULL,
-                        entered_quantity REAL,
-                        entered_unit_id  INTEGER REFERENCES units(id),
-                        count_date       DATE    NOT NULL,
-                        month            INTEGER NOT NULL,
-                        year             INTEGER NOT NULL,
-                        user_id          INTEGER NOT NULL REFERENCES users(id),
-                        notes            TEXT,
-                        created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        updated_at       DATETIME DEFAULT CURRENT_TIMESTAMP
-                    )
-                '''))
-                conn.execute(db.text('''
-                    INSERT INTO inventory_counts
-                        (id, item_id, quantity, entered_quantity, entered_unit_id,
-                         count_date, month, year, user_id, notes, created_at, updated_at)
-                    SELECT
-                        id, item_id, quantity,
-                        COALESCE(entered_quantity, quantity),
-                        COALESCE(entered_unit_id,
-                            (SELECT unit_id FROM items WHERE items.id = item_id)),
-                        count_date, month, year, user_id, notes, created_at, updated_at
-                    FROM inventory_counts_old
-                '''))
-                conn.execute(db.text('DROP TABLE inventory_counts_old'))
-                print('  ~ unique constraint removed, data preserved')
-            else:
-                print('  = inventory_counts unique constraint already removed')
-
-            # ── 4b. items: add packaging_note ────────────────────────────────
-            if not column_exists(conn, 'items', 'packaging_note'):
-                conn.execute(db.text('ALTER TABLE items ADD COLUMN packaging_note TEXT'))
-                print('  + items.packaging_note')
-
-            # ── 5. Create item_unit_conversions table ─────────────────────────
-            conn.execute(db.text('''
-                CREATE TABLE IF NOT EXISTS item_unit_conversions (
-                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                    item_id     INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-                    unit_id     INTEGER NOT NULL REFERENCES units(id),
-                    multiplier  REAL    NOT NULL DEFAULT 1.0,
-                    UNIQUE(item_id, unit_id)
-                )
-            '''))
-            print('  + item_unit_conversions table (or already exists)')
-
-            # ── 6. Seed default conversion (base unit, multiplier=1) ──────────
-            inserted = conn.execute(db.text('''
-                INSERT OR IGNORE INTO item_unit_conversions (item_id, unit_id, multiplier)
-                SELECT id, unit_id, 1.0 FROM items WHERE unit_id IS NOT NULL
-            '''))
-            print(f'  + seeded {inserted.rowcount} default conversions (base unit × 1)')
+            print('\n-- v3 (minimum_stock column) --')
+            run_v3(conn)
 
             trans.commit()
-            print('\nMigration complete.')
-
+            print('\nMigration complete.\n')
         except Exception as exc:
             trans.rollback()
             print(f'\nMigration FAILED — rolled back.\n{exc}')

@@ -1,13 +1,10 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session as flask_session
 from flask_login import login_required, current_user
 from models import db, Branch, Department, Item, InventoryCount, Unit, UnitConversion
 from sqlalchemy import func, distinct
 from datetime import datetime, date
 
 inventory_bp = Blueprint('inventory', __name__, url_prefix='/inventory')
-
-MONTHS_AR = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
-             'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
 
 
 # ── dashboard ─────────────────────────────────────────────────────────────────
@@ -69,9 +66,21 @@ def dashboard():
 @inventory_bp.route('/count')
 @login_required
 def count():
-    now   = datetime.now()
-    month = int(request.args.get('month', now.month))
-    year  = int(request.args.get('year',  now.year))
+    now = datetime.now()
+
+    # Lock the count date for this browser session on first visit.
+    # Subsequent visits (even after midnight) reuse the same locked date.
+    count_date = flask_session.get('count_session_date')
+    if not count_date:
+        count_date = now.strftime('%Y-%m-%d')
+        flask_session['count_session_date'] = count_date
+
+    try:
+        cd = date.fromisoformat(count_date)
+    except (ValueError, TypeError):
+        cd = now.date()
+        count_date = cd.strftime('%Y-%m-%d')
+        flask_session['count_session_date'] = count_date
 
     branch_id = (
         request.args.get('branch_id', type=int)
@@ -93,15 +102,14 @@ def count():
             .join(Item).join(Department)
             .filter(
                 Department.branch_id == branch_id,
-                InventoryCount.month == month,
-                InventoryCount.year  == year,
+                InventoryCount.count_date == cd,
             ).scalar() or 0
         )
 
     recent_q = (
         InventoryCount.query
         .join(Item).join(Department)
-        .filter(InventoryCount.month == month, InventoryCount.year == year)
+        .filter(InventoryCount.count_date == cd)
     )
     if branch_id:
         recent_q = recent_q.filter(Department.branch_id == branch_id)
@@ -114,12 +122,11 @@ def count():
         'inventory/count.html',
         branches=branches,
         selected_branch=branch_id,
-        month=month, year=year,
-        months_ar=MONTHS_AR,
         now=now,
         total_items=total_items,
         counted_items=counted_items,
         recent_entries=recent_entries,
+        count_date=count_date,
     )
 
 
@@ -128,10 +135,9 @@ def count():
 @inventory_bp.route('/count/search')
 @login_required
 def count_search():
-    q         = request.args.get('q', '').strip()
-    branch_id = request.args.get('branch_id', type=int)
-    month     = request.args.get('month', type=int)
-    year      = request.args.get('year',  type=int)
+    q          = request.args.get('q', '').strip()
+    branch_id  = request.args.get('branch_id', type=int)
+    count_date = request.args.get('count_date', '').strip()
 
     if not branch_id and not (current_user.is_admin or current_user.is_manager):
         branch_id = current_user.branch_id
@@ -145,17 +151,21 @@ def count_search():
     items = items_q.order_by(Item.name_ar).limit(20).all()
 
     counted_ids = set()
-    if month and year and items:
-        item_ids = [i.id for i in items]
-        rows = (
-            db.session.query(InventoryCount.item_id)
-            .filter(
-                InventoryCount.item_id.in_(item_ids),
-                InventoryCount.month == month,
-                InventoryCount.year  == year,
-            ).distinct().all()
-        )
-        counted_ids = {r[0] for r in rows}
+    if count_date and items:
+        try:
+            cd = date.fromisoformat(count_date)
+        except (ValueError, TypeError):
+            cd = None
+        if cd:
+            item_ids = [i.id for i in items]
+            rows = (
+                db.session.query(InventoryCount.item_id)
+                .filter(
+                    InventoryCount.item_id.in_(item_ids),
+                    InventoryCount.count_date == cd,
+                ).distinct().all()
+            )
+            counted_ids = {r[0] for r in rows}
 
     result = []
     for item in items:
@@ -192,11 +202,12 @@ def count_entry():
     qty_raw = data.get('qty')
     unit_id = data.get('unit_id')
     notes   = (data.get('notes') or '').strip()
-    month   = data.get('month')
-    year    = data.get('year')
 
-    if not all([item_id, qty_raw is not None, unit_id, month, year]):
+    if not all([item_id, qty_raw is not None, unit_id]):
         return jsonify({'ok': False, 'error': 'بيانات ناقصة'}), 400
+
+    if not notes:
+        return jsonify({'ok': False, 'error': 'الملاحظة مطلوبة'}), 400
 
     try:
         entered_qty = float(qty_raw)
@@ -205,6 +216,20 @@ def count_entry():
 
     if entered_qty <= 0:
         return jsonify({'ok': False, 'error': 'الكمية يجب أن تكون أكبر من صفر'}), 400
+
+    # Always use the server-side locked session date — ignore any client-submitted date.
+    session_date_s = flask_session.get('count_session_date')
+    if not session_date_s:
+        session_date_s = date.today().isoformat()
+        flask_session['count_session_date'] = session_date_s
+    try:
+        count_date_obj = date.fromisoformat(session_date_s)
+    except (ValueError, TypeError):
+        count_date_obj = date.today()
+        flask_session['count_session_date'] = count_date_obj.isoformat()
+
+    month = count_date_obj.month
+    year  = count_date_obj.year
 
     item = Item.query.get(item_id)
     if not item:
@@ -218,34 +243,53 @@ def count_entry():
         quantity         = base_quantity,
         entered_quantity = entered_qty,
         entered_unit_id  = int(unit_id),
-        count_date       = date(int(year), int(month), 1),
-        month            = int(month),
-        year             = int(year),
+        count_date       = count_date_obj,
+        month            = month,
+        year             = year,
         user_id          = current_user.id,
         notes            = notes or None,
     )
     db.session.add(entry)
     db.session.commit()
 
-    all_entries = InventoryCount.query.filter_by(
-        item_id=item.id, month=month, year=year
+    all_entries = InventoryCount.query.filter(
+        InventoryCount.item_id    == item.id,
+        InventoryCount.count_date == count_date_obj,
     ).all()
     total_base = sum(e.quantity for e in all_entries)
 
     entered_unit = Unit.query.get(int(unit_id))
 
+    allowed_units = [{'id': c.unit_id, 'name': c.unit.name_ar} for c in item.conversions]
+    if not allowed_units:
+        allowed_units = [{'id': item.effective_base_unit_id, 'name': item.effective_base_unit.name_ar}]
+
     return jsonify({
-        'ok':           True,
-        'entry_id':     entry.id,
-        'total_base':   total_base,
-        'base_unit':    item.effective_base_unit.name_ar,
-        'entry_count':  len(all_entries),
-        'entered_qty':  entered_qty,
-        'entered_unit': entered_unit.name_ar if entered_unit else '',
-        'item_name':    item.name_ar,
-        'user_name':    current_user.full_name,
-        'time':         entry.created_at.strftime('%H:%M') if entry.created_at else '',
+        'ok':              True,
+        'entry_id':        entry.id,
+        'total_base':      total_base,
+        'base_unit':       item.effective_base_unit.name_ar,
+        'entry_count':     len(all_entries),
+        'entered_qty':     entered_qty,
+        'entered_unit':    entered_unit.name_ar if entered_unit else '',
+        'entered_unit_id': int(unit_id),
+        'item_name':       item.name_ar,
+        'user_name':       current_user.full_name,
+        'time':            entry.created_at.strftime('%H:%M') if entry.created_at else '',
+        'notes':           notes,
+        'allowed_units':   allowed_units,
     })
+
+
+# ── start a new counting session (clears the locked date) ────────────────────
+
+@inventory_bp.route('/count/new-session', methods=['POST'])
+@login_required
+def new_count_session():
+    flask_session.pop('count_session_date', None)
+    branch_id = request.form.get('branch_id', '')
+    kwargs = {'branch_id': branch_id} if branch_id else {}
+    return redirect(url_for('inventory.count', **kwargs))
 
 
 # ── delete a single count entry ───────────────────────────────────────────────
@@ -255,27 +299,79 @@ def count_entry():
 def delete_entry(entry_id):
     entry = InventoryCount.query.get_or_404(entry_id)
 
-    if entry.user_id != current_user.id and not current_user.is_manager:
+    if not current_user.is_admin:
         if request.is_json:
-            return jsonify({'ok': False, 'error': 'لا صلاحية'}), 403
-        flash('ليس لديك صلاحية حذف هذا الإدخال', 'danger')
+            return jsonify({'ok': False, 'error': 'الحذف للمدير فقط'}), 403
+        flash('الحذف متاح للمدير فقط', 'danger')
         return redirect(url_for('inventory.count'))
 
-    item  = entry.item
-    dept  = item.department
-    month = entry.month
-    year  = entry.year
+    item       = entry.item
+    dept       = item.department
+    count_date = entry.count_date
 
     db.session.delete(entry)
     db.session.commit()
 
     if request.is_json:
-        remaining  = InventoryCount.query.filter_by(item_id=item.id, month=month, year=year).all()
+        remaining = InventoryCount.query.filter(
+            InventoryCount.item_id    == item.id,
+            InventoryCount.count_date == count_date,
+        ).all()
         total_base = sum(e.quantity for e in remaining)
         return jsonify({'ok': True, 'total_base': total_base, 'entry_count': len(remaining)})
 
     flash('تم حذف الإدخال', 'info')
-    return redirect(url_for('inventory.count', branch_id=dept.branch_id, month=month, year=year))
+    return redirect(url_for('inventory.count', branch_id=dept.branch_id, count_date=count_date.isoformat()))
+
+
+# ── edit a single count entry ────────────────────────────────────────────
+
+@inventory_bp.route('/count/edit-entry/<int:entry_id>', methods=['POST'])
+@login_required
+def edit_entry(entry_id):
+    entry = InventoryCount.query.get_or_404(entry_id)
+
+    if entry.user_id != current_user.id and not current_user.is_manager:
+        return jsonify({'ok': False, 'error': 'لا صلاحية'}), 403
+
+    data    = request.get_json(silent=True) or {}
+    qty_raw = data.get('qty')
+    unit_id = data.get('unit_id')
+    notes   = (data.get('notes') or '').strip()
+
+    if not notes:
+        return jsonify({'ok': False, 'error': 'الملاحظة مطلوبة'}), 400
+    if qty_raw is None or unit_id is None:
+        return jsonify({'ok': False, 'error': 'بيانات ناقصة'}), 400
+
+    try:
+        entered_qty = float(qty_raw)
+    except (ValueError, TypeError):
+        return jsonify({'ok': False, 'error': 'الكمية غير صالحة'}), 400
+
+    if entered_qty <= 0:
+        return jsonify({'ok': False, 'error': 'الكمية يجب أن تكون أكبر من صفر'}), 400
+
+    item          = entry.item
+    multiplier    = item.get_multiplier(int(unit_id))
+    base_quantity = entered_qty * multiplier
+
+    entry.quantity         = base_quantity
+    entry.entered_quantity = entered_qty
+    entry.entered_unit_id  = int(unit_id)
+    entry.notes            = notes or None
+    entry.updated_at       = datetime.utcnow()
+    db.session.commit()
+
+    entered_unit = Unit.query.get(int(unit_id))
+    return jsonify({
+        'ok':           True,
+        'entry_id':     entry.id,
+        'entered_qty':  entered_qty,
+        'entered_unit': entered_unit.name_ar if entered_unit else '',
+        'item_name':    item.name_ar,
+        'notes':        notes,
+    })
 
 
 # ── global unit converter (widget API) ───────────────────────────────────────

@@ -83,19 +83,28 @@ class ItemUnitConversion(db.Model):
 
 class Item(db.Model):
     __tablename__ = 'items'
+
     id = db.Column(db.Integer, primary_key=True)
     # item_code is visible to admin/manager ONLY — never shown to employees
     item_code = db.Column(db.String(50), unique=True, nullable=True)
     name_ar = db.Column(db.String(200), nullable=False)
     name_en = db.Column(db.String(200), nullable=False)
-    # packaging_note is visible to ALL users including employees during counting
+    # packaging_note is visible to ALL users during counting
     packaging_note = db.Column(db.String(300), nullable=True)
-    # unit_id kept for backward compat; base_unit_id is the authoritative storage unit
-    unit_id = db.Column(db.Integer, db.ForeignKey('units.id'), nullable=False)
+
+    # unit_id: legacy field kept for backward compatibility.
+    # Do NOT use in new code — use base_unit_id instead.
+    # Will be removed in a future migration after full data validation.
+    unit_id = db.Column(db.Integer, db.ForeignKey('units.id'), nullable=True)
+
+    # base_unit_id: single authoritative storage unit for all inventory quantities.
+    # All InventoryCount.quantity values are stored in this unit.
     base_unit_id = db.Column(db.Integer, db.ForeignKey('units.id'), nullable=True)
+
     category_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=True)
     department_id = db.Column(db.Integer, db.ForeignKey('departments.id'), nullable=False)
-    min_quantity = db.Column(db.Float, default=0)
+    min_quantity  = db.Column(db.Float, default=0)        # legacy — superseded by minimum_stock
+    minimum_stock = db.Column(db.Float, default=0.0)      # authoritative low-stock threshold
     is_active = db.Column(db.Boolean, default=True)
 
     unit = db.relationship('Unit', foreign_keys=[unit_id], backref='items')
@@ -109,21 +118,30 @@ class Item(db.Model):
         foreign_keys='ItemUnitConversion.item_id'
     )
 
+    __table_args__ = (
+        db.Index('ix_items_department_id', 'department_id'),
+    )
+
     @property
     def effective_base_unit(self):
-        """The unit used for internal storage. Falls back to unit if base_unit not set."""
-        return self.base_unit if self.base_unit_id else self.unit
+        """Authoritative storage unit. Falls back to legacy unit if base not set."""
+        return self.base_unit or self.unit
 
     @property
     def effective_base_unit_id(self):
-        return self.base_unit_id if self.base_unit_id else self.unit_id
+        return self.base_unit_id or self.unit_id
+
+    @property
+    def effective_minimum_stock(self):
+        """Returns minimum_stock, treating NULL as 0."""
+        return self.minimum_stock or 0.0
 
     def get_multiplier(self, unit_id):
         """Return multiplier for a given unit_id (base-units per 1 of that unit)."""
         for conv in self.conversions:
             if conv.unit_id == unit_id:
                 return conv.multiplier
-        return 1.0  # safe fallback: treat as base unit
+        return 1.0
 
 
 class InventoryCount(db.Model):
@@ -134,6 +152,7 @@ class InventoryCount(db.Model):
     entered_unit_id   → which unit the employee selected.
     """
     __tablename__ = 'inventory_counts'
+
     id = db.Column(db.Integer, primary_key=True)
     item_id = db.Column(db.Integer, db.ForeignKey('items.id'), nullable=False)
 
@@ -155,12 +174,20 @@ class InventoryCount(db.Model):
     user = db.relationship('User', backref='counts')
     entered_unit = db.relationship('Unit', foreign_keys=[entered_unit_id])
 
-    # NOTE: No unique constraint — multiple entries per item per month are allowed.
+    # NOTE: No unique constraint — multiple entries per item per month are intentional.
+
+    __table_args__ = (
+        db.Index('ix_inv_counts_month_year', 'month', 'year'),
+        db.Index('ix_inv_counts_item_month_year', 'item_id', 'month', 'year'),
+        db.Index('ix_inv_counts_count_date', 'count_date'),
+    )
 
 
 class User(UserMixin, db.Model):
     __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
+    # username has a unique=True constraint which creates an implicit index in both
+    # SQLite and PostgreSQL — no separate index needed.
     username = db.Column(db.String(80), unique=True, nullable=False)
     full_name = db.Column(db.String(150), nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)

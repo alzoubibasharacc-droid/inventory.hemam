@@ -23,11 +23,13 @@ def create_app():
     from routes.auth import auth_bp
     from routes.inventory import inventory_bp
     from routes.reports import reports_bp
+    from routes.analytics import analytics_bp
     from routes.admin import admin_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(inventory_bp)
     app.register_blueprint(reports_bp)
+    app.register_blueprint(analytics_bp)
     app.register_blueprint(admin_bp)
 
     with app.app_context():

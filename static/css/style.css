@@ -349,7 +349,35 @@ body {
 /* =====================================================
    Dropdown RTL fixes
    ===================================================== */
-.dropdown-menu { text-anchor: right; }
+
+/* RTL text alignment for all dropdown items */
+.dropdown-menu {
+    text-align: right;
+}
+
+/* Bootstrap 5 ships LTR-only CSS (bootstrap.min.css, not bootstrap.rtl.min.css).
+   These rules replicate the missing RTL overrides from bootstrap.rtl.min.css.
+
+   Root cause of the bug: .dropdown-menu-end[data-bs-popper] has right:0 in LTR CSS,
+   which anchors the menu's RIGHT edge to the button's RIGHT edge and extends it
+   LEFTWARD. In RTL the user-menu button sits at the physical left of the navbar,
+   so the menu shoots off-screen to the left. The fix swaps the anchor to left:0
+   (mirroring what Bootstrap RTL CSS would do). */
+[dir="rtl"] .dropdown-menu-start {
+    --bs-position: end;
+}
+[dir="rtl"] .dropdown-menu-start[data-bs-popper] {
+    right: 0;
+    left: auto;
+}
+
+[dir="rtl"] .dropdown-menu-end {
+    --bs-position: start;
+}
+[dir="rtl"] .dropdown-menu-end[data-bs-popper] {
+    right: auto;
+    left: 0;
+}
 
 /* =====================================================
    Page section headers

@@ -35,7 +35,7 @@
                         <select name="role" class="form-select">
                             <option value="employee">موظف</option>
                             <option value="manager">مدير فرع</option>
-                            <option value="admin">مدير عام</option>
+                            <option value="admin">مالية</option>
                         </select>
                     </div>
                     <div class="col-12 col-md-4">
@@ -87,7 +87,7 @@
                         <td class="text-muted">{{ user.username }}</td>
                         <td>
                             {% if user.role == 'admin' %}
-                            <span class="badge bg-danger">مدير عام</span>
+                            <span class="badge bg-danger">مالية</span>
                             {% elif user.role == 'manager' %}
                             <span class="badge" style="background:var(--brand-orange);">مدير فرع</span>
                             {% else %}

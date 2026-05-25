@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>تحليل حركة الجرد — همم</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* ── Page setup ─────────────────────────────────────────────────────────── */
+@page {
+  size: A4 landscape;
+  margin: 12mm 12mm 16mm 12mm;
+  @bottom-center {
+    content: "صفحة " counter(page) " من " counter(pages);
+    font-family: 'Cairo', Arial, sans-serif;
+    font-size: 7.5pt;
+    color: #9ca3af;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Cairo', Arial, sans-serif;
+  font-size: 9.5pt;
+  color: #1e2420;
+  direction: rtl;
+  background: #fff;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* ── Report header ──────────────────────────────────────────────────────── */
+.pdf-header {
+  background: linear-gradient(135deg, #295831 0%, #4B5947 100%);
+  color: #fff;
+  border-radius: 8px;
+  padding: 14px 18px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.pdf-header .header-text h1 {
+  font-size: 15pt;
+  font-weight: 800;
+  margin-bottom: 2px;
+}
+.pdf-header .header-text p {
+  font-size: 8.5pt;
+  opacity: 0.85;
+  margin: 0;
+}
+.pdf-header .header-badge {
+  margin-right: auto;
+  text-align: left;
+  font-size: 8pt;
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
+/* ── Filter summary ─────────────────────────────────────────────────────── */
+.filter-summary {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-size: 8.5pt;
+  color: #4b5563;
+  margin-bottom: 12px;
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.filter-summary span { display: flex; align-items: center; gap: 4px; }
+.filter-summary .lbl { font-weight: 700; color: #4B5947; }
+
+/* ── Summary stat boxes ─────────────────────────────────────────────────── */
+.stats-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.stat-box {
+  flex: 1;
+  border-radius: 8px;
+  padding: 10px 12px;
+  text-align: center;
+}
+.stat-box .sv { font-size: 18pt; font-weight: 800; line-height: 1; margin-bottom: 3px; }
+.stat-box .sl { font-size: 7.5pt; font-weight: 600; opacity: 0.85; }
+
+.stat-total   { background: rgba(75,89,71,0.1);  border: 1.5px solid #4B5947; }
+.stat-total   .sv { color: #4B5947; }
+.stat-up      { background: rgba(25,135,84,0.08); border: 1.5px solid #198754; }
+.stat-up      .sv { color: #198754; }
+.stat-down    { background: rgba(220,53,69,0.08); border: 1.5px solid #dc3545; }
+.stat-down    .sv { color: #dc3545; }
+.stat-flat    { background: rgba(108,117,125,0.08); border: 1.5px solid #6c757d; }
+.stat-flat    .sv { color: #6c757d; }
+
+/* ── Group card ─────────────────────────────────────────────────────────── */
+.group-card {
+  margin-bottom: 14px;
+  page-break-inside: avoid;
+}
+.group-header {
+  background: #295831;
+  color: #fff;
+  padding: 6px 12px;
+  font-size: 9pt;
+  font-weight: 700;
+  border-radius: 6px 6px 0 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.group-header .item-count {
+  background: rgba(255,255,255,0.2);
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 8pt;
+}
+
+/* ── Data table ─────────────────────────────────────────────────────────── */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 8.5pt;
+}
+thead th {
+  background: #4B5947;
+  color: #fff;
+  padding: 6px 8px;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
+}
+tbody td {
+  padding: 5px 8px;
+  border-bottom: 1px solid #e9ecef;
+  vertical-align: middle;
+}
+tbody tr:nth-child(even) { background: #f8faf8; }
+tbody tr.row-up   { background: #f0faf3; }
+tbody tr.row-down { background: #fef5f5; }
+tbody tr.row-low  { background: #fffbea; }
+
+td.td-name  { text-align: right; }
+td.td-num   { text-align: center; }
+td.td-code  { text-align: center; font-family: monospace; font-size: 7.5pt; }
+
+/* Movement cell */
+.mv { font-weight: 700; }
+.mv-up   { color: #198754; }
+.mv-down { color: #dc3545; }
+.mv-flat { color: #9ca3af; }
+
+/* Department total row */
+.dept-total td {
+  background: #e8ede8;
+  font-weight: 700;
+  color: #4B5947;
+  padding: 5px 8px;
+  font-size: 8.5pt;
+}
+.dept-total td.td-name { text-align: right; }
+
+/* Packaging note */
+.pkg-note {
+  font-size: 7pt;
+  color: #9aaa9a;
+  display: block;
+  margin-top: 1px;
+}
+
+/* ── Print adjustments ──────────────────────────────────────────────────── */
+@media print {
+  body { font-size: 9pt; }
+  .group-card { page-break-inside: avoid; }
+  table { page-break-inside: auto; }
+  thead { display: table-header-group; }
+  tr    { page-break-inside: avoid; }
+}
+
+/* ── Screen preview (non-print) ─────────────────────────────────────────── */
+@media screen {
+  body { background: #f4f6f4; padding: 20px; }
+  .pdf-wrapper {
+    background: #fff;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 24px 28px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.12);
+    border-radius: 8px;
+  }
+  .print-notice {
+    background: #295831;
+    color: #fff;
+    text-align: center;
+    padding: 10px;
+    border-radius: 6px;
+    margin-bottom: 18px;
+    font-size: 9pt;
+    font-weight: 700;
+  }
+  .no-print-btn {
+    display: inline-block;
+    margin-right: 8px;
+    background: rgba(255,255,255,0.2);
+    border: 1px solid rgba(255,255,255,0.4);
+    color: #fff;
+    border-radius: 6px;
+    padding: 3px 12px;
+    cursor: pointer;
+    font-family: 'Cairo', sans-serif;
+    font-size: 8.5pt;
+    font-weight: 700;
+  }
+}
+@media print {
+  .print-notice, .pdf-wrapper { box-shadow: none; background: #fff; }
+  .print-notice { display: none; }
+}
+</style>
+</head>
+<body>
+
+{# ─── helper macro ───────────────────────────────────────────────────────── #}
+{%- macro fmtnum(n) -%}
+  {%- if n == n | int -%}{{ n | int }}{%- else -%}{{ n | round(3) }}{%- endif -%}
+{%- endmacro -%}
+
+<div class="pdf-wrapper">
+
+  <!-- Screen-only notice -->
+  <div class="print-notice">
+    <button class="no-print-btn" onclick="window.print()">🖨 طباعة / حفظ PDF</button>
+    يتم فتح نافذة الطباعة تلقائياً — اختر "حفظ كـ PDF" في الطابعة
+  </div>
+
+  <!-- ── Report header ────────────────────────────────────────────────────── -->
+  <div class="pdf-header">
+    <div class="header-text">
+      <h1>مطاعم همم</h1>
+      <p>تحليل حركة الجرد &nbsp;·&nbsp; {{ date_from }} — {{ date_to }}</p>
+      {% if branch_label or dept_label %}
+      <p style="margin-top:3px; font-size:8pt;">
+        {% if branch_label %}الفرع: <strong>{{ branch_label }}</strong>{% endif %}
+        {% if branch_label and dept_label %} &nbsp;·&nbsp; {% endif %}
+        {% if dept_label %}القسم: <strong>{{ dept_label }}</strong>{% endif %}
+      </p>
+      {% endif %}
+    </div>
+    <div class="header-badge">
+      تاريخ الإصدار<br>
+      <strong>{{ now.strftime('%Y-%m-%d') }}</strong>
+    </div>
+  </div>
+
+  <!-- ── Filter summary ────────────────────────────────────────────────────── -->
+  <div class="filter-summary">
+    <span><span class="lbl">الفترة:</span> {{ date_from }} — {{ date_to }}</span>
+    {% if branch_label %}<span><span class="lbl">الفرع:</span> {{ branch_label }}</span>{% endif %}
+    {% if dept_label %}<span><span class="lbl">القسم:</span> {{ dept_label }}</span>{% endif %}
+    <span><span class="lbl">إجمالي الأصناف:</span> {{ total_items }}</span>
+  </div>
+
+  <!-- ── Summary statistics ─────────────────────────────────────────────────── -->
+  <div class="stats-row">
+    <div class="stat-box stat-total">
+      <div class="sv">{{ total_items }}</div>
+      <div class="sl">إجمالي الأصناف</div>
+    </div>
+    <div class="stat-box stat-up">
+      <div class="sv">{{ increases }}</div>
+      <div class="sl">ارتفعت كميتها</div>
+    </div>
+    <div class="stat-box stat-down">
+      <div class="sv">{{ decreases }}</div>
+      <div class="sl">انخفضت كميتها</div>
+    </div>
+    <div class="stat-box stat-flat">
+      <div class="sv">{{ unchanged }}</div>
+      <div class="sl">بدون تغيير</div>
+    </div>
+  </div>
+
+  <!-- ── Data tables ────────────────────────────────────────────────────────── -->
+  {% if total_items == 0 %}
+  <div style="text-align:center; padding:40px; color:#9ca3af; font-size:11pt;">
+    لا توجد بيانات جرد لهذه الفترة
+  </div>
+  {% else %}
+
+  {% for group in groups %}
+  <div class="group-card">
+    <div class="group-header">
+      <span>{{ group.dept_name }} &nbsp;—&nbsp; {{ group.branch_name }}</span>
+      <span class="item-count">{{ group.rows | length }} صنف</span>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:24px">#</th>
+          <th style="width:62px">الكود</th>
+          <th style="text-align:right;">الصنف</th>
+          <th style="width:46px">الوحدة</th>
+          <th style="width:54px">أول جرد</th>
+          <th style="width:54px">آخر جرد</th>
+          <th style="width:58px">الفرق</th>
+          <th style="width:52px">الحد الأدنى للمخزون</th>
+          <th style="width:46px">أقل يومي</th>
+          <th style="width:46px">أعلى يومي</th>
+          <th style="width:44px">الإدخالات</th>
+          <th style="width:60px">تاريخ أول</th>
+          <th style="width:60px">تاريخ آخر</th>
+        </tr>
+      </thead>
+      <tbody>
+
+        {% set dept_first  = namespace(v=0) %}
+        {% set dept_last   = namespace(v=0) %}
+        {% set dept_change = namespace(v=0) %}
+
+        {% for row in group.rows %}
+        {% set abs_ch = row.net_change | abs %}
+        {% set dept_first.v  = dept_first.v  + row.first_qty %}
+        {% set dept_last.v   = dept_last.v   + row.last_qty %}
+        {% set dept_change.v = dept_change.v + row.net_change %}
+
+        <tr class="{% if row.low_stock %}row-low{% elif row.trend == 'up' %}row-up{% elif row.trend == 'down' %}row-down{% endif %}">
+          <td class="td-num" style="color:#9ca3af; font-size:7.5pt;">{{ loop.index }}</td>
+          <td class="td-code">
+            {% if row.item.item_code %}{{ row.item.item_code }}{% else %}<span style="color:#ccc;">—</span>{% endif %}
+          </td>
+          <td class="td-name">
+            {{ row.item.name_ar }}
+            {% if row.item.packaging_note %}
+            <span class="pkg-note">{{ row.item.packaging_note }}</span>
+            {% endif %}
+          </td>
+          <td class="td-num" style="font-size:8pt;">{{ row.item.effective_base_unit.name_ar }}</td>
+          <td class="td-num">{{ fmtnum(row.first_qty) }}</td>
+          <td class="td-num">{{ fmtnum(row.last_qty) }}</td>
+          <td class="td-num">
+            {% if row.trend == 'up' %}
+            <span class="mv mv-up">+{{ fmtnum(abs_ch) }}</span>
+            {% elif row.trend == 'down' %}
+            <span class="mv mv-down">-{{ fmtnum(abs_ch) }}</span>
+            {% else %}
+            <span class="mv mv-flat">—</span>
+            {% endif %}
+          </td>
+          <td class="td-num">
+            {% if row.minimum_stock > 0 %}
+              {% if row.low_stock %}
+              <span style="color:#dc3545; font-weight:700;">▲ {{ fmtnum(row.minimum_stock) }}</span>
+              {% else %}
+              <span style="color:#856404;">{{ fmtnum(row.minimum_stock) }}</span>
+              {% endif %}
+            {% else %}<span style="color:#ccc;">—</span>{% endif %}
+          </td>
+          <td class="td-num" style="color:#9aaa9a;">{{ fmtnum(row.min_qty) }}</td>
+          <td class="td-num" style="color:#9aaa9a;">{{ fmtnum(row.max_qty) }}</td>
+          <td class="td-num" style="color:#6c757d;">{{ row.entry_count }}</td>
+          <td class="td-num" style="font-size:7.5pt; color:#9aaa9a;">
+            {{ row.first_date.strftime('%Y-%m-%d') if row.first_date else '—' }}
+          </td>
+          <td class="td-num" style="font-size:7.5pt; color:#9aaa9a;">
+            {{ row.last_date.strftime('%Y-%m-%d') if row.last_date else '—' }}
+          </td>
+        </tr>
+        {% endfor %}
+
+      </tbody>
+      <!-- Department totals footer -->
+      <tfoot>
+        <tr class="dept-total">
+          <td colspan="2"></td>
+          <td class="td-name">إجمالي {{ group.dept_name }}</td>
+          <td></td>
+          <td class="td-num">{{ fmtnum(dept_first.v) }}</td>
+          <td class="td-num">{{ fmtnum(dept_last.v) }}</td>
+          <td class="td-num">
+            {% set abs_dch = dept_change.v | abs %}
+            {% if dept_change.v > 0.001 %}
+            <span class="mv mv-up">+{{ fmtnum(abs_dch) }}</span>
+            {% elif dept_change.v < -0.001 %}
+            <span class="mv mv-down">-{{ fmtnum(abs_dch) }}</span>
+            {% else %}
+            <span class="mv mv-flat">—</span>
+            {% endif %}
+          </td>
+          <td colspan="6"></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  {% endfor %}
+
+  {% endif %}
+
+</div><!-- /.pdf-wrapper -->
+
+<script>
+window.addEventListener('load', function () {
+  setTimeout(function () {
+    window.print();
+    window.onafterprint = function () { window.close(); };
+  }, 600);
+});
+</script>
+
+</body>
+</html>
