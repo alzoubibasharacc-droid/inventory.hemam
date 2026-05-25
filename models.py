@@ -1,7 +1,11 @@
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime
+from datetime import datetime, timezone
+
+
+def _now():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 db = SQLAlchemy()
 
@@ -163,13 +167,13 @@ class InventoryCount(db.Model):
     entered_quantity = db.Column(db.Float, nullable=True)
     entered_unit_id = db.Column(db.Integer, db.ForeignKey('units.id'), nullable=True)
 
-    count_date = db.Column(db.Date, nullable=False, default=datetime.utcnow().date)
+    count_date = db.Column(db.Date, nullable=False, default=lambda: _now().date())
     month = db.Column(db.Integer, nullable=False)
     year = db.Column(db.Integer, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     notes = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=_now)
+    updated_at = db.Column(db.DateTime, default=_now, onupdate=_now)
 
     user = db.relationship('User', backref='counts')
     entered_unit = db.relationship('Unit', foreign_keys=[entered_unit_id])
@@ -195,7 +199,7 @@ class User(UserMixin, db.Model):
     branch_id = db.Column(db.Integer, db.ForeignKey('branches.id'), nullable=True)
     department_id = db.Column(db.Integer, db.ForeignKey('departments.id'), nullable=True)
     is_active = db.Column(db.Boolean, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=_now)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)

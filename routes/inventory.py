@@ -360,7 +360,7 @@ def edit_entry(entry_id):
     entry.entered_quantity = entered_qty
     entry.entered_unit_id  = int(unit_id)
     entry.notes            = notes or None
-    entry.updated_at       = datetime.utcnow()
+    entry.updated_at       = datetime.now()
     db.session.commit()
 
     entered_unit = Unit.query.get(int(unit_id))
