@@ -253,9 +253,9 @@ def run_v4(conn):
             "WHERE table_name = 'units' AND column_name = 'is_active'"
         )).fetchone()
         if col_type_row and col_type_row[0] != 'boolean':
-            conn.execute(db.text(
-                'ALTER TABLE units ALTER COLUMN is_active TYPE BOOLEAN USING is_active::boolean'
-            ))
+            conn.execute(db.text('ALTER TABLE units ALTER COLUMN is_active DROP DEFAULT'))
+            conn.execute(db.text('ALTER TABLE units ALTER COLUMN is_active TYPE BOOLEAN USING is_active::boolean'))
+            conn.execute(db.text('ALTER TABLE units ALTER COLUMN is_active SET DEFAULT TRUE'))
             print('  ~ units.is_active converted INTEGER → BOOLEAN')
         else:
             print('  = units.is_active already present')
