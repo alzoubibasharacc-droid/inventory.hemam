@@ -243,9 +243,22 @@ def run_v4(conn):
         print('  = units.symbol already present')
 
     if not column_exists(conn, 'units', 'is_active'):
-        conn.execute(db.text('ALTER TABLE units ADD COLUMN is_active INTEGER DEFAULT 1'))
-        conn.execute(db.text('UPDATE units SET is_active = 1 WHERE is_active IS NULL'))
+        col_type = 'BOOLEAN DEFAULT TRUE' if not _is_sqlite(conn) else 'INTEGER DEFAULT 1'
+        conn.execute(db.text(f'ALTER TABLE units ADD COLUMN is_active {col_type}'))
+        conn.execute(db.text('UPDATE units SET is_active = TRUE WHERE is_active IS NULL'))
         print('  + units.is_active  (all existing set to active)')
+    elif not _is_sqlite(conn):
+        col_type_row = conn.execute(db.text(
+            "SELECT data_type FROM information_schema.columns "
+            "WHERE table_name = 'units' AND column_name = 'is_active'"
+        )).fetchone()
+        if col_type_row and col_type_row[0] != 'boolean':
+            conn.execute(db.text(
+                'ALTER TABLE units ALTER COLUMN is_active TYPE BOOLEAN USING is_active::boolean'
+            ))
+            print('  ~ units.is_active converted INTEGER → BOOLEAN')
+        else:
+            print('  = units.is_active already present')
     else:
         print('  = units.is_active already present')
 
