@@ -70,7 +70,12 @@ def import_items():
         return redirect(url_for('admin.import_items'))
 
     unit_map     = {u.name_ar.strip(): u for u in units}
-    dept_map     = {d.name_ar.strip(): d for d in departments}
+    # dept_map keyed by "branch_name / dept_name" to handle same-named depts in different branches
+    dept_map     = {d.name_ar.strip(): d for d in departments}          # fallback: name only
+    dept_map_full = {
+        f'{d.branch.name_ar.strip()} / {d.name_ar.strip()}': d
+        for d in departments
+    }
     cat_map      = {c.name_ar.strip(): c for c in Category.query.all()}
     units_created      = 0
     imported = updated = skipped = 0
@@ -105,9 +110,10 @@ def import_items():
             continue
 
         # Resolve per-row department (optional override of form selection)
+        # Accepts either "فرع / قسم" (unambiguous) or "قسم" alone (first match)
         row_dept_id = dept_id
         if dept_name:
-            d_obj = dept_map.get(dept_name)
+            d_obj = dept_map_full.get(dept_name) or dept_map.get(dept_name)
             if d_obj:
                 row_dept_id = d_obj.id
             else:
@@ -141,7 +147,9 @@ def import_items():
             except ValueError:
                 errors.append(f'السطر {i}: الحد الأدنى "{min_qty_s}" غير صالح — تم تجاهله')
 
-        # ── Detect: find existing item by code first, then by name + dept ─────
+        # ── Detect: find existing item scoped to name + department ──────────
+        # Matching is always dept-scoped so items in different sections are
+        # treated as independent records even when they share the same name.
         existing_item = None
 
         if item_code:
@@ -150,9 +158,28 @@ def import_items():
                 skipped += 1
                 continue
             file_codes_seen.add(item_code)
-            existing_item = Item.query.filter_by(item_code=item_code).first()
+            # Match code only within the target department
+            existing_item = Item.query.filter_by(
+                item_code=item_code, department_id=row_dept_id
+            ).first()
+            # If the code belongs to a different department, warn and skip
+            if existing_item is None:
+                cross = Item.query.filter(
+                    Item.item_code == item_code,
+                    Item.department_id != row_dept_id,
+                ).first()
+                if cross:
+                    errors.append(
+                        f'السطر {i}: كود "{item_code}" مسجل في قسم '
+                        f'"{cross.department.name_ar}" وليس في القسم المستهدف — '
+                        f'لا يمكن استخدام نفس الكود في قسمين مختلفين — تخطي'
+                    )
+                    skipped += 1
+                    continue
 
         if existing_item is None:
+            # Name match is always dept-scoped — same name in a different section
+            # is a completely separate item and will never be touched here.
             existing_item = Item.query.filter_by(
                 name_ar=name_ar, department_id=row_dept_id
             ).first()
@@ -210,9 +237,6 @@ def import_items():
             if cat_obj:
                 existing_item.category_id = cat_obj.id
                 changed.append('الفئة')
-            if dept_name and row_dept_id != existing_item.department_id:
-                existing_item.department_id = row_dept_id
-                changed.append('القسم')
             if unit_obj:
                 existing_item.unit_id      = unit_obj.id
                 existing_item.base_unit_id = unit_obj.id
