@@ -4,7 +4,7 @@ services:
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: python migrate.py && gunicorn "app:create_app()"
+    startCommand: python migrate.py && gunicorn --bind "0.0.0.0:$PORT" --workers 2 --timeout 120 "app:create_app()"
     envVars:
       - key: SECRET_KEY
         generateValue: true

@@ -1,5 +1,5 @@
 from flask import render_template, request, redirect, url_for, flash
-from models import db, Item, Unit, Department, Branch, Category, ItemUnitConversion
+from models import db, Item, Unit, Department, Branch, Category, ItemUnitConversion, InventoryCount
 from utils.decorators import manager_required
 from routes.admin import admin_bp
 
@@ -95,6 +95,144 @@ def items():
         selected_branch=branch_filter,
         selected_dept=dept_filter,
         search_q=search_q,
+    )
+
+
+@admin_bp.route('/items/<int:item_id>/edit', methods=['GET', 'POST'])
+@manager_required
+def edit_item(item_id):
+    item = Item.query.get_or_404(item_id)
+
+    if request.method == 'POST':
+        action = request.form.get('action')
+
+        if action == 'save_item':
+            code = request.form.get('item_code', '').strip() or None
+            if code and Item.query.filter(Item.item_code == code, Item.id != item_id).first():
+                flash(f'كود الصنف "{code}" مستخدم من قِبَل صنف آخر', 'danger')
+                return redirect(url_for('admin.edit_item', item_id=item_id))
+
+            new_base_id = int(request.form.get('base_unit_id') or item.effective_base_unit_id)
+            if new_base_id != item.effective_base_unit_id:
+                if InventoryCount.query.filter_by(item_id=item_id).first():
+                    flash(
+                        'تحذير: تم تغيير الوحدة الأساسية. '
+                        'الكميات المخزنة مسبقاً تشير إلى الوحدة القديمة — راجع التقارير.',
+                        'warning',
+                    )
+                item.unit_id = new_base_id
+                item.base_unit_id = new_base_id
+                base_conv = ItemUnitConversion.query.filter_by(
+                    item_id=item_id, unit_id=new_base_id
+                ).first()
+                if not base_conv:
+                    db.session.add(ItemUnitConversion(
+                        item_id=item_id, unit_id=new_base_id, multiplier=1.0
+                    ))
+                else:
+                    base_conv.multiplier = 1.0
+
+            item.item_code      = code
+            item.name_ar        = request.form.get('name_ar', '').strip()
+            item.name_en        = request.form.get('name_en', '').strip()
+            item.packaging_note = request.form.get('packaging_note', '').strip() or None
+            item.department_id  = int(request.form['department_id'])
+            item.category_id    = request.form.get('category_id') or None
+            item.minimum_stock  = _parse_min_stock(request.form.get('minimum_stock', ''))
+            item.min_quantity   = item.minimum_stock
+            item.is_active      = request.form.get('is_active') == '1'
+            db.session.commit()
+            flash('تم حفظ التغييرات بنجاح', 'success')
+            return redirect(url_for('admin.edit_item', item_id=item_id))
+
+        elif action == 'add_conv':
+            unit_id = int(request.form['unit_id'])
+            try:
+                multiplier = float(request.form['multiplier'])
+                if multiplier <= 0:
+                    raise ValueError
+            except (ValueError, TypeError):
+                flash('المعامل يجب أن يكون رقماً أكبر من صفر', 'danger')
+                return redirect(url_for('admin.edit_item', item_id=item_id) + '#conversions')
+
+            existing = ItemUnitConversion.query.filter_by(
+                item_id=item_id, unit_id=unit_id
+            ).first()
+            if existing:
+                existing.multiplier = multiplier
+                flash('تم تحديث معامل التحويل', 'info')
+            else:
+                db.session.add(ItemUnitConversion(
+                    item_id=item_id, unit_id=unit_id, multiplier=multiplier
+                ))
+                flash('تم إضافة وحدة التحويل', 'success')
+            db.session.commit()
+            return redirect(url_for('admin.edit_item', item_id=item_id) + '#conversions')
+
+        elif action == 'edit_conv':
+            conv = ItemUnitConversion.query.get_or_404(int(request.form['conv_id']))
+            if conv.item_id != item_id:
+                flash('خطأ في البيانات', 'danger')
+                return redirect(url_for('admin.edit_item', item_id=item_id))
+            if conv.unit_id == item.effective_base_unit_id:
+                flash('لا يمكن تعديل معامل الوحدة الأساسية', 'warning')
+                return redirect(url_for('admin.edit_item', item_id=item_id) + '#conversions')
+            try:
+                mult = float(request.form['multiplier'])
+                if mult <= 0:
+                    raise ValueError
+            except (ValueError, TypeError):
+                flash('المعامل يجب أن يكون رقماً أكبر من صفر', 'danger')
+                return redirect(url_for('admin.edit_item', item_id=item_id) + '#conversions')
+            conv.multiplier = mult
+            db.session.commit()
+            flash('تم تحديث معامل التحويل', 'success')
+            return redirect(url_for('admin.edit_item', item_id=item_id) + '#conversions')
+
+        elif action == 'delete_conv':
+            conv = ItemUnitConversion.query.get_or_404(int(request.form['conv_id']))
+            if conv.item_id != item_id:
+                flash('خطأ في البيانات', 'danger')
+                return redirect(url_for('admin.edit_item', item_id=item_id))
+            is_base = conv.unit_id == item.effective_base_unit_id
+            total   = ItemUnitConversion.query.filter_by(item_id=item_id).count()
+            if is_base and total <= 1:
+                flash('لا يمكن حذف الوحدة الأساسية الوحيدة للصنف', 'danger')
+                return redirect(url_for('admin.edit_item', item_id=item_id) + '#conversions')
+            unit_name  = conv.unit.name_ar
+            used       = InventoryCount.query.filter_by(
+                item_id=item_id, entered_unit_id=conv.unit_id
+            ).first() is not None
+            db.session.delete(conv)
+            db.session.commit()
+            if used:
+                flash(
+                    f'تم حذف وحدة "{unit_name}". '
+                    'تحذير: هذه الوحدة مستخدمة في سجلات جرد سابقة (السجلات محفوظة).',
+                    'warning',
+                )
+            else:
+                flash(f'تم حذف وحدة "{unit_name}"', 'info')
+            return redirect(url_for('admin.edit_item', item_id=item_id) + '#conversions')
+
+        return redirect(url_for('admin.edit_item', item_id=item_id))
+
+    conversions = (
+        ItemUnitConversion.query
+        .filter_by(item_id=item_id)
+        .order_by(ItemUnitConversion.multiplier)
+        .all()
+    )
+    return render_template(
+        'admin/item_edit.html',
+        item=item,
+        conversions=conversions,
+        branches=Branch.query.all(),
+        departments=Department.query.all(),
+        categories=Category.query.all(),
+        units=Unit.query.filter_by(is_active=True).order_by(Unit.name_ar).all(),
+        all_units=Unit.query.order_by(Unit.name_ar).all(),
+        has_counts=InventoryCount.query.filter_by(item_id=item_id).first() is not None,
     )
 
 

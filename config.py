@@ -1,10 +1,20 @@
 import os
+import sys
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
+_secret = os.environ.get('SECRET_KEY', 'hamam-dev-only-secret-change-me')
+# Fail loudly in production if the default key is still in use
+if _secret == 'hamam-dev-only-secret-change-me' and not os.environ.get('FLASK_DEBUG'):
+    print(
+        'WARNING: SECRET_KEY is not set. Using insecure default. '
+        'Set the SECRET_KEY environment variable in production.',
+        file=sys.stderr,
+    )
+
 
 class Config:
-    SECRET_KEY = os.environ.get('SECRET_KEY', 'hamam-inventory-secret-2024')
+    SECRET_KEY = _secret
 
     _db_url = os.environ.get('DATABASE_URL', f"sqlite:///{os.path.join(BASE_DIR, 'inventory.db')}")
     # Render provides postgres:// but SQLAlchemy 2.x requires postgresql://

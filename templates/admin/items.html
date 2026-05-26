@@ -219,7 +219,7 @@
                         </td>
                         <td>
                             {% set n = item.conversions | length %}
-                            <a href="{{ url_for('admin.item_conversions', item_id=item.id) }}"
+                            <a href="{{ url_for('admin.edit_item', item_id=item.id) }}#conversions"
                                class="btn btn-sm btn-outline-primary">
                                 <i class="bi bi-arrow-left-right me-1"></i>
                                 {{ n }} وحدة
@@ -235,13 +235,12 @@
                         </td>
                         <td>
                             <div class="d-flex gap-1">
-                                <!-- Edit button -->
-                                <button type="button"
-                                        class="btn btn-sm btn-outline-secondary"
-                                        onclick="openEditModal({{ item.id }}, '{{ item.packaging_note | default('', true) | replace("'", "\\'") }}', {{ ms }})">
+                                <!-- Full edit page -->
+                                <a href="{{ url_for('admin.edit_item', item_id=item.id) }}"
+                                   class="btn btn-sm btn-outline-secondary">
                                     <i class="bi bi-pencil"></i>
-                                </button>
-                                <!-- Toggle button -->
+                                </a>
+                                <!-- Quick toggle -->
                                 <form method="POST" class="d-inline">
                                     <input type="hidden" name="action"  value="toggle">
                                     <input type="hidden" name="item_id" value="{{ item.id }}">
@@ -266,51 +265,6 @@
     </div>
 </div>
 
-<!-- Edit Item Modal -->
-<div class="modal fade" id="editItemModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <form method="POST" id="editItemForm">
-                <input type="hidden" name="action"  value="edit">
-                <input type="hidden" name="item_id" id="editItemId">
-                <div class="modal-header" style="background:var(--brand-olive); color:#fff;">
-                    <h5 class="modal-title">
-                        <i class="bi bi-pencil me-2"></i>تعديل الصنف
-                    </h5>
-                    <button type="button" class="btn-close btn-close-white"
-                            data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label">ملاحظة التغليف</label>
-                        <input type="text" name="packaging_note" id="editPkgNote"
-                               class="form-control" maxlength="300"
-                               placeholder="مثال: 24 زجاجة في الكرتون...">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">
-                            <i class="bi bi-exclamation-triangle me-1 text-warning"></i>
-                            الحد الأدنى للمخزون
-                        </label>
-                        <input type="number" name="minimum_stock" id="editMinStock"
-                               class="form-control" min="0" step="any" value="0">
-                        <div class="form-text">
-                            يظهر تحذير في التقارير عندما ينخفض المخزون عن هذا الرقم.
-                            اتركه 0 لتعطيل التحذير.
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary"
-                            data-bs-dismiss="modal">إلغاء</button>
-                    <button type="submit" class="btn btn-success">
-                        <i class="bi bi-check2 me-1"></i>حفظ التغييرات
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
 {% endblock %}
 
 {% block scripts %}
@@ -329,14 +283,6 @@ function filterDepts(branchId) {
         opt.style.display = (!branchId || opt.dataset.branch === branchId) ? '' : 'none';
     });
     select.value = '';
-}
-
-function openEditModal(itemId, pkgNote, minStock) {
-    document.getElementById('editItemId').value   = itemId;
-    document.getElementById('editPkgNote').value  = pkgNote;
-    document.getElementById('editMinStock').value = minStock;
-    var modal = new bootstrap.Modal(document.getElementById('editItemModal'));
-    modal.show();
 }
 </script>
 {% endblock %}

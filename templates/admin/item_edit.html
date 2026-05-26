@@ -1,0 +1,520 @@
+{% extends 'base.html' %}
+{% block title %}تعديل {{ item.name_ar }} - همم{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css">
+<style>
+.conv-row-editing { background: rgba(13,110,253,0.05); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+    <!-- Header -->
+    <div class="section-header mb-4">
+        <div class="section-icon"><i class="bi bi-pencil-square"></i></div>
+        <div>
+            <h4 class="mb-0">تعديل الصنف</h4>
+            <p class="text-muted mb-0 small">
+                {{ item.name_ar }}
+                {% if item.item_code %}
+                <span class="badge ms-1" style="background:var(--brand-olive); font-family:monospace;">
+                    {{ item.item_code }}
+                </span>
+                {% endif %}
+            </p>
+        </div>
+        <a href="{{ url_for('admin.items') }}" class="btn btn-outline-secondary btn-sm ms-auto">
+            <i class="bi bi-arrow-right me-1"></i>الأصناف
+        </a>
+    </div>
+
+    <!-- ── Item Info Form ─────────────────────────────────────────────────── -->
+    <form method="POST" id="itemForm">
+        <input type="hidden" name="action" value="save_item">
+
+        <div class="row g-4 mb-4">
+
+            <!-- Basic Info -->
+            <div class="col-12 col-lg-7">
+                <div class="card h-100">
+                    <div class="card-header" style="background:var(--brand-olive); color:#fff;">
+                        <i class="bi bi-type me-2"></i>المعلومات الأساسية
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-12 col-sm-8">
+                                <label class="form-label fw-semibold">اسم الصنف (عربي) *</label>
+                                <input type="text" name="name_ar" class="form-control"
+                                       required value="{{ item.name_ar }}">
+                            </div>
+                            <div class="col-12 col-sm-4">
+                                <label class="form-label fw-semibold">كود الصنف
+                                    <span class="text-muted fw-normal small">(للإدارة)</span>
+                                </label>
+                                <input type="text" name="item_code"
+                                       class="form-control font-monospace"
+                                       maxlength="50"
+                                       value="{{ item.item_code or '' }}"
+                                       placeholder="مثال: ITM-001">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-semibold">اسم الصنف (إنجليزي)</label>
+                                <input type="text" name="name_en" class="form-control"
+                                       value="{{ item.name_en or '' }}"
+                                       placeholder="English name (optional)">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-semibold">
+                                    ملاحظة التغليف
+                                    <span class="text-muted fw-normal small">
+                                        (تظهر للموظفين أثناء الجرد)
+                                    </span>
+                                </label>
+                                <input type="text" name="packaging_note" class="form-control"
+                                       maxlength="300"
+                                       value="{{ item.packaging_note or '' }}"
+                                       placeholder="مثال: 24 زجاجة في الكرتون، كيس أحمر كبير...">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Organisation & Status -->
+            <div class="col-12 col-lg-5">
+                <div class="card h-100">
+                    <div class="card-header" style="background:var(--brand-olive); color:#fff;">
+                        <i class="bi bi-diagram-3 me-2"></i>التنظيم والحالة
+                    </div>
+                    <div class="card-body d-flex flex-column gap-3">
+
+                        <div>
+                            <label class="form-label fw-semibold">الفرع</label>
+                            <select id="branch-filter" class="form-select"
+                                    onchange="filterDepts(this.value)">
+                                <option value="">-- الكل --</option>
+                                {% for b in branches %}
+                                <option value="{{ b.id }}"
+                                    {% if b.id == item.department.branch_id %}selected{% endif %}>
+                                    {{ b.name_ar }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="form-label fw-semibold">القسم *</label>
+                            <select name="department_id" id="dept-select"
+                                    class="form-select" required>
+                                {% for d in departments %}
+                                <option value="{{ d.id }}" data-branch="{{ d.branch_id }}"
+                                    {% if d.id == item.department_id %}selected{% endif %}>
+                                    {{ d.name_ar }} — {{ d.branch.name_ar }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="form-label fw-semibold">الفئة</label>
+                            <select name="category_id" id="cat-select" class="form-select">
+                                <option value="">— بدون فئة —</option>
+                                {% for c in categories %}
+                                <option value="{{ c.id }}"
+                                    {% if item.category_id == c.id %}selected{% endif %}>
+                                    {{ c.name_ar }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="form-label fw-semibold">الحالة</label>
+                            <div class="d-flex gap-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio"
+                                           name="is_active" id="statusActive" value="1"
+                                           {% if item.is_active %}checked{% endif %}>
+                                    <label class="form-check-label" for="statusActive">
+                                        <span class="badge" style="background:var(--brand-green);">نشط</span>
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio"
+                                           name="is_active" id="statusInactive" value="0"
+                                           {% if not item.is_active %}checked{% endif %}>
+                                    <label class="form-check-label" for="statusInactive">
+                                        <span class="badge bg-secondary">موقوف</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Inventory Settings -->
+        <div class="card mb-4">
+            <div class="card-header" style="background:var(--brand-olive); color:#fff;">
+                <i class="bi bi-boxes me-2"></i>إعدادات المخزون
+            </div>
+            <div class="card-body">
+                <div class="row g-3 align-items-start">
+                    <div class="col-12 col-md-5">
+                        <label class="form-label fw-semibold">الوحدة الأساسية *
+                            <span class="text-muted fw-normal small">(وحدة التخزين الداخلي)</span>
+                        </label>
+                        <select name="base_unit_id" id="base-unit-select"
+                                class="form-select" required>
+                            {% for u in all_units %}
+                            <option value="{{ u.id }}"
+                                {% if u.id == item.effective_base_unit_id %}selected{% endif %}>
+                                {{ u.name_ar }}{% if u.symbol %} ({{ u.symbol }}){% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        {% if has_counts %}
+                        <div class="form-text text-warning fw-semibold">
+                            <i class="bi bi-exclamation-triangle me-1"></i>
+                            يوجد جرد مسبق — تغيير الوحدة يؤثر على دقة التقارير
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label fw-semibold">الحد الأدنى للمخزون</label>
+                        <div class="input-group">
+                            <input type="number" name="minimum_stock" class="form-control"
+                                   min="0" step="any"
+                                   value="{{ item.effective_minimum_stock }}">
+                            <span class="input-group-text small">
+                                {{ item.effective_base_unit.name_ar }}
+                            </span>
+                        </div>
+                        <div class="form-text">تحذير في التقارير عند الانخفاض تحت هذا الرقم</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex gap-2 mb-5">
+            <button type="submit" class="btn btn-success btn-lg px-5 fw-bold">
+                <i class="bi bi-check2-circle me-2"></i>حفظ التغييرات
+            </button>
+            <a href="{{ url_for('admin.items') }}" class="btn btn-outline-secondary btn-lg">
+                إلغاء
+            </a>
+        </div>
+    </form>
+
+    <!-- ── Unit Conversions ───────────────────────────────────────────────── -->
+    <div id="conversions">
+        <div class="section-header mb-3">
+            <div class="section-icon"><i class="bi bi-arrow-left-right"></i></div>
+            <h5 class="mb-0">وحدات التحويل</h5>
+        </div>
+
+        {% set base_unit = item.effective_base_unit %}
+        <div class="alert d-flex align-items-center gap-3 mb-4"
+             style="background:rgba(242,135,5,0.1); border:none; border-right:4px solid var(--brand-orange);">
+            <i class="bi bi-info-circle fs-5" style="color:var(--brand-orange);"></i>
+            <div>
+                الوحدة الأساسية: <strong>{{ base_unit.name_ar }}</strong>
+                — جميع الكميات تُخزَّن داخلياً بهذه الوحدة.
+                <span class="text-muted">
+                    المعامل = كم <strong>{{ base_unit.name_ar }}</strong> يحتوي عليها 1 من الوحدة المضافة.
+                </span>
+            </div>
+        </div>
+
+        <div class="row g-4">
+
+            <!-- Conversions table -->
+            <div class="col-12 col-lg-8">
+                <div class="card">
+                    <div class="card-header" style="background:var(--brand-olive); color:#fff;">
+                        <i class="bi bi-list-ul me-2"></i>الوحدات المعرَّفة
+                        <span class="badge bg-white text-dark ms-2">{{ conversions|length }}</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0" id="convTable">
+                            <thead>
+                                <tr>
+                                    <th>الوحدة</th>
+                                    <th class="text-center">المعامل</th>
+                                    <th class="text-center">المكافئ</th>
+                                    <th class="text-center" style="width:130px;">إجراء</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for conv in conversions %}
+                                {% set is_base = (conv.unit_id == item.effective_base_unit_id) %}
+                                {% set only_conv = (conversions|length <= 1) %}
+                                {% set mult_display = (conv.multiplier | int)
+                                    if conv.multiplier == (conv.multiplier | int)
+                                    else (conv.multiplier | round(4)) %}
+                                <tr id="conv-row-{{ conv.id }}">
+                                    <td class="fw-semibold">
+                                        {{ conv.unit.name_ar }}
+                                        {% if is_base %}
+                                        <span class="badge ms-1"
+                                              style="background:var(--brand-green); font-size:0.7rem;">
+                                            أساسية
+                                        </span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="badge conv-mult-badge-{{ conv.id }}"
+                                              style="background:var(--brand-orange);">
+                                            × {{ mult_display }}
+                                        </span>
+                                    </td>
+                                    <td class="text-center text-muted small">
+                                        1 {{ conv.unit.name_ar }} =
+                                        <strong>{{ mult_display }}</strong>
+                                        {{ base_unit.name_ar }}
+                                    </td>
+                                    <td class="text-center">
+                                        <div class="d-flex gap-1 justify-content-center">
+                                            {% if not is_base %}
+                                            <button type="button"
+                                                    class="btn btn-sm btn-outline-primary"
+                                                    onclick="openEditConv({{ conv.id }}, '{{ conv.unit.name_ar | replace("'", "\\'") }}', {{ conv.multiplier }})">
+                                                <i class="bi bi-pencil"></i>
+                                            </button>
+                                            {% endif %}
+                                            {% if not (is_base and only_conv) %}
+                                            <form method="POST" class="d-inline conv-del-form"
+                                                  data-unit="{{ conv.unit.name_ar }}">
+                                                <input type="hidden" name="action" value="delete_conv">
+                                                <input type="hidden" name="conv_id" value="{{ conv.id }}">
+                                                <button type="submit"
+                                                        class="btn btn-sm btn-outline-danger">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </form>
+                                            {% else %}
+                                            <span class="text-muted small px-2">محمية</span>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="4" class="text-center text-muted py-4">
+                                        <i class="bi bi-inbox d-block mb-2 fs-4"></i>
+                                        لا توجد وحدات — أضف الوحدة الأساسية أولاً
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {% if conversions %}
+                    <!-- Quick reference table -->
+                    <div class="card-footer bg-transparent p-0">
+                        <details>
+                            <summary class="px-3 py-2 text-muted small"
+                                     style="cursor:pointer; list-style:none; user-select:none;">
+                                <i class="bi bi-calculator me-1"></i>
+                                جدول التحويل السريع
+                            </summary>
+                            <div class="table-responsive border-top">
+                                <table class="table table-sm align-middle mb-0"
+                                       style="font-size:0.83rem;">
+                                    <thead style="background:#f8f9fa;">
+                                        <tr>
+                                            <th>الكمية المُدخَلة</th>
+                                            <th>تساوي ({{ base_unit.name_ar }})</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for conv in conversions %}
+                                        {% for qty in [1, 2, 5, 10] %}
+                                        {% set result = qty * conv.multiplier %}
+                                        <tr>
+                                            <td>{{ qty }} {{ conv.unit.name_ar }}</td>
+                                            <td class="fw-bold" style="color:var(--brand-orange);">
+                                                {{ (result | int) if result == (result | int) else (result | round(3)) }}
+                                                {{ base_unit.name_ar }}
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </details>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Add conversion -->
+            <div class="col-12 col-lg-4">
+                <div class="card">
+                    <div class="card-header" style="background:var(--brand-green); color:#fff;">
+                        <i class="bi bi-plus-circle me-2"></i>إضافة وحدة تحويل
+                    </div>
+                    <div class="card-body">
+                        <form method="POST" id="addConvForm">
+                            <input type="hidden" name="action" value="add_conv">
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">الوحدة</label>
+                                <select name="unit_id" id="conv-unit-select"
+                                        class="form-select" required>
+                                    <option value="">— اختر الوحدة —</option>
+                                    {% for u in units %}
+                                    <option value="{{ u.id }}">{{ u.name_ar }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">
+                                    المعامل
+                                    <span class="text-muted fw-normal small">
+                                        (كم {{ base_unit.name_ar }}؟)
+                                    </span>
+                                </label>
+                                <input type="number" name="multiplier" id="conv-mult"
+                                       class="form-control" required step="any"
+                                       min="0.001" placeholder="مثال: 24">
+                                <div class="form-text fw-semibold" id="conv-preview"
+                                     style="color:var(--brand-orange); min-height:1.2em;"></div>
+                            </div>
+                            <div class="alert alert-info small py-2 mb-3">
+                                <strong>مثال:</strong> إذا الوحدة الأساسية
+                                <em>{{ base_unit.name_ar }}</em> وتضيف
+                                <em>كرتون</em> يحتوي 24، فالمعامل = <strong>24</strong>.
+                            </div>
+                            <button type="submit" class="btn btn-success w-100 fw-bold">
+                                <i class="bi bi-plus-circle me-2"></i>إضافة / تحديث
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div><!-- /conversions -->
+
+</div><!-- /container -->
+
+<!-- ── Edit Conversion Modal ──────────────────────────────────────────────── -->
+<div class="modal fade" id="editConvModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <form method="POST" id="editConvForm">
+                <input type="hidden" name="action" value="edit_conv">
+                <input type="hidden" name="conv_id" id="editConvId">
+                <div class="modal-header" style="background:var(--brand-olive); color:#fff;">
+                    <h6 class="modal-title">
+                        <i class="bi bi-pencil me-2"></i>تعديل معامل التحويل
+                    </h6>
+                    <button type="button" class="btn-close btn-close-white"
+                            data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small mb-2">
+                        الوحدة: <strong id="editConvUnitName"></strong>
+                    </p>
+                    <label class="form-label fw-semibold">
+                        المعامل الجديد
+                        <span class="text-muted fw-normal small">
+                            (كم {{ base_unit.name_ar }}؟)
+                        </span>
+                    </label>
+                    <input type="number" name="multiplier" id="editConvMult"
+                           class="form-control" required step="any" min="0.001">
+                    <div class="form-text" id="editConvPreview"
+                         style="color:var(--brand-orange); min-height:1.2em;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm"
+                            data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-success btn-sm">
+                        <i class="bi bi-check2 me-1"></i>حفظ
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+<script>
+const BASE_UNIT = '{{ base_unit.name_ar }}';
+
+// ── TomSelect ────────────────────────────────────────────────────────────────
+new TomSelect('#base-unit-select', { maxItems: 1, allowEmptyOption: false });
+new TomSelect('#cat-select',       { maxItems: 1, allowEmptyOption: true  });
+
+// ── Branch → Department filter ────────────────────────────────────────────────
+function filterDepts(branchId) {
+    var sel = document.getElementById('dept-select');
+    Array.from(sel.options).forEach(function(opt) {
+        if (!opt.value) return;
+        opt.style.display = (!branchId || opt.dataset.branch === branchId) ? '' : 'none';
+    });
+    // keep current selection if still visible
+    var cur = sel.options[sel.selectedIndex];
+    if (cur && cur.style.display === 'none') sel.value = '';
+}
+// apply on load
+filterDepts(document.getElementById('branch-filter').value);
+
+// ── Add-conversion live preview ───────────────────────────────────────────────
+var convUnitSel  = document.getElementById('conv-unit-select');
+var convMultInp  = document.getElementById('conv-mult');
+var convPreview  = document.getElementById('conv-preview');
+
+function updateAddPreview() {
+    var unitOpt = convUnitSel.options[convUnitSel.selectedIndex];
+    var unitName = (unitOpt && unitOpt.value) ? unitOpt.text.trim() : '';
+    var mult = parseFloat(convMultInp.value);
+    convPreview.textContent =
+        (unitName && mult > 0)
+            ? '1 ' + unitName + ' = ' + mult + ' ' + BASE_UNIT
+            : '';
+}
+convUnitSel.addEventListener('change', updateAddPreview);
+convMultInp.addEventListener('input',  updateAddPreview);
+
+// ── Edit-conversion modal ─────────────────────────────────────────────────────
+var editConvMult    = document.getElementById('editConvMult');
+var editConvPreview = document.getElementById('editConvPreview');
+var _editUnitName   = '';
+
+function openEditConv(convId, unitName, currentMult) {
+    _editUnitName = unitName;
+    document.getElementById('editConvId').value      = convId;
+    document.getElementById('editConvUnitName').textContent = unitName;
+    editConvMult.value = currentMult;
+    updateEditPreview();
+    new bootstrap.Modal(document.getElementById('editConvModal')).show();
+}
+
+function updateEditPreview() {
+    var mult = parseFloat(editConvMult.value);
+    editConvPreview.textContent =
+        (mult > 0)
+            ? '1 ' + _editUnitName + ' = ' + mult + ' ' + BASE_UNIT
+            : '';
+}
+editConvMult.addEventListener('input', updateEditPreview);
+
+// ── Delete confirmation ───────────────────────────────────────────────────────
+document.querySelectorAll('.conv-del-form').forEach(function(form) {
+    form.addEventListener('submit', function(e) {
+        if (!confirm('حذف وحدة "' + this.dataset.unit + '"؟\nسجلات الجرد السابقة لن تتأثر.')) {
+            e.preventDefault();
+        }
+    });
+});
+</script>
+{% endblock %}

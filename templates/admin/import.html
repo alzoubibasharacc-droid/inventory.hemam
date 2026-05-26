@@ -34,7 +34,7 @@
                                 {% endfor %}
                             </select>
 
-                            <label class="form-label">القسم *</label>
+                            <label class="form-label">القسم الافتراضي *</label>
                             <select name="department_id" id="dept-sel"
                                     class="form-select" required>
                                 <option value="">-- اختر القسم --</option>
@@ -44,6 +44,7 @@
                                 </option>
                                 {% endfor %}
                             </select>
+                            <div class="form-text">يُستخدم للأصناف الجديدة وكقيمة افتراضية عند غياب عمود القسم في الملف.</div>
                         </div>
 
                         <div class="upload-zone mb-3" id="uploadZone"
@@ -76,6 +77,15 @@
                             </div>
                         </div>
 
+                        <!-- Smart update notice -->
+                        <div class="alert alert-info py-2 px-3 mb-3" style="font-size:0.85rem;">
+                            <i class="bi bi-arrow-repeat me-1"></i>
+                            <strong>تحديث ذكي:</strong>
+                            إذا وُجد الصنف مسبقاً (بنفس الكود أو الاسم في القسم)
+                            يتم تحديثه تلقائياً بدلاً من إنشاء نسخة مكررة.
+                            الحقول الفارغة في الملف لا تُستبدل.
+                        </div>
+
                         <button type="submit"
                                 class="btn btn-primary w-100 btn-lg fw-bold mt-2">
                             <i class="bi bi-cloud-upload me-2"></i>ابدأ الاستيراد
@@ -103,64 +113,69 @@
                                     <th>اسم العمود</th>
                                     <th>الوصف</th>
                                     <th class="text-center">إلزامي</th>
+                                    <th class="text-center">يُحدَّث</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr>
                                     <td class="fw-bold font-monospace">الصنف</td>
-                                    <td>اسم الصنف بالعربية</td>
-                                    <td class="text-center">
-                                        <span class="badge bg-danger">نعم</span>
-                                    </td>
+                                    <td>اسم الصنف بالعربية — يُستخدم للكشف عن التكرار</td>
+                                    <td class="text-center"><span class="badge bg-danger">نعم</span></td>
+                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
                                 </tr>
                                 <tr>
                                     <td class="fw-bold font-monospace">الوحدة</td>
                                     <td>الوحدة الأساسية للتخزين</td>
-                                    <td class="text-center">
-                                        <span class="badge bg-danger">نعم</span>
-                                    </td>
+                                    <td class="text-center"><span class="badge bg-danger">للجديد</span></td>
+                                    <td class="text-center"><span class="badge bg-success">نعم</span></td>
                                 </tr>
                                 <tr style="background:rgba(242,135,5,0.06);">
                                     <td class="fw-bold font-monospace">الكود</td>
-                                    <td>كود الصنف (للإدارة فقط — لا يراه الموظفون)</td>
-                                    <td class="text-center">
-                                        <span class="badge bg-secondary">لا</span>
-                                    </td>
+                                    <td>كود الصنف — يُستخدم أولاً للكشف عن التكرار</td>
+                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
+                                    <td class="text-center"><span class="badge bg-secondary">إن فارغ</span></td>
                                 </tr>
                                 <tr style="background:rgba(41,88,49,0.06);">
                                     <td class="fw-bold font-monospace">ملاحظة التغليف</td>
-                                    <td>وصف التغليف أو طريقة التعرف على المنتج — يظهر للموظفين</td>
-                                    <td class="text-center">
-                                        <span class="badge bg-secondary">لا</span>
-                                    </td>
+                                    <td>وصف التغليف — يظهر للموظفين</td>
+                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
+                                    <td class="text-center"><span class="badge bg-success">نعم</span></td>
                                 </tr>
                                 <tr>
                                     <td class="fw-bold font-monospace">الحد الأدنى</td>
                                     <td>الحد الأدنى للكمية (رقم)</td>
-                                    <td class="text-center">
-                                        <span class="badge bg-secondary">لا</span>
-                                    </td>
+                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
+                                    <td class="text-center"><span class="badge bg-success">نعم</span></td>
+                                </tr>
+                                <tr>
+                                    <td class="fw-bold font-monospace">الفئة</td>
+                                    <td>اسم الفئة (يجب أن تكون موجودة في النظام)</td>
+                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
+                                    <td class="text-center"><span class="badge bg-success">نعم</span></td>
+                                </tr>
+                                <tr>
+                                    <td class="fw-bold font-monospace">القسم</td>
+                                    <td>تحديد قسم مختلف لكل صنف (يتجاوز القسم الافتراضي)</td>
+                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
+                                    <td class="text-center"><span class="badge bg-success">نعم</span></td>
                                 </tr>
                                 <tr>
                                     <td class="fw-bold font-monospace">الوحدة2 / المعامل2</td>
-                                    <td>وحدة تحويل إضافية ومعاملها (كم وحدة أساسية في هذه الوحدة)</td>
-                                    <td class="text-center">
-                                        <span class="badge bg-secondary">لا</span>
-                                    </td>
+                                    <td>وحدة تحويل إضافية ومعاملها</td>
+                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
+                                    <td class="text-center"><span class="badge bg-success">نعم</span></td>
                                 </tr>
                                 <tr>
                                     <td class="fw-bold font-monospace">الوحدة3 / المعامل3</td>
                                     <td>وحدة تحويل ثالثة ومعاملها</td>
-                                    <td class="text-center">
-                                        <span class="badge bg-secondary">لا</span>
-                                    </td>
+                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
+                                    <td class="text-center"><span class="badge bg-success">نعم</span></td>
                                 </tr>
                                 <tr>
                                     <td class="fw-bold font-monospace">name_en</td>
                                     <td>اسم الصنف بالإنجليزية</td>
-                                    <td class="text-center">
-                                        <span class="badge bg-secondary">لا</span>
-                                    </td>
+                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
+                                    <td class="text-center"><span class="badge bg-success">نعم</span></td>
                                 </tr>
                             </tbody>
                         </table>
@@ -184,6 +199,8 @@
                                     <th>الكود</th>
                                     <th>ملاحظة التغليف</th>
                                     <th>الوحدة</th>
+                                    <th>الفئة</th>
+                                    <th>الحد الأدنى</th>
                                     <th>الوحدة2</th>
                                     <th>المعامل2</th>
                                 </tr>
@@ -194,6 +211,8 @@
                                     <td>DRK-001</td>
                                     <td>24 زجاجة في الكرتون</td>
                                     <td>قطعة</td>
+                                    <td>مشروبات</td>
+                                    <td>48</td>
                                     <td>كرتون</td>
                                     <td>24</td>
                                 </tr>
@@ -202,6 +221,8 @@
                                     <td>GRN-005</td>
                                     <td>كيس أحمر كبير</td>
                                     <td>كيلوغرام</td>
+                                    <td>بقالة</td>
+                                    <td>100</td>
                                     <td>كيس</td>
                                     <td>50</td>
                                 </tr>
@@ -210,6 +231,8 @@
                                     <td></td>
                                     <td>زجاجة بلاستيك صفراء</td>
                                     <td>لتر</td>
+                                    <td></td>
+                                    <td></td>
                                     <td></td>
                                     <td></td>
                                 </tr>
@@ -253,13 +276,30 @@
     <!-- Import Results -->
     {% if imported is not none %}
     <div class="mt-4">
+
+        <!-- Summary stat cards -->
         <div class="row g-3 mb-4">
             <div class="col-6 col-md-3">
                 <div class="card stat-card success p-3 text-center">
                     <div class="fw-bold fs-2" style="color:var(--brand-green);">
                         {{ imported }}
                     </div>
-                    <div class="text-muted small fw-semibold">صنف مستورد</div>
+                    <div class="text-muted small fw-semibold">صنف جديد</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card p-3 text-center"
+                     style="border:2px solid #0d6efd;">
+                    <div class="fw-bold fs-2" style="color:#0d6efd;">
+                        {{ updated }}
+                    </div>
+                    <div class="text-muted small fw-semibold">صنف محدَّث</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card stat-card warning p-3 text-center">
+                    <div class="fw-bold fs-2" style="color:#e6a817;">{{ skipped }}</div>
+                    <div class="text-muted small fw-semibold">تم تخطيه</div>
                 </div>
             </div>
             {% if units_created %}
@@ -273,19 +313,33 @@
                 </div>
             </div>
             {% endif %}
-            <div class="col-6 col-md-3">
-                <div class="card stat-card warning p-3 text-center">
-                    <div class="fw-bold fs-2" style="color:#e6a817;">{{ skipped }}</div>
-                    <div class="text-muted small fw-semibold">تم تخطيه</div>
-                </div>
-            </div>
         </div>
 
+        <!-- Update notices -->
+        {% if notices %}
+        <div class="card mb-3">
+            <div class="card-header fw-bold" style="background:#cfe2ff; color:#084298;">
+                <i class="bi bi-arrow-repeat me-2"></i>
+                تفاصيل التحديثات ({{ notices|length }})
+            </div>
+            <div class="card-body p-0">
+                <ul class="list-group list-group-flush">
+                    {% for note in notices %}
+                    <li class="list-group-item list-group-item-primary small py-2">
+                        <i class="bi bi-pencil-square me-2"></i>{{ note }}
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Errors / warnings -->
         {% if errors %}
         <div class="card">
             <div class="card-header fw-bold" style="background:#fff3cd; color:#856404;">
                 <i class="bi bi-exclamation-triangle me-2"></i>
-                تفاصيل الأخطاء والتخطي ({{ errors|length }})
+                تفاصيل الأخطاء والتنبيهات ({{ errors|length }})
             </div>
             <div class="card-body p-0">
                 <ul class="list-group list-group-flush">

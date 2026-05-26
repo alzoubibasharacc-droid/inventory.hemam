@@ -98,5 +98,4 @@ def seed_data():
     db.session.add(admin)
 
     db.session.commit()
-    print("تم تهيئة قاعدة البيانات بنجاح")
-    print("المستخدم الافتراضي: admin / admin123")
+    print("تم تهيئة قاعدة البيانات بنجاح — يرجى تغيير كلمة مرور المدير فور تسجيل الدخول")
