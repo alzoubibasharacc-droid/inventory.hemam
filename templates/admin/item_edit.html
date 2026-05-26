@@ -448,7 +448,7 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
 <script>
-const BASE_UNIT = '{{ base_unit.name_ar }}';
+const BASE_UNIT = '{{ item.effective_base_unit.name_ar }}';
 
 // ── TomSelect ────────────────────────────────────────────────────────────────
 new TomSelect('#base-unit-select', { maxItems: 1, allowEmptyOption: false });
