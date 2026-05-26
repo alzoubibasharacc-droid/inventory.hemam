@@ -14,16 +14,20 @@ def import_items():
     departments = Department.query.all()
     units       = Unit.query.order_by(Unit.name_ar).all()
 
+    active_units = Unit.query.filter_by(is_active=True).order_by(Unit.name_ar).all()
+
     if request.method == 'GET':
         return render_template(
             'admin/import.html',
-            branches=branches, departments=departments, units=units,
+            branches=branches, departments=departments,
+            units=units, active_units=active_units,
             errors=None, imported=None, skipped=None,
         )
 
     # ── POST: process uploaded file ───────────────────────────────────────────
-    uploaded = request.files.get('file')
-    dept_id  = request.form.get('department_id', type=int)
+    uploaded          = request.files.get('file')
+    dept_id           = request.form.get('department_id', type=int)
+    auto_create_units = request.form.get('auto_create_units') == '1'
 
     if not uploaded or uploaded.filename == '':
         flash('يرجى اختيار ملف', 'warning')
@@ -65,8 +69,9 @@ def import_items():
         flash('صيغة غير مدعومة — يُسمح بـ .xlsx و .csv فقط', 'danger')
         return redirect(url_for('admin.import_items'))
 
-    unit_map = {u.name_ar.strip(): u for u in units}
-    imported = skipped = 0
+    unit_map        = {u.name_ar.strip(): u for u in units}
+    units_created   = 0
+    imported        = skipped = 0
     file_codes_seen = set()
 
     for i, row in enumerate(rows, start=2):
@@ -96,9 +101,17 @@ def import_items():
 
         unit_obj = unit_map.get(unit_name)
         if not unit_obj:
-            errors.append(f'السطر {i}: وحدة "{unit_name}" غير موجودة — تخطي')
-            skipped += 1
-            continue
+            if auto_create_units and unit_name:
+                unit_obj = Unit(name_ar=unit_name, name_en=unit_name, symbol=unit_name, is_active=True)
+                db.session.add(unit_obj)
+                db.session.flush()
+                unit_map[unit_name] = unit_obj
+                units_created += 1
+                errors.append(f'السطر {i}: وحدة "{unit_name}" غير موجودة — تم إنشاؤها تلقائياً')
+            else:
+                errors.append(f'السطر {i}: وحدة "{unit_name}" غير موجودة — تخطي')
+                skipped += 1
+                continue
 
         try:
             min_qty = float(min_qty_s or '0')
@@ -126,10 +139,20 @@ def import_items():
         for u_name, mult_s, col_n in extra_convs:
             u_obj = unit_map.get(u_name)
             if not u_obj:
-                errors.append(
-                    f'السطر {i}: وحدة{col_n} "{u_name}" غير موجودة — تم إضافة الصنف بدون هذه الوحدة'
-                )
-                continue
+                if auto_create_units and u_name:
+                    u_obj = Unit(name_ar=u_name, name_en=u_name, symbol=u_name, is_active=True)
+                    db.session.add(u_obj)
+                    db.session.flush()
+                    unit_map[u_name] = u_obj
+                    units_created += 1
+                    errors.append(
+                        f'السطر {i}: وحدة{col_n} "{u_name}" غير موجودة — تم إنشاؤها تلقائياً'
+                    )
+                else:
+                    errors.append(
+                        f'السطر {i}: وحدة{col_n} "{u_name}" غير موجودة — تم إضافة الصنف بدون هذه الوحدة'
+                    )
+                    continue
             try:
                 mult = float(mult_s)
                 if mult <= 0:
@@ -170,10 +193,18 @@ def import_items():
 
     db.session.commit()
 
-    msg = f'تم استيراد {imported} صنف' + (f' (تخطي {skipped})' if skipped else '')
-    flash(msg, 'success' if imported else 'warning')
+    parts = [f'تم استيراد {imported} صنف']
+    if units_created:
+        parts.append(f'أُنشئت {units_created} وحدة جديدة')
+    if skipped:
+        parts.append(f'تخطي {skipped}')
+    flash(' — '.join(parts), 'success' if imported else 'warning')
+
+    active_units = Unit.query.filter_by(is_active=True).order_by(Unit.name_ar).all()
     return render_template(
         'admin/import.html',
-        branches=branches, departments=departments, units=units,
+        branches=branches, departments=departments,
+        units=units, active_units=active_units,
         errors=errors, imported=imported, skipped=skipped,
+        units_created=units_created,
     )

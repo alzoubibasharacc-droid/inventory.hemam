@@ -33,6 +33,9 @@ class Unit(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name_ar = db.Column(db.String(50), nullable=False)
     name_en = db.Column(db.String(50), nullable=False)
+    symbol = db.Column(db.String(20), nullable=True)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=_now)
     conversions = db.relationship(
         'UnitConversion', foreign_keys='UnitConversion.from_unit_id',
         backref='from_unit', lazy=True

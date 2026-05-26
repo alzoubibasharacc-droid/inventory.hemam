@@ -41,22 +41,24 @@ def seed_data():
             db.session.add(dept)
 
     # --- Units ---
+    # (name_ar, name_en, symbol)
     units_data = [
-        ('كيلوغرام', 'kg'),
-        ('غرام', 'g'),
-        ('لتر', 'L'),
-        ('مليلتر', 'mL'),
-        ('قطعة', 'pcs'),
-        ('علبة', 'box'),
-        ('كيس', 'bag'),
-        ('كرتون', 'carton'),
+        ('كيلوغرام', 'Kilogram',   'kg'),
+        ('غرام',     'Gram',       'g'),
+        ('لتر',      'Liter',      'L'),
+        ('مليلتر',   'Milliliter', 'mL'),
+        ('قطعة',     'Piece',      'pcs'),
+        ('علبة',     'Box',        'box'),
+        ('كيس',      'Bag',        'bag'),
+        ('كرتون',    'Carton',     'ctn'),
+        ('زجاجة',   'Bottle',     'btl'),
     ]
     unit_objs = {}
-    for name_ar, name_en in units_data:
-        u = Unit(name_ar=name_ar, name_en=name_en)
+    for name_ar, name_en, symbol in units_data:
+        u = Unit(name_ar=name_ar, name_en=name_en, symbol=symbol, is_active=True)
         db.session.add(u)
         db.session.flush()
-        unit_objs[name_en] = u
+        unit_objs[symbol] = u
 
     # Unit conversions
     conversions = [

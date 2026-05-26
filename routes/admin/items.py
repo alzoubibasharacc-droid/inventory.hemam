@@ -90,7 +90,7 @@ def items():
         items=items_list,
         branches=Branch.query.all(),
         departments=Department.query.all(),
-        units=Unit.query.order_by(Unit.name_ar).all(),
+        units=Unit.query.filter_by(is_active=True).order_by(Unit.name_ar).all(),
         categories=Category.query.all(),
         selected_branch=branch_filter,
         selected_dept=dept_filter,
@@ -102,7 +102,7 @@ def items():
 @manager_required
 def item_conversions(item_id):
     item  = Item.query.get_or_404(item_id)
-    units = Unit.query.order_by(Unit.name_ar).all()
+    units = Unit.query.filter_by(is_active=True).order_by(Unit.name_ar).all()
 
     if request.method == 'POST':
         action = request.form.get('action')

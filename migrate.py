@@ -5,6 +5,7 @@ Cumulative changes applied:
   v1  ItemUnitConversion system, item_code, multi-entry counts (SQLite only)
   v2  Performance indexes, base_unit_id backfill (SQLite + PostgreSQL)
   v3  minimum_stock column, backfilled from min_quantity (SQLite + PostgreSQL)
+  v4  Unit.symbol, Unit.is_active, Unit.created_at columns
 
 Run after pulling a new version:
     python migrate.py
@@ -229,6 +230,33 @@ def run_v3(conn):
             print('  = items.minimum_stock already present')
 
 
+def run_v4(conn):
+    """
+    v4: Add symbol, is_active, created_at to units table.
+    Safe to run on SQLite and PostgreSQL.
+    """
+    if not column_exists(conn, 'units', 'symbol'):
+        conn.execute(db.text('ALTER TABLE units ADD COLUMN symbol VARCHAR(20)'))
+        conn.execute(db.text('UPDATE units SET symbol = name_en'))
+        print('  + units.symbol  (seeded from name_en)')
+    else:
+        print('  = units.symbol already present')
+
+    if not column_exists(conn, 'units', 'is_active'):
+        conn.execute(db.text('ALTER TABLE units ADD COLUMN is_active INTEGER DEFAULT 1'))
+        conn.execute(db.text('UPDATE units SET is_active = 1 WHERE is_active IS NULL'))
+        print('  + units.is_active  (all existing set to active)')
+    else:
+        print('  = units.is_active already present')
+
+    if not column_exists(conn, 'units', 'created_at'):
+        conn.execute(db.text('ALTER TABLE units ADD COLUMN created_at DATETIME'))
+        conn.execute(db.text('UPDATE units SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL'))
+        print('  + units.created_at')
+    else:
+        print('  = units.created_at already present')
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def run():
@@ -244,6 +272,9 @@ def run():
 
             print('\n-- v3 (minimum_stock column) --')
             run_v3(conn)
+
+            print('\n-- v4 (Unit.symbol / is_active / created_at) --')
+            run_v4(conn)
 
             trans.commit()
             print('\nMigration complete.\n')

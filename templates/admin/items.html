@@ -1,6 +1,10 @@
 {% extends 'base.html' %}
 {% block title %}إدارة الأصناف - همم{% endblock %}
 
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css">
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
 
@@ -70,10 +74,12 @@
                         <label class="form-label">الوحدة الأساسية *
                             <span class="text-muted small">(وحدة التخزين الداخلي)</span>
                         </label>
-                        <select name="base_unit_id" class="form-select" required>
+                        <select name="base_unit_id" id="unit-select" class="form-select" required>
                             <option value="">-- اختر الوحدة --</option>
                             {% for u in units %}
-                            <option value="{{ u.id }}">{{ u.name_ar }}</option>
+                            <option value="{{ u.id }}">
+                                {{ u.name_ar }}{% if u.symbol %} ({{ u.symbol }}){% endif %}
+                            </option>
                             {% endfor %}
                         </select>
                     </div>
@@ -308,7 +314,14 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
 <script>
+new TomSelect('#unit-select', {
+    placeholder: '-- اختر الوحدة --',
+    maxItems: 1,
+    allowEmptyOption: true,
+});
+
 function filterDepts(branchId) {
     var select = document.getElementById('dept-select');
     Array.from(select.options).forEach(function (opt) {

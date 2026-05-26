@@ -62,6 +62,20 @@
                             <span id="fileNameText"></span>
                         </div>
 
+                        <!-- Auto-create units option -->
+                        <div class="form-check form-switch mb-3 mt-3">
+                            <input class="form-check-input" type="checkbox"
+                                   name="auto_create_units" id="autoCreateUnits"
+                                   value="1">
+                            <label class="form-check-label fw-semibold" for="autoCreateUnits">
+                                إنشاء وحدات غير موجودة تلقائياً
+                            </label>
+                            <div class="form-text">
+                                إذا كانت الوحدة في الملف غير موجودة في النظام،
+                                يتم إنشاؤها تلقائياً بدلاً من تخطي الصنف.
+                            </div>
+                        </div>
+
                         <button type="submit"
                                 class="btn btn-primary w-100 btn-lg fw-bold mt-2">
                             <i class="bi bi-cloud-upload me-2"></i>ابدأ الاستيراد
@@ -211,15 +225,24 @@
                 </div>
             </div>
 
-            <!-- Available units -->
+            <!-- Available units (active only) -->
             <div class="card">
                 <div class="card-body py-2 px-3">
                     <p class="fw-semibold mb-2 small" style="color:var(--brand-olive);">
-                        <i class="bi bi-rulers me-1"></i>وحدات القياس المتاحة:
+                        <i class="bi bi-rulers me-1"></i>وحدات القياس النشطة
+                        <a href="{{ url_for('admin.units') }}"
+                           class="ms-2 small text-muted"
+                           style="font-weight:normal;">(إدارة الوحدات)</a>:
                     </p>
                     <div class="d-flex flex-wrap gap-1">
-                        {% for u in units %}
-                        <span class="badge bg-secondary">{{ u.name_ar }}</span>
+                        {% for u in active_units %}
+                        <span class="badge"
+                              style="background:var(--brand-olive);"
+                              title="{{ u.name_en or '' }}">
+                            {{ u.name_ar }}{% if u.symbol %} · {{ u.symbol }}{% endif %}
+                        </span>
+                        {% else %}
+                        <span class="text-muted small">لا توجد وحدات نشطة</span>
                         {% endfor %}
                     </div>
                 </div>
@@ -236,9 +259,20 @@
                     <div class="fw-bold fs-2" style="color:var(--brand-green);">
                         {{ imported }}
                     </div>
-                    <div class="text-muted small fw-semibold">تم استيراده</div>
+                    <div class="text-muted small fw-semibold">صنف مستورد</div>
                 </div>
             </div>
+            {% if units_created %}
+            <div class="col-6 col-md-3">
+                <div class="card p-3 text-center"
+                     style="border:1px solid var(--brand-olive);">
+                    <div class="fw-bold fs-2" style="color:var(--brand-olive);">
+                        {{ units_created }}
+                    </div>
+                    <div class="text-muted small fw-semibold">وحدة أُنشئت</div>
+                </div>
+            </div>
+            {% endif %}
             <div class="col-6 col-md-3">
                 <div class="card stat-card warning p-3 text-center">
                     <div class="fw-bold fs-2" style="color:#e6a817;">{{ skipped }}</div>
