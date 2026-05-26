@@ -93,7 +93,7 @@ class Item(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     # item_code is visible to admin/manager ONLY — never shown to employees
-    item_code = db.Column(db.String(50), unique=True, nullable=True)
+    item_code = db.Column(db.String(50), nullable=True)
     name_ar = db.Column(db.String(200), nullable=False)
     name_en = db.Column(db.String(200), nullable=False)
     # packaging_note is visible to ALL users during counting
@@ -127,6 +127,8 @@ class Item(db.Model):
 
     __table_args__ = (
         db.Index('ix_items_department_id', 'department_id'),
+        # item_code unique per department — same code is allowed in different sections
+        db.UniqueConstraint('item_code', 'department_id', name='uq_items_code_dept'),
     )
 
     @property

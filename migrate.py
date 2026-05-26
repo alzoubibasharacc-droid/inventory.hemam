@@ -271,6 +271,91 @@ def run_v4(conn):
         print('  = units.created_at already present')
 
 
+def run_v5(conn):
+    """
+    v5: Change item_code uniqueness from global to per-department.
+    The same code is now allowed in different sections/branches.
+    """
+    if _is_sqlite(conn):
+        # SQLite stores the UNIQUE constraint in the CREATE TABLE DDL.
+        # The only way to drop a column-level UNIQUE in SQLite is to recreate the table.
+        schema_row = conn.execute(db.text(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='items'"
+        )).fetchone()
+        ddl = (schema_row[0] or '') if schema_row else ''
+
+        if 'item_code' in ddl and 'UNIQUE' in ddl.upper():
+            print('  ~ rebuilding items table to change item_code uniqueness (SQLite) …')
+            conn.execute(db.text('ALTER TABLE items RENAME TO _items_v5_old'))
+            conn.execute(db.text('''
+                CREATE TABLE items (
+                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                    item_code      VARCHAR(50),
+                    name_ar        VARCHAR(200) NOT NULL,
+                    name_en        VARCHAR(200) NOT NULL,
+                    packaging_note VARCHAR(300),
+                    unit_id        INTEGER REFERENCES units(id),
+                    base_unit_id   INTEGER REFERENCES units(id),
+                    category_id    INTEGER REFERENCES categories(id),
+                    department_id  INTEGER NOT NULL REFERENCES departments(id),
+                    min_quantity   FLOAT DEFAULT 0,
+                    minimum_stock  FLOAT DEFAULT 0,
+                    is_active      INTEGER DEFAULT 1
+                )
+            '''))
+            conn.execute(db.text('''
+                INSERT INTO items
+                    (id, item_code, name_ar, name_en, packaging_note,
+                     unit_id, base_unit_id, category_id, department_id,
+                     min_quantity, minimum_stock, is_active)
+                SELECT
+                    id, item_code, name_ar, name_en, packaging_note,
+                    unit_id, base_unit_id, category_id, department_id,
+                    min_quantity, minimum_stock, is_active
+                FROM _items_v5_old
+            '''))
+            conn.execute(db.text('DROP TABLE _items_v5_old'))
+            print('  + items table rebuilt without global item_code UNIQUE')
+        else:
+            print('  = items.item_code global UNIQUE already absent')
+
+        # Add composite unique index (per-department)
+        if not index_exists(conn, 'uq_items_code_dept'):
+            conn.execute(db.text(
+                'CREATE UNIQUE INDEX uq_items_code_dept '
+                'ON items (item_code, department_id) '
+                'WHERE item_code IS NOT NULL'
+            ))
+            print('  + uq_items_code_dept (item_code unique per department)')
+        else:
+            print('  = uq_items_code_dept already exists')
+
+        # Restore performance index (lost during table rebuild)
+        if not index_exists(conn, 'ix_items_department_id'):
+            conn.execute(db.text(
+                'CREATE INDEX ix_items_department_id ON items (department_id)'
+            ))
+            print('  + ix_items_department_id restored')
+
+    else:
+        # PostgreSQL — drop old global constraint, add per-department one
+        for old in ('items_item_code_key', 'uq_items_item_code'):
+            conn.execute(db.text(
+                f'ALTER TABLE items DROP CONSTRAINT IF EXISTS {old}'
+            ))
+        print('  ~ dropped global item_code constraint (if existed)')
+
+        if not index_exists(conn, 'uq_items_code_dept'):
+            conn.execute(db.text(
+                'CREATE UNIQUE INDEX uq_items_code_dept '
+                'ON items (item_code, department_id) '
+                'WHERE item_code IS NOT NULL'
+            ))
+            print('  + uq_items_code_dept (item_code unique per department)')
+        else:
+            print('  = uq_items_code_dept already exists')
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def run():
@@ -289,6 +374,9 @@ def run():
 
             print('\n-- v4 (Unit.symbol / is_active / created_at) --')
             run_v4(conn)
+
+            print('\n-- v5 (item_code unique per department, not global) --')
+            run_v5(conn)
 
             trans.commit()
             print('\nMigration complete.\n')

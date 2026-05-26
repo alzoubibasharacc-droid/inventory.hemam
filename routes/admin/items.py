@@ -20,9 +20,10 @@ def items():
         action = request.form.get('action')
 
         if action == 'add':
-            code = request.form.get('item_code', '').strip() or None
-            if code and Item.query.filter_by(item_code=code).first():
-                flash(f'كود الصنف "{code}" مستخدم مسبقاً', 'danger')
+            code    = request.form.get('item_code', '').strip() or None
+            dept_id = int(request.form['department_id'])
+            if code and Item.query.filter_by(item_code=code, department_id=dept_id).first():
+                flash(f'كود الصنف "{code}" مستخدم مسبقاً في هذا القسم', 'danger')
                 return redirect(url_for('admin.items'))
 
             ms = _parse_min_stock(request.form.get('minimum_stock', ''))
@@ -107,9 +108,14 @@ def edit_item(item_id):
         action = request.form.get('action')
 
         if action == 'save_item':
-            code = request.form.get('item_code', '').strip() or None
-            if code and Item.query.filter(Item.item_code == code, Item.id != item_id).first():
-                flash(f'كود الصنف "{code}" مستخدم من قِبَل صنف آخر', 'danger')
+            code         = request.form.get('item_code', '').strip() or None
+            new_dept_id  = int(request.form['department_id'])
+            if code and Item.query.filter(
+                Item.item_code == code,
+                Item.department_id == new_dept_id,
+                Item.id != item_id,
+            ).first():
+                flash(f'كود الصنف "{code}" مستخدم مسبقاً في هذا القسم', 'danger')
                 return redirect(url_for('admin.edit_item', item_id=item_id))
 
             new_base_id = int(request.form.get('base_unit_id') or item.effective_base_unit_id)

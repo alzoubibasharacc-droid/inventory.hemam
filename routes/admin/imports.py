@@ -79,7 +79,7 @@ def import_items():
     cat_map      = {c.name_ar.strip(): c for c in Category.query.all()}
     units_created      = 0
     imported = updated = skipped = 0
-    file_codes_seen    = set()
+    file_codes_seen    = set()   # tracks (item_code, department_id) pairs within this file
     processed_item_ids = set()
 
     for i, row in enumerate(rows, start=2):
@@ -153,29 +153,16 @@ def import_items():
         existing_item = None
 
         if item_code:
-            if item_code in file_codes_seen:
-                errors.append(f'السطر {i}: كود "{item_code}" مكرر في الملف — تخطي')
+            if (item_code, row_dept_id) in file_codes_seen:
+                errors.append(f'السطر {i}: كود "{item_code}" مكرر في الملف لنفس القسم — تخطي')
                 skipped += 1
                 continue
-            file_codes_seen.add(item_code)
-            # Match code only within the target department
+            file_codes_seen.add((item_code, row_dept_id))
+            # Match code within the target department only — same code in a different
+            # department is an independent item and is never touched here.
             existing_item = Item.query.filter_by(
                 item_code=item_code, department_id=row_dept_id
             ).first()
-            # If the code belongs to a different department, warn and skip
-            if existing_item is None:
-                cross = Item.query.filter(
-                    Item.item_code == item_code,
-                    Item.department_id != row_dept_id,
-                ).first()
-                if cross:
-                    errors.append(
-                        f'السطر {i}: كود "{item_code}" مسجل في قسم '
-                        f'"{cross.department.name_ar}" وليس في القسم المستهدف — '
-                        f'لا يمكن استخدام نفس الكود في قسمين مختلفين — تخطي'
-                    )
-                    skipped += 1
-                    continue
 
         if existing_item is None:
             # Name match is always dept-scoped — same name in a different section
