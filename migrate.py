@@ -250,7 +250,8 @@ def run_v4(conn):
         print('  = units.is_active already present')
 
     if not column_exists(conn, 'units', 'created_at'):
-        conn.execute(db.text('ALTER TABLE units ADD COLUMN created_at DATETIME'))
+        col_type = 'TIMESTAMP' if not _is_sqlite(conn) else 'DATETIME'
+        conn.execute(db.text(f'ALTER TABLE units ADD COLUMN created_at {col_type}'))
         conn.execute(db.text('UPDATE units SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL'))
         print('  + units.created_at')
     else:
