@@ -222,6 +222,15 @@ def index():
     branch_id     = request.args.get('branch_id', type=int)
     dept_id       = request.args.get('dept_id',   type=int)
 
+    # Block employees from manually accessing outside their assigned scope
+    if not current_user.is_manager:
+        if current_user.branch_id and branch_id and branch_id != current_user.branch_id:
+            flash('وصول غير مصرح به', 'danger')
+            return redirect(url_for('inventory.dashboard'))
+        if current_user.department_id and dept_id and dept_id != current_user.department_id:
+            flash('وصول غير مصرح به', 'danger')
+            return redirect(url_for('inventory.dashboard'))
+
     date_from = date_to = None
     try:
         date_from = datetime.strptime(date_from_str, '%Y-%m-%d').date() if date_from_str else None
@@ -239,11 +248,21 @@ def index():
         date_from_str = date_from.isoformat()
         date_to_str   = date_to.isoformat()
 
+    # Enforce branch + department scope for non-admins
     if not current_user.is_admin and current_user.branch_id:
         branch_id = current_user.branch_id
+    if not current_user.is_manager and current_user.department_id:
+        dept_id = current_user.department_id
 
-    branches    = Branch.query.all()
-    departments = Department.query.filter_by(branch_id=branch_id).all() if branch_id else []
+    if not current_user.is_manager and current_user.branch_id:
+        branches    = [current_user.branch]
+        departments = (
+            [Department.query.get(current_user.department_id)]
+            if current_user.department_id else []
+        )
+    else:
+        branches    = Branch.query.all()
+        departments = Department.query.filter_by(branch_id=branch_id).all() if branch_id else []
 
     totals = _item_totals_sql(branch_id, dept_id, None, date_from, date_to)
 

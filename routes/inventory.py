@@ -3,6 +3,7 @@ from flask_login import login_required, current_user
 from models import db, Branch, Department, Item, InventoryCount, Unit, UnitConversion
 from sqlalchemy import func, distinct
 from datetime import datetime, date
+from utils.decorators import get_scope
 
 inventory_bp = Blueprint('inventory', __name__, url_prefix='/inventory')
 
@@ -22,22 +23,28 @@ def dashboard():
     else:
         branches = Branch.query.all()
 
+    scope_branch, scope_dept = get_scope()
+
     branch_stats = []
     for branch in branches:
-        total_items = (
+        items_q = (
             Item.query.join(Department)
             .filter(Department.branch_id == branch.id, Item.is_active == True)
-            .count()
         )
-        counted_items = (
+        counts_q = (
             db.session.query(func.count(distinct(InventoryCount.item_id)))
             .join(Item).join(Department)
             .filter(
                 Department.branch_id == branch.id,
                 InventoryCount.month == month,
                 InventoryCount.year == year,
-            ).scalar() or 0
+            )
         )
+        if scope_dept:
+            items_q  = items_q.filter(Item.department_id == scope_dept)
+            counts_q = counts_q.filter(Item.department_id == scope_dept)
+        total_items   = items_q.count()
+        counted_items = counts_q.scalar() or 0
         branch_stats.append({
             'branch':  branch,
             'total':   total_items,
@@ -45,12 +52,22 @@ def dashboard():
             'percent': int(counted_items / total_items * 100) if total_items else 0,
         })
 
-    total_items = Item.query.filter_by(is_active=True).count()
-    total_counted = (
+    total_q   = Item.query.filter_by(is_active=True)
+    counted_q = (
         db.session.query(func.count(distinct(InventoryCount.item_id)))
         .filter(InventoryCount.month == month, InventoryCount.year == year)
-        .scalar() or 0
     )
+    if scope_branch or scope_dept:
+        total_q   = total_q.join(Department)
+        counted_q = counted_q.join(Item).join(Department)
+        if scope_branch:
+            total_q   = total_q.filter(Department.branch_id == scope_branch)
+            counted_q = counted_q.filter(Department.branch_id == scope_branch)
+        if scope_dept:
+            total_q   = total_q.filter(Item.department_id == scope_dept)
+            counted_q = counted_q.filter(Item.department_id == scope_dept)
+    total_items   = total_q.count()
+    total_counted = counted_q.scalar() or 0
 
     return render_template(
         'dashboard.html',
@@ -82,29 +99,45 @@ def count():
         count_date = cd.strftime('%Y-%m-%d')
         flask_session['count_session_date'] = count_date
 
+    # Employees: block attempts to view another branch via URL
+    if not current_user.is_manager and current_user.branch_id:
+        req_branch = request.args.get('branch_id', type=int)
+        if req_branch and req_branch != current_user.branch_id:
+            flash('وصول غير مصرح به', 'danger')
+            return redirect(url_for('inventory.dashboard'))
+
     branch_id = (
         request.args.get('branch_id', type=int)
         if current_user.is_admin or current_user.is_manager
         else current_user.branch_id
     )
 
-    branches = Branch.query.all()
+    scope_branch, scope_dept = get_scope()
+
+    if not current_user.is_manager and current_user.branch_id:
+        branches = [current_user.branch]
+    else:
+        branches = Branch.query.all()
 
     total_items = counted_items = 0
     if branch_id:
-        total_items = (
+        items_q = (
             Item.query.join(Department)
             .filter(Department.branch_id == branch_id, Item.is_active == True)
-            .count()
         )
-        counted_items = (
+        counts_q = (
             db.session.query(func.count(distinct(InventoryCount.item_id)))
             .join(Item).join(Department)
             .filter(
                 Department.branch_id == branch_id,
                 InventoryCount.count_date == cd,
-            ).scalar() or 0
+            )
         )
+        if scope_dept:
+            items_q  = items_q.filter(Item.department_id == scope_dept)
+            counts_q = counts_q.filter(Item.department_id == scope_dept)
+        total_items   = items_q.count()
+        counted_items = counts_q.scalar() or 0
 
     recent_q = (
         InventoryCount.query
@@ -113,6 +146,8 @@ def count():
     )
     if branch_id:
         recent_q = recent_q.filter(Department.branch_id == branch_id)
+    if scope_dept:
+        recent_q = recent_q.filter(Item.department_id == scope_dept)
     if not current_user.is_manager:
         recent_q = recent_q.filter(InventoryCount.user_id == current_user.id)
 
@@ -137,14 +172,26 @@ def count():
 def count_search():
     q          = request.args.get('q', '').strip()
     branch_id  = request.args.get('branch_id', type=int)
+    dept_id    = request.args.get('dept_id',   type=int)
     count_date = request.args.get('count_date', '').strip()
 
-    if not branch_id and not (current_user.is_admin or current_user.is_manager):
+    if not (current_user.is_admin or current_user.is_manager):
+        # Reject attempts to search outside the employee's assigned scope
+        if current_user.branch_id and branch_id and branch_id != current_user.branch_id:
+            return jsonify({'error': 'وصول غير مصرح به'}), 403
+        if current_user.department_id and dept_id and dept_id != current_user.department_id:
+            return jsonify({'error': 'وصول غير مصرح به'}), 403
+        # Always enforce their assigned scope (ignore URL params)
+        branch_id = current_user.branch_id
+        dept_id   = current_user.department_id
+    elif not current_user.is_admin and current_user.branch_id:
         branch_id = current_user.branch_id
 
     items_q = Item.query.join(Department).filter(Item.is_active == True)
     if branch_id:
         items_q = items_q.filter(Department.branch_id == branch_id)
+    if dept_id:
+        items_q = items_q.filter(Item.department_id == dept_id)
     if q:
         items_q = items_q.filter(Item.name_ar.ilike(f'%{q}%'))
 
@@ -234,6 +281,13 @@ def count_entry():
     item = Item.query.get(item_id)
     if not item:
         return jsonify({'ok': False, 'error': 'الصنف غير موجود'}), 404
+
+    # Validate item is within the employee's assigned scope
+    if not current_user.is_manager:
+        if current_user.branch_id and item.department.branch_id != current_user.branch_id:
+            return jsonify({'ok': False, 'error': 'وصول غير مصرح به'}), 403
+        if current_user.department_id and item.department_id != current_user.department_id:
+            return jsonify({'ok': False, 'error': 'وصول غير مصرح به'}), 403
 
     multiplier    = item.get_multiplier(int(unit_id))
     base_quantity = entered_qty * multiplier
