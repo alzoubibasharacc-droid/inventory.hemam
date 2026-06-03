@@ -22,6 +22,7 @@ def export_items():
         db.joinedload(Item.base_unit),
         db.joinedload(Item.category),
         db.joinedload(Item.department),
+        db.joinedload(Item.conversions),
     )
     if dept_id:
         q = q.filter(Item.department_id == dept_id)
@@ -41,31 +42,57 @@ def export_items():
         if b:
             suffix = f'_{b.name_ar}'
 
+    # How many extra conversion columns do we need?
+    # (base-unit conversion excluded — multiplier=1 at position unit_name)
+    max_extras = max(
+        (
+            sum(1 for c in item.conversions
+                if c.unit_id != (item.base_unit_id or item.unit_id))
+            for item in items
+        ),
+        default=0,
+    )
+    extra_slots = max(max_extras, 3)   # always include at least 3 slots
+
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = 'items'
 
-    HEADERS = [
+    FIXED_HEADERS = [
         'item_id', 'item_code', 'item_name_ar', 'item_name_en',
         'branch_name', 'department_name',
         'category_name', 'unit_name', 'min_level', 'notes',
         'is_active', 'created_at',
     ]
+    CONV_HEADERS = []
+    for n in range(2, extra_slots + 2):
+        CONV_HEADERS += [f'الوحدة{n}', f'المعامل{n}']
+
+    HEADERS = FIXED_HEADERS + CONV_HEADERS
 
     header_fill = PatternFill('solid', fgColor='295831')
     header_font = Font(bold=True, color='FFFFFF')
+    conv_fill   = PatternFill('solid', fgColor='2d5016')   # slightly darker green for conv cols
 
     for col, h in enumerate(HEADERS, 1):
         cell = ws.cell(row=1, column=col, value=h)
-        cell.fill = header_fill
+        cell.fill = conv_fill if col > len(FIXED_HEADERS) else header_fill
         cell.font = header_font
         cell.alignment = Alignment(horizontal='center')
 
     for item in items:
         base_unit = item.base_unit or item.unit
+        base_uid  = item.base_unit_id or item.unit_id
         dept      = item.department
         branch    = dept.branch if dept else None
-        ws.append([
+
+        # Collect extra conversions sorted by multiplier (smallest first)
+        extras = sorted(
+            [c for c in item.conversions if c.unit_id != base_uid],
+            key=lambda c: c.multiplier,
+        )
+
+        row_data = [
             item.id,
             item.item_code or '',
             item.name_ar,
@@ -78,11 +105,19 @@ def export_items():
             item.packaging_note or '',
             '1' if item.is_active else '0',
             item.created_at.strftime('%Y-%m-%d %H:%M') if item.created_at else '',
-        ])
+        ]
+        # Append unit-name / multiplier pairs, pad to extra_slots
+        for conv in extras:
+            row_data.append(conv.unit.name_ar if conv.unit else '')
+            row_data.append(conv.multiplier)
+        for _ in range(len(extras), extra_slots):
+            row_data += ['', '']
+
+        ws.append(row_data)
 
     for col in ws.columns:
         max_len = max((len(str(c.value or '')) for c in col), default=8)
-        ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 45)
+        ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 35)
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -201,13 +236,16 @@ def import_items():
             ).strip()
             is_active_s = (row.get('is_active') or '').strip()
 
-            # Extra conversion columns: الوحدة2/المعامل2 … الوحدة4/المعامل4
+            # Extra conversion columns: الوحدة2/المعامل2, الوحدة3/المعامل3, …
+            # Read all that exist in the file — no hardcoded upper limit.
             extra_convs = []
-            for n in ('2', '3', '4'):
+            for n in range(2, 100):
                 u_name = (row.get(f'الوحدة{n}') or '').strip()
                 mult_s = (row.get(f'المعامل{n}') or '').strip()
+                if not u_name and not mult_s:
+                    break
                 if u_name and mult_s:
-                    extra_convs.append((u_name, mult_s, n))
+                    extra_convs.append((u_name, mult_s, str(n)))
 
             # ── Require at least a name or an id ─────────────────────────────
             if not name_ar and not raw_id:
