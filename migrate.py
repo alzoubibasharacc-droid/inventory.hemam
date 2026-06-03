@@ -356,6 +356,22 @@ def run_v5(conn):
             print('  = uq_items_code_dept already exists')
 
 
+def run_v6(conn):
+    """
+    v6: Add created_at to items table.
+    Safe to run on SQLite and PostgreSQL.
+    """
+    if not column_exists(conn, 'items', 'created_at'):
+        col_type = 'TIMESTAMP' if not _is_sqlite(conn) else 'DATETIME'
+        conn.execute(db.text(f'ALTER TABLE items ADD COLUMN created_at {col_type}'))
+        conn.execute(db.text(
+            'UPDATE items SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL'
+        ))
+        print('  + items.created_at  (backfilled with CURRENT_TIMESTAMP)')
+    else:
+        print('  = items.created_at already present')
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def run():
@@ -377,6 +393,9 @@ def run():
 
             print('\n-- v5 (item_code unique per department, not global) --')
             run_v5(conn)
+
+            print('\n-- v6 (items.created_at) --')
+            run_v6(conn)
 
             trans.commit()
             print('\nMigration complete.\n')

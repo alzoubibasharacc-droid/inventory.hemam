@@ -112,7 +112,8 @@ class Item(db.Model):
     department_id = db.Column(db.Integer, db.ForeignKey('departments.id'), nullable=False)
     min_quantity  = db.Column(db.Float, default=0)        # legacy — superseded by minimum_stock
     minimum_stock = db.Column(db.Float, default=0.0)      # authoritative low-stock threshold
-    is_active = db.Column(db.Boolean, default=True)
+    is_active  = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, nullable=True, default=_now)
 
     unit = db.relationship('Unit', foreign_keys=[unit_id], backref='items')
     base_unit = db.relationship('Unit', foreign_keys=[base_unit_id], backref='base_items')

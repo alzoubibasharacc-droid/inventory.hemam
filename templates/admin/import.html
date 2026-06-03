@@ -1,13 +1,13 @@
 {% extends 'base.html' %}
-{% block title %}استيراد الأصناف - همم{% endblock %}
+{% block title %}استيراد / تصدير الأصناف{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
 
     <!-- Header -->
     <div class="section-header mb-4">
-        <div class="section-icon"><i class="bi bi-file-earmark-excel"></i></div>
-        <h4>استيراد الأصناف من Excel</h4>
+        <div class="section-icon"><i class="bi bi-arrow-left-right"></i></div>
+        <h4>استيراد / تصدير الأصناف</h4>
         <a href="{{ url_for('admin.items') }}" class="btn btn-outline-secondary btn-sm ms-auto">
             <i class="bi bi-arrow-right me-1"></i>إدارة الأصناف
         </a>
@@ -15,14 +15,39 @@
 
     <div class="row g-4">
 
-        <!-- Upload Form -->
+        <!-- ── Left column: forms ──────────────────────────────────────────── -->
         <div class="col-12 col-lg-6">
-            <div class="card">
-                <div class="card-header" style="background:var(--brand-olive); color:#fff;">
-                    <i class="bi bi-upload me-2"></i>رفع الملف
+
+            <!-- Export card -->
+            <div class="card mb-4">
+                <div class="card-header fw-bold"
+                     style="background:var(--brand-green); color:#fff;">
+                    <i class="bi bi-file-earmark-arrow-down me-2"></i>تصدير الأصناف
                 </div>
                 <div class="card-body">
-                    <form method="POST" enctype="multipart/form-data" id="importForm">
+                    <p class="text-muted small mb-3">
+                        يصدّر <strong>جميع الأصناف</strong> في ملف Excel جاهز للتعديل وإعادة الاستيراد.
+                        يحتوي على أعمدة: <code>item_id</code>، الاسم، الوحدة، الفئة، الحد الأدنى،
+                        الملاحظات، الحالة.
+                    </p>
+                    <a href="{{ url_for('admin.export_items') }}"
+                       class="btn btn-success w-100 fw-bold">
+                        <i class="bi bi-download me-2"></i>تحميل ملف Excel
+                    </a>
+                </div>
+            </div>
+
+            <!-- Import card -->
+            <div class="card">
+                <div class="card-header fw-bold"
+                     style="background:var(--brand-olive); color:#fff;">
+                    <i class="bi bi-upload me-2"></i>رفع الملف للاستيراد
+                </div>
+                <div class="card-body">
+                    <form id="importForm"
+                          action="{{ url_for('admin.import_items') }}"
+                          method="POST"
+                          enctype="multipart/form-data">
 
                         <div class="mb-4">
                             <label class="form-label">الفرع</label>
@@ -44,7 +69,9 @@
                                 </option>
                                 {% endfor %}
                             </select>
-                            <div class="form-text">يُستخدم للأصناف الجديدة وكقيمة افتراضية عند غياب عمود القسم في الملف.</div>
+                            <div class="form-text">
+                                يُستخدم للأصناف الجديدة وكقيمة افتراضية عند غياب عمود القسم.
+                            </div>
                         </div>
 
                         <div class="upload-zone mb-3" id="uploadZone"
@@ -63,39 +90,36 @@
                             <span id="fileNameText"></span>
                         </div>
 
-                        <!-- Auto-create units option -->
                         <div class="form-check form-switch mb-3 mt-3">
                             <input class="form-check-input" type="checkbox"
-                                   name="auto_create_units" id="autoCreateUnits"
-                                   value="1">
+                                   name="auto_create_units" id="autoCreateUnits" value="1">
                             <label class="form-check-label fw-semibold" for="autoCreateUnits">
                                 إنشاء وحدات غير موجودة تلقائياً
                             </label>
-                            <div class="form-text">
-                                إذا كانت الوحدة في الملف غير موجودة في النظام،
-                                يتم إنشاؤها تلقائياً بدلاً من تخطي الصنف.
-                            </div>
                         </div>
 
-                        <!-- Smart update notice -->
                         <div class="alert alert-info py-2 px-3 mb-3" style="font-size:0.85rem;">
-                            <i class="bi bi-arrow-repeat me-1"></i>
-                            <strong>تحديث ذكي:</strong>
-                            إذا وُجد الصنف مسبقاً (بنفس الكود أو الاسم في القسم)
-                            يتم تحديثه تلقائياً بدلاً من إنشاء نسخة مكررة.
-                            الحقول الفارغة في الملف لا تُستبدل.
+                            <i class="bi bi-sort-down me-1"></i>
+                            <strong>أولوية المطابقة:</strong>
+                            item_id ← كود الصنف ← الاسم العربي ← الاسم الإنجليزي ← إنشاء جديد
                         </div>
 
-                        <button type="submit"
+                        <button type="submit" id="submitBtn"
                                 class="btn btn-primary w-100 btn-lg fw-bold mt-2">
                             <i class="bi bi-cloud-upload me-2"></i>ابدأ الاستيراد
                         </button>
                     </form>
+
+                    <!-- Loading -->
+                    <div id="loadingState" class="text-center py-4 d-none">
+                        <div class="spinner-border text-primary mb-2" role="status"></div>
+                        <p class="fw-semibold text-muted">جاري معالجة الملف…</p>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Instructions Panel -->
+        <!-- ── Right column: guide ────────────────────────────────────────── -->
         <div class="col-12 col-lg-6">
 
             <!-- Column guide -->
@@ -107,73 +131,79 @@
                 <div class="card-body p-0">
                     <div class="table-responsive">
                         <table class="table table-sm table-bordered align-middle mb-0"
-                               style="font-size:0.85rem;">
+                               style="font-size:0.82rem;">
                             <thead style="background:var(--brand-olive); color:#fff;">
                                 <tr>
-                                    <th>اسم العمود</th>
+                                    <th>العمود</th>
                                     <th>الوصف</th>
                                     <th class="text-center">إلزامي</th>
                                     <th class="text-center">يُحدَّث</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr>
-                                    <td class="fw-bold font-monospace">الصنف</td>
-                                    <td>اسم الصنف بالعربية — يُستخدم للكشف عن التكرار</td>
-                                    <td class="text-center"><span class="badge bg-danger">نعم</span></td>
+                                <tr class="table-success">
+                                    <td class="fw-bold font-monospace">item_id</td>
+                                    <td>معرّف الصنف — أعلى أولوية للمطابقة (من ملف التصدير)</td>
                                     <td class="text-center"><span class="badge bg-secondary">لا</span></td>
+                                    <td class="text-center"><span class="badge bg-secondary">للمطابقة فقط</span></td>
                                 </tr>
                                 <tr>
-                                    <td class="fw-bold font-monospace">الوحدة</td>
+                                    <td class="fw-bold font-monospace">item_name_ar / الصنف</td>
+                                    <td>اسم الصنف بالعربية</td>
+                                    <td class="text-center"><span class="badge bg-danger">للجديد</span></td>
+                                    <td class="text-center"><span class="badge bg-success">نعم</span></td>
+                                </tr>
+                                <tr>
+                                    <td class="fw-bold font-monospace">item_name_en / name_en</td>
+                                    <td>اسم الصنف بالإنجليزية</td>
+                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
+                                    <td class="text-center"><span class="badge bg-success">نعم</span></td>
+                                </tr>
+                                <tr>
+                                    <td class="fw-bold font-monospace">item_code / الكود</td>
+                                    <td>كود الصنف — أولوية ثانية للمطابقة</td>
+                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
+                                    <td class="text-center"><span class="badge bg-secondary">إن فارغ</span></td>
+                                </tr>
+                                <tr>
+                                    <td class="fw-bold font-monospace">unit_name / الوحدة</td>
                                     <td>الوحدة الأساسية للتخزين</td>
                                     <td class="text-center"><span class="badge bg-danger">للجديد</span></td>
                                     <td class="text-center"><span class="badge bg-success">نعم</span></td>
                                 </tr>
-                                <tr style="background:rgba(242,135,5,0.06);">
-                                    <td class="fw-bold font-monospace">الكود</td>
-                                    <td>كود الصنف — يُستخدم أولاً للكشف عن التكرار</td>
+                                <tr>
+                                    <td class="fw-bold font-monospace">category_name / الفئة</td>
+                                    <td>اسم الفئة (يجب أن تكون موجودة)</td>
                                     <td class="text-center"><span class="badge bg-secondary">لا</span></td>
-                                    <td class="text-center"><span class="badge bg-secondary">إن فارغ</span></td>
+                                    <td class="text-center"><span class="badge bg-success">نعم</span></td>
                                 </tr>
-                                <tr style="background:rgba(41,88,49,0.06);">
-                                    <td class="fw-bold font-monospace">ملاحظة التغليف</td>
+                                <tr>
+                                    <td class="fw-bold font-monospace">min_level / الحد الأدنى</td>
+                                    <td>الحد الأدنى للكمية</td>
+                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
+                                    <td class="text-center"><span class="badge bg-success">نعم</span></td>
+                                </tr>
+                                <tr>
+                                    <td class="fw-bold font-monospace">notes / ملاحظة التغليف</td>
                                     <td>وصف التغليف — يظهر للموظفين</td>
                                     <td class="text-center"><span class="badge bg-secondary">لا</span></td>
                                     <td class="text-center"><span class="badge bg-success">نعم</span></td>
                                 </tr>
                                 <tr>
-                                    <td class="fw-bold font-monospace">الحد الأدنى</td>
-                                    <td>الحد الأدنى للكمية (رقم)</td>
+                                    <td class="fw-bold font-monospace">is_active</td>
+                                    <td>حالة الصنف — 1 نشط، 0 معطّل</td>
                                     <td class="text-center"><span class="badge bg-secondary">لا</span></td>
                                     <td class="text-center"><span class="badge bg-success">نعم</span></td>
                                 </tr>
                                 <tr>
-                                    <td class="fw-bold font-monospace">الفئة</td>
-                                    <td>اسم الفئة (يجب أن تكون موجودة في النظام)</td>
+                                    <td class="fw-bold font-monospace">created_at</td>
+                                    <td>تاريخ الإنشاء — للقراءة فقط، يُتجاهل عند الاستيراد</td>
                                     <td class="text-center"><span class="badge bg-secondary">لا</span></td>
-                                    <td class="text-center"><span class="badge bg-success">نعم</span></td>
+                                    <td class="text-center"><span class="badge bg-secondary">للقراءة</span></td>
                                 </tr>
                                 <tr>
-                                    <td class="fw-bold font-monospace">القسم</td>
-                                    <td>تحديد قسم مختلف لكل صنف (يتجاوز القسم الافتراضي)</td>
-                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
-                                    <td class="text-center"><span class="badge bg-success">نعم</span></td>
-                                </tr>
-                                <tr>
-                                    <td class="fw-bold font-monospace">الوحدة2 / المعامل2</td>
-                                    <td>وحدة تحويل إضافية ومعاملها</td>
-                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
-                                    <td class="text-center"><span class="badge bg-success">نعم</span></td>
-                                </tr>
-                                <tr>
-                                    <td class="fw-bold font-monospace">الوحدة3 / المعامل3</td>
-                                    <td>وحدة تحويل ثالثة ومعاملها</td>
-                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
-                                    <td class="text-center"><span class="badge bg-success">نعم</span></td>
-                                </tr>
-                                <tr>
-                                    <td class="fw-bold font-monospace">name_en</td>
-                                    <td>اسم الصنف بالإنجليزية</td>
+                                    <td class="fw-bold font-monospace">الوحدة2/المعامل2</td>
+                                    <td>وحدات تحويل إضافية (2، 3، 4)</td>
                                     <td class="text-center"><span class="badge bg-secondary">لا</span></td>
                                     <td class="text-center"><span class="badge bg-success">نعم</span></td>
                                 </tr>
@@ -183,84 +213,19 @@
                 </div>
             </div>
 
-            <!-- Example table -->
-            <div class="card mb-3">
-                <div class="card-header fw-bold"
-                     style="background:var(--brand-light); color:var(--brand-olive);">
-                    <i class="bi bi-table me-1"></i>مثال على تنسيق الملف
-                </div>
-                <div class="card-body p-2">
-                    <div class="table-responsive">
-                        <table class="table table-sm table-bordered mb-0"
-                               style="font-size:0.78rem; white-space:nowrap;">
-                            <thead style="background:#f8f9fa;">
-                                <tr>
-                                    <th>الصنف</th>
-                                    <th>الكود</th>
-                                    <th>ملاحظة التغليف</th>
-                                    <th>الوحدة</th>
-                                    <th>الفئة</th>
-                                    <th>الحد الأدنى</th>
-                                    <th>الوحدة2</th>
-                                    <th>المعامل2</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td>بيبسي</td>
-                                    <td>DRK-001</td>
-                                    <td>24 زجاجة في الكرتون</td>
-                                    <td>قطعة</td>
-                                    <td>مشروبات</td>
-                                    <td>48</td>
-                                    <td>كرتون</td>
-                                    <td>24</td>
-                                </tr>
-                                <tr>
-                                    <td>أرز</td>
-                                    <td>GRN-005</td>
-                                    <td>كيس أحمر كبير</td>
-                                    <td>كيلوغرام</td>
-                                    <td>بقالة</td>
-                                    <td>100</td>
-                                    <td>كيس</td>
-                                    <td>50</td>
-                                </tr>
-                                <tr>
-                                    <td>زيت دوار الشمس</td>
-                                    <td></td>
-                                    <td>زجاجة بلاستيك صفراء</td>
-                                    <td>لتر</td>
-                                    <td></td>
-                                    <td></td>
-                                    <td></td>
-                                    <td></td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                    <p class="text-muted small mt-2 mb-0">
-                        <i class="bi bi-lightbulb me-1"
-                           style="color:var(--brand-orange);"></i>
-                        المعامل = عدد الوحدات الأساسية داخل الوحدة الكبيرة.
-                        مثال: 1 كرتون بيبسي = 24 قطعة ← المعامل = 24
-                    </p>
-                </div>
-            </div>
-
-            <!-- Available units (active only) -->
+            <!-- Active units -->
             <div class="card">
                 <div class="card-body py-2 px-3">
                     <p class="fw-semibold mb-2 small" style="color:var(--brand-olive);">
                         <i class="bi bi-rulers me-1"></i>وحدات القياس النشطة
                         <a href="{{ url_for('admin.units') }}"
-                           class="ms-2 small text-muted"
-                           style="font-weight:normal;">(إدارة الوحدات)</a>:
+                           class="ms-2 small text-muted" style="font-weight:normal;">
+                            (إدارة الوحدات)
+                        </a>:
                     </p>
                     <div class="d-flex flex-wrap gap-1">
                         {% for u in active_units %}
-                        <span class="badge"
-                              style="background:var(--brand-olive);"
+                        <span class="badge" style="background:var(--brand-olive);"
                               title="{{ u.name_en or '' }}">
                             {{ u.name_ar }}{% if u.symbol %} · {{ u.symbol }}{% endif %}
                         </span>
@@ -273,100 +238,21 @@
         </div>
     </div>
 
-    <!-- Import Results -->
-    {% if imported is not none %}
-    <div class="mt-4">
-
-        <!-- Summary stat cards -->
-        <div class="row g-3 mb-4">
-            <div class="col-6 col-md-3">
-                <div class="card stat-card success p-3 text-center">
-                    <div class="fw-bold fs-2" style="color:var(--brand-green);">
-                        {{ imported }}
-                    </div>
-                    <div class="text-muted small fw-semibold">صنف جديد</div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="card p-3 text-center"
-                     style="border:2px solid #0d6efd;">
-                    <div class="fw-bold fs-2" style="color:#0d6efd;">
-                        {{ updated }}
-                    </div>
-                    <div class="text-muted small fw-semibold">صنف محدَّث</div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="card stat-card warning p-3 text-center">
-                    <div class="fw-bold fs-2" style="color:#e6a817;">{{ skipped }}</div>
-                    <div class="text-muted small fw-semibold">تم تخطيه</div>
-                </div>
-            </div>
-            {% if units_created %}
-            <div class="col-6 col-md-3">
-                <div class="card p-3 text-center"
-                     style="border:1px solid var(--brand-olive);">
-                    <div class="fw-bold fs-2" style="color:var(--brand-olive);">
-                        {{ units_created }}
-                    </div>
-                    <div class="text-muted small fw-semibold">وحدة أُنشئت</div>
-                </div>
-            </div>
-            {% endif %}
-        </div>
-
-        <!-- Update notices -->
-        {% if notices %}
-        <div class="card mb-3">
-            <div class="card-header fw-bold" style="background:#cfe2ff; color:#084298;">
-                <i class="bi bi-arrow-repeat me-2"></i>
-                تفاصيل التحديثات ({{ notices|length }})
-            </div>
-            <div class="card-body p-0">
-                <ul class="list-group list-group-flush">
-                    {% for note in notices %}
-                    <li class="list-group-item list-group-item-primary small py-2">
-                        <i class="bi bi-pencil-square me-2"></i>{{ note }}
-                    </li>
-                    {% endfor %}
-                </ul>
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- Errors / warnings -->
-        {% if errors %}
-        <div class="card">
-            <div class="card-header fw-bold" style="background:#fff3cd; color:#856404;">
-                <i class="bi bi-exclamation-triangle me-2"></i>
-                تفاصيل الأخطاء والتنبيهات ({{ errors|length }})
-            </div>
-            <div class="card-body p-0">
-                <ul class="list-group list-group-flush">
-                    {% for err in errors %}
-                    <li class="list-group-item list-group-item-warning small py-2">
-                        <i class="bi bi-dash-circle me-2"></i>{{ err }}
-                    </li>
-                    {% endfor %}
-                </ul>
-            </div>
-        </div>
-        {% endif %}
-    </div>
-    {% endif %}
+    <!-- ── Import Results (rendered by JS) ─────────────────────────────────── -->
+    <div id="resultsSection" class="mt-4 d-none"></div>
 
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+/* ── Drag-and-drop / file selection ─────────────────────────────────────── */
 function filterDepts(branchId) {
-    var sel = document.getElementById('dept-sel');
-    Array.from(sel.options).forEach(function (opt) {
+    Array.from(document.getElementById('dept-sel').options).forEach(function(opt) {
         if (!opt.value) return;
         opt.style.display = (!branchId || opt.dataset.branch === branchId) ? '' : 'none';
     });
-    sel.value = '';
+    document.getElementById('dept-sel').value = '';
 }
 
 function showFileName(input) {
@@ -377,12 +263,9 @@ function showFileName(input) {
 }
 
 var zone = document.getElementById('uploadZone');
-zone.addEventListener('dragover', function (e) {
-    e.preventDefault();
-    zone.classList.add('dragover');
-});
-zone.addEventListener('dragleave', function () { zone.classList.remove('dragover'); });
-zone.addEventListener('drop', function (e) {
+zone.addEventListener('dragover',  function(e) { e.preventDefault(); zone.classList.add('dragover'); });
+zone.addEventListener('dragleave', function()  { zone.classList.remove('dragover'); });
+zone.addEventListener('drop', function(e) {
     e.preventDefault();
     zone.classList.remove('dragover');
     var files = e.dataTransfer.files;
@@ -391,5 +274,191 @@ zone.addEventListener('drop', function (e) {
         showFileName(document.getElementById('fileInput'));
     }
 });
+
+/* ── AJAX submit ─────────────────────────────────────────────────────────── */
+document.getElementById('importForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    var btn         = document.getElementById('submitBtn');
+    var loading     = document.getElementById('loadingState');
+    var resultsDiv  = document.getElementById('resultsSection');
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري المعالجة…';
+    loading.classList.remove('d-none');
+    resultsDiv.classList.add('d-none');
+    resultsDiv.innerHTML = '';
+
+    try {
+        var resp = await fetch(this.action, { method: 'POST', body: new FormData(this) });
+        var data = await resp.json();
+        loading.classList.add('d-none');
+
+        if (data.error) {
+            resultsDiv.innerHTML = renderError(data.error);
+        } else {
+            resultsDiv.innerHTML = renderResults(data);
+        }
+        resultsDiv.classList.remove('d-none');
+        resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    } catch (err) {
+        loading.classList.add('d-none');
+        resultsDiv.innerHTML = renderError('حدث خطأ في الاتصال: ' + err.message);
+        resultsDiv.classList.remove('d-none');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-cloud-upload me-2"></i>ابدأ الاستيراد';
+    }
+});
+
+/* ── Renderers ───────────────────────────────────────────────────────────── */
+function renderError(msg) {
+    return `<div class="alert alert-danger fw-semibold">
+        <i class="bi bi-x-circle me-2"></i>${escHtml(msg)}
+    </div>`;
+}
+
+function renderResults(data) {
+    var s = data.summary;
+    var html = '';
+
+    /* Summary cards */
+    html += `<div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="card p-3 text-center" style="border:2px solid var(--brand-green);">
+                <div class="fw-bold fs-2" style="color:var(--brand-green);">${s.created}</div>
+                <div class="text-muted small fw-semibold">صنف جديد</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card p-3 text-center" style="border:2px solid #0d6efd;">
+                <div class="fw-bold fs-2" style="color:#0d6efd;">${s.updated}</div>
+                <div class="text-muted small fw-semibold">صنف محدَّث</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card p-3 text-center" style="border:2px solid #e6a817;">
+                <div class="fw-bold fs-2" style="color:#e6a817;">${s.skipped}</div>
+                <div class="text-muted small fw-semibold">تم تخطيه</div>
+            </div>
+        </div>
+        ${s.units_created ? `
+        <div class="col-6 col-md-3">
+            <div class="card p-3 text-center" style="border:1px solid var(--brand-olive);">
+                <div class="fw-bold fs-2" style="color:var(--brand-olive);">${s.units_created}</div>
+                <div class="text-muted small fw-semibold">وحدة أُنشئت</div>
+            </div>
+        </div>` : ''}
+    </div>`;
+
+    /* Created items */
+    if (data.created_items && data.created_items.length) {
+        html += collapsibleCard(
+            'bi-plus-circle-fill text-success',
+            `الأصناف الجديدة (${data.created_items.length})`,
+            '#cfe2ff', '#084298', 'created-list',
+            data.created_items.map(function(r) {
+                return `<li class="list-group-item list-group-item-primary small py-2">
+                    <i class="bi bi-plus-circle me-2 text-success"></i>
+                    سطر ${r.row} — <strong>${escHtml(r.name)}</strong>
+                    <span class="badge bg-secondary ms-2">ID: ${r.id}</span>
+                </li>`;
+            }).join('')
+        );
+    }
+
+    /* Updated items */
+    if (data.updated_items && data.updated_items.length) {
+        html += collapsibleCard(
+            'bi-arrow-repeat text-primary',
+            `الأصناف المحدَّثة (${data.updated_items.length})`,
+            '#cfe2ff', '#084298', 'updated-list',
+            data.updated_items.map(function(r) {
+                var matchBadge = {
+                    'item_id':   '<span class="badge bg-success ms-1">item_id</span>',
+                    'item_code': '<span class="badge bg-primary ms-1">كود</span>',
+                    'name_ar':   '<span class="badge bg-secondary ms-1">اسم عربي</span>',
+                    'name_en':   '<span class="badge bg-secondary ms-1">اسم إنجليزي</span>',
+                }[r.match_method] || '';
+                var changes = r.changes && r.changes.length
+                    ? '<span class="text-muted ms-2 small">(' + escHtml(r.changes.join('، ')) + ')</span>'
+                    : '<span class="text-muted ms-2 small">(لا تغييرات)</span>';
+                return `<li class="list-group-item small py-2">
+                    <i class="bi bi-pencil-square me-2 text-primary"></i>
+                    سطر ${r.row} — <strong>${escHtml(r.name)}</strong>
+                    ${matchBadge}${changes}
+                </li>`;
+            }).join('')
+        );
+    }
+
+    /* Skipped rows */
+    if (data.skipped_rows && data.skipped_rows.length) {
+        html += collapsibleCard(
+            'bi-skip-forward-fill text-warning',
+            `السطور المتخطاة (${data.skipped_rows.length})`,
+            '#fff3cd', '#856404', 'skipped-list',
+            data.skipped_rows.map(function(r) {
+                var name = r.name ? ` — <strong>${escHtml(r.name)}</strong>` : '';
+                return `<li class="list-group-item list-group-item-warning small py-2">
+                    <i class="bi bi-dash-circle me-2"></i>
+                    سطر ${r.row}${name}: ${escHtml(r.reason)}
+                </li>`;
+            }).join('')
+        );
+    }
+
+    /* Warnings */
+    if (data.warnings && data.warnings.length) {
+        html += collapsibleCard(
+            'bi-exclamation-triangle-fill text-warning',
+            `التنبيهات (${data.warnings.length})`,
+            '#fff3cd', '#856404', 'warn-list',
+            data.warnings.map(function(w) {
+                return `<li class="list-group-item list-group-item-warning small py-2">
+                    <i class="bi bi-exclamation-triangle me-2"></i>${escHtml(w)}
+                </li>`;
+            }).join('')
+        );
+    }
+
+    if (!html.includes('list-group-item')) {
+        html += `<div class="alert alert-secondary">لم يتم معالجة أي صنف.</div>`;
+    }
+
+    return html;
+}
+
+function collapsibleCard(icon, title, bgColor, textColor, id, itemsHtml) {
+    return `
+    <div class="card mb-3">
+        <div class="card-header fw-bold d-flex align-items-center"
+             style="background:${bgColor}; color:${textColor}; cursor:pointer;"
+             onclick="toggleList('${id}')">
+            <i class="bi ${icon} me-2"></i>${escHtml(title)}
+            <i class="bi bi-chevron-down ms-auto" id="${id}-chevron"></i>
+        </div>
+        <div id="${id}" class="card-body p-0">
+            <ul class="list-group list-group-flush">${itemsHtml}</ul>
+        </div>
+    </div>`;
+}
+
+function toggleList(id) {
+    var el  = document.getElementById(id);
+    var chv = document.getElementById(id + '-chevron');
+    var hidden = el.style.display === 'none';
+    el.style.display  = hidden ? '' : 'none';
+    chv.className     = hidden ? 'bi bi-chevron-down ms-auto' : 'bi bi-chevron-up ms-auto';
+}
+
+function escHtml(str) {
+    return String(str || '')
+        .replace(/&/g,  '&amp;')
+        .replace(/</g,  '&lt;')
+        .replace(/>/g,  '&gt;')
+        .replace(/"/g,  '&quot;');
+}
 </script>
 {% endblock %}
