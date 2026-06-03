@@ -15,16 +15,31 @@ def export_items():
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment
 
-    items = (
-        Item.query
-        .options(
-            db.joinedload(Item.base_unit),
-            db.joinedload(Item.category),
-            db.joinedload(Item.department),
-        )
-        .order_by(Item.id)
-        .all()
+    branch_id = request.args.get('branch_id', type=int)
+    dept_id   = request.args.get('department_id', type=int)
+
+    q = Item.query.options(
+        db.joinedload(Item.base_unit),
+        db.joinedload(Item.category),
+        db.joinedload(Item.department),
     )
+    if dept_id:
+        q = q.filter(Item.department_id == dept_id)
+    elif branch_id:
+        q = q.join(Department).filter(Department.branch_id == branch_id)
+
+    items = q.order_by(Item.department_id, Item.name_ar).all()
+
+    # Build a human-readable filename suffix
+    suffix = ''
+    if dept_id:
+        d = Department.query.get(dept_id)
+        if d:
+            suffix = f'_{d.branch.name_ar}_{d.name_ar}'
+    elif branch_id:
+        b = Branch.query.get(branch_id)
+        if b:
+            suffix = f'_{b.name_ar}'
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -32,6 +47,7 @@ def export_items():
 
     HEADERS = [
         'item_id', 'item_code', 'item_name_ar', 'item_name_en',
+        'branch_name', 'department_name',
         'category_name', 'unit_name', 'min_level', 'notes',
         'is_active', 'created_at',
     ]
@@ -47,11 +63,15 @@ def export_items():
 
     for item in items:
         base_unit = item.base_unit or item.unit
+        dept      = item.department
+        branch    = dept.branch if dept else None
         ws.append([
             item.id,
             item.item_code or '',
             item.name_ar,
             item.name_en or '',
+            branch.name_ar if branch else '',
+            dept.name_ar   if dept   else '',
             item.category.name_ar if item.category else '',
             base_unit.name_ar if base_unit else '',
             item.effective_minimum_stock,
@@ -72,7 +92,8 @@ def export_items():
     resp.headers['Content-Type'] = (
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
-    resp.headers['Content-Disposition'] = 'attachment; filename=items_export.xlsx'
+    safe_suffix = suffix.replace(' ', '_')
+    resp.headers['Content-Disposition'] = f'attachment; filename=items_export{safe_suffix}.xlsx'
     return resp
 
 
@@ -172,7 +193,8 @@ def import_items():
             item_code  = (row.get('item_code')      or row.get('الكود')              or '').strip() or None
             pkg_note   = (row.get('notes')          or row.get('ملاحظة التغليف')     or row.get('packaging_note') or '').strip() or None
             cat_name   = (row.get('category_name')  or row.get('الفئة')              or row.get('category')       or '').strip() or None
-            dept_name  = (row.get('القسم')          or row.get('department')         or '').strip() or None
+            dept_name   = (row.get('department_name') or row.get('القسم') or row.get('department') or '').strip() or None
+            branch_name = (row.get('branch_name')    or '').strip() or None
             min_qty_s  = (
                 row.get('min_level')    or row.get('minimum_stock') or
                 row.get('min_stock')    or row.get('الحد الأدنى')  or ''
@@ -195,7 +217,14 @@ def import_items():
             # ── Resolve department ────────────────────────────────────────────
             row_dept_id = dept_id
             if dept_name:
-                d_obj = dept_map_full.get(dept_name) or dept_map.get(dept_name)
+                # When branch_name is present (from export file), use the unambiguous
+                # "branch / dept" key first to avoid cross-branch name collisions.
+                full_key = f'{branch_name} / {dept_name}' if branch_name else None
+                d_obj = (
+                    dept_map_full.get(full_key)
+                    or dept_map_full.get(dept_name)
+                    or dept_map.get(dept_name)
+                )
                 if d_obj:
                     row_dept_id = d_obj.id
                 else:

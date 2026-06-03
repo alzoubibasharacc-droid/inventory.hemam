@@ -26,14 +26,43 @@
                 </div>
                 <div class="card-body">
                     <p class="text-muted small mb-3">
-                        يصدّر <strong>جميع الأصناف</strong> في ملف Excel جاهز للتعديل وإعادة الاستيراد.
-                        يحتوي على أعمدة: <code>item_id</code>، الاسم، الوحدة، الفئة، الحد الأدنى،
-                        الملاحظات، الحالة.
+                        يصدّر الأصناف في ملف Excel جاهز للتعديل وإعادة الاستيراد.
+                        يحتوي على: <code>item_id</code>، الفرع، القسم، الوحدة، الفئة، الحد الأدنى والحالة.
                     </p>
-                    <a href="{{ url_for('admin.export_items') }}"
-                       class="btn btn-success w-100 fw-bold">
-                        <i class="bi bi-download me-2"></i>تحميل ملف Excel
-                    </a>
+
+                    <form id="exportForm" method="GET"
+                          action="{{ url_for('admin.export_items') }}">
+
+                        <div class="row g-2 mb-3">
+                            <div class="col-12">
+                                <label class="form-label fw-semibold small mb-1">الفرع</label>
+                                <select id="exp-branch-sel" name="branch_id"
+                                        class="form-select form-select-sm"
+                                        onchange="filterExportDepts(this.value)">
+                                    <option value="">الكل (جميع الأفرع)</option>
+                                    {% for b in branches %}
+                                    <option value="{{ b.id }}">{{ b.name_ar }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-semibold small mb-1">القسم</label>
+                                <select id="exp-dept-sel" name="department_id"
+                                        class="form-select form-select-sm">
+                                    <option value="">الكل (جميع الأقسام)</option>
+                                    {% for d in departments %}
+                                    <option value="{{ d.id }}" data-branch="{{ d.branch_id }}">
+                                        {{ d.name_ar }} — {{ d.branch.name_ar }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-success w-100 fw-bold">
+                            <i class="bi bi-download me-2"></i>تحميل ملف Excel
+                        </button>
+                    </form>
                 </div>
             </div>
 
@@ -159,6 +188,18 @@
                                     <td class="text-center"><span class="badge bg-secondary">لا</span></td>
                                     <td class="text-center"><span class="badge bg-success">نعم</span></td>
                                 </tr>
+                                <tr class="table-success">
+                                    <td class="fw-bold font-monospace">branch_name</td>
+                                    <td>اسم الفرع — يُستخدم مع القسم لتحديد دقيق (من ملف التصدير)</td>
+                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
+                                    <td class="text-center"><span class="badge bg-secondary">للتحديد</span></td>
+                                </tr>
+                                <tr class="table-success">
+                                    <td class="fw-bold font-monospace">department_name / القسم</td>
+                                    <td>اسم القسم — يتجاوز القسم الافتراضي في النموذج</td>
+                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
+                                    <td class="text-center"><span class="badge bg-secondary">للتحديد</span></td>
+                                </tr>
                                 <tr>
                                     <td class="fw-bold font-monospace">item_code / الكود</td>
                                     <td>كود الصنف — أولوية ثانية للمطابقة</td>
@@ -246,7 +287,17 @@
 
 {% block scripts %}
 <script>
-/* ── Drag-and-drop / file selection ─────────────────────────────────────── */
+/* ── Export branch → dept filter ────────────────────────────────────────── */
+function filterExportDepts(branchId) {
+    var sel = document.getElementById('exp-dept-sel');
+    Array.from(sel.options).forEach(function(opt) {
+        if (!opt.value) return;
+        opt.style.display = (!branchId || opt.dataset.branch === branchId) ? '' : 'none';
+    });
+    sel.value = '';
+}
+
+/* ── Import branch → dept filter ────────────────────────────────────────── */
 function filterDepts(branchId) {
     Array.from(document.getElementById('dept-sel').options).forEach(function(opt) {
         if (!opt.value) return;
