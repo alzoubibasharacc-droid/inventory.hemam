@@ -1,11 +1,14 @@
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime, timezone
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+_JORDAN = ZoneInfo('Asia/Amman')
 
 
 def _now():
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(_JORDAN).replace(tzinfo=None)
 
 db = SQLAlchemy()
 
@@ -154,17 +157,62 @@ class Item(db.Model):
         return 1.0
 
 
+class InventorySession(db.Model):
+    """
+    An official inventory counting event for a specific branch.
+
+    session_type values : baseline | official | quick
+    status values       : draft | active | paused | completed | archived
+
+    Baseline sessions are system-generated to hold all pre-session historical data.
+    Only one session per branch may have status='active' at a time (enforced by a
+    partial unique index created in v7 migration).
+    """
+    __tablename__ = 'inventory_sessions'
+
+    id           = db.Column(db.Integer, primary_key=True)
+    name         = db.Column(db.String(200), nullable=False)
+    branch_id    = db.Column(db.Integer, db.ForeignKey('branches.id'), nullable=False)
+    session_type = db.Column(db.String(20), nullable=False, default='official')
+    status       = db.Column(db.String(20), nullable=False, default='draft')
+    count_date   = db.Column(db.Date, nullable=False)
+    notes        = db.Column(db.Text, nullable=True)
+    created_by   = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    created_at   = db.Column(db.DateTime, default=_now)
+    opened_at    = db.Column(db.DateTime, nullable=True)
+    closed_at    = db.Column(db.DateTime, nullable=True)
+
+    branch   = db.relationship('Branch', backref='inv_sessions')
+    creator  = db.relationship('User', foreign_keys=[created_by])
+    counts   = db.relationship('InventoryCount', backref='session', lazy='dynamic')
+
+    @property
+    def is_baseline(self):
+        return self.session_type == 'baseline'
+
+    @property
+    def is_editable(self):
+        """Completed and archived sessions are read-only for counts; metadata remains editable by admins."""
+        return self.status not in ('archived',)
+
+
 class InventoryCount(db.Model):
     """
     Each row is ONE count entry (employees may add multiple per item per month).
     quantity          → always stored in base units (after conversion).
     entered_quantity  → what the employee typed (preserved for audit).
     entered_unit_id   → which unit the employee selected.
+    session_id        → FK to InventorySession; nullable for backward compatibility.
     """
     __tablename__ = 'inventory_counts'
 
     id = db.Column(db.Integer, primary_key=True)
     item_id = db.Column(db.Integer, db.ForeignKey('items.id'), nullable=False)
+
+    # Session link — nullable during transition; all future counts must have a session
+    session_id = db.Column(
+        db.Integer, db.ForeignKey('inventory_sessions.id'), nullable=True
+    )
 
     # Internal storage — always in item's base unit
     quantity = db.Column(db.Float, nullable=False)
@@ -190,6 +238,7 @@ class InventoryCount(db.Model):
         db.Index('ix_inv_counts_month_year', 'month', 'year'),
         db.Index('ix_inv_counts_item_month_year', 'item_id', 'month', 'year'),
         db.Index('ix_inv_counts_count_date', 'count_date'),
+        db.Index('ix_inv_counts_session_id', 'session_id'),
     )
 
 

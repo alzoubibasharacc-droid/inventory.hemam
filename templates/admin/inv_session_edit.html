@@ -1,0 +1,139 @@
+{% extends 'base.html' %}
+{% block title %}تعديل جلسة — {{ inv_session.name }} — همم{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+  <!-- ── Breadcrumb ────────────────────────────────────────────────────────── -->
+  <nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb small">
+      <li class="breadcrumb-item">
+        <a href="{{ url_for('admin.inv_sessions_list') }}">جلسات الجرد</a>
+      </li>
+      <li class="breadcrumb-item">
+        <a href="{{ url_for('admin.inv_session_detail', session_id=inv_session.id) }}">{{ inv_session.name }}</a>
+      </li>
+      <li class="breadcrumb-item active" aria-current="page">تعديل</li>
+    </ol>
+  </nav>
+
+  <!-- ── Page header ───────────────────────────────────────────────────────── -->
+  <div class="section-header mb-4">
+    <div class="section-icon"><i class="bi bi-pencil-square"></i></div>
+    <div>
+      <h4 class="mb-0">تعديل الجلسة</h4>
+      <p class="text-muted mb-0 small">{{ inv_session.branch.name_ar }}</p>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col-12 col-lg-7">
+      <div class="card">
+        <div class="card-body p-4">
+
+          <!-- Read-only fields strip -->
+          <div class="d-flex gap-2 mb-4 flex-wrap">
+            <span class="badge bg-{{ type_colors[inv_session.session_type] }}-subtle
+                         text-{{ type_colors[inv_session.session_type] }} border
+                         border-{{ type_colors[inv_session.session_type] }}-subtle rounded-pill px-3 py-2">
+              <i class="bi bi-tag me-1"></i>{{ type_labels[inv_session.session_type] }}
+            </span>
+            <span class="badge bg-{{ status_colors[inv_session.status] }}-subtle
+                         text-{{ status_colors[inv_session.status] }} border
+                         border-{{ status_colors[inv_session.status] }}-subtle rounded-pill px-3 py-2">
+              {{ status_labels[inv_session.status] }}
+            </span>
+            {% if inv_session.is_baseline %}
+            <span class="badge bg-light text-secondary border rounded-pill px-3 py-2">
+              <i class="bi bi-shield-lock me-1"></i>أساسي — محمي
+            </span>
+            {% endif %}
+          </div>
+
+          {% if inv_session.is_baseline %}
+          <div class="alert alert-warning d-flex align-items-start gap-2 mb-4">
+            <i class="bi bi-exclamation-triangle-fill mt-1 flex-shrink-0"></i>
+            <div class="small">
+              هذه جلسة أساسية. يمكن تعديل الاسم والملاحظات فقط.
+              تاريخ الجرد مثبت ولا يمكن تغييره.
+            </div>
+          </div>
+          {% endif %}
+
+          <form method="POST">
+
+            <!-- Name -->
+            <div class="mb-3">
+              <label class="form-label fw-semibold" for="name">
+                اسم الجلسة <span class="text-danger">*</span>
+              </label>
+              <input type="text" id="name" name="name" class="form-control"
+                     value="{{ inv_session.name }}" required maxlength="200"
+                     placeholder="مثال: جرد يونيو 2026 — الفرع الرئيسي">
+            </div>
+
+            <!-- Count date — read-only for baseline, editable for others -->
+            <div class="mb-3">
+              <label class="form-label fw-semibold" for="count_date">
+                تاريخ الجرد الرسمي
+              </label>
+              {% if inv_session.is_baseline %}
+              <input type="date" id="count_date" class="form-control bg-light"
+                     value="{{ inv_session.count_date.isoformat() }}"
+                     disabled>
+              <div class="form-text text-muted">
+                <i class="bi bi-lock me-1"></i>مثبت للجلسات الأساسية
+              </div>
+              {% else %}
+              <input type="date" id="count_date" name="count_date" class="form-control"
+                     value="{{ inv_session.count_date.isoformat() }}" required>
+              <div class="form-text text-muted">
+                جميع سجلات الجرد في هذه الجلسة ستُنسب إلى هذا التاريخ بغض النظر عن يوم الإدخال.
+              </div>
+              {% endif %}
+            </div>
+
+            <!-- Notes -->
+            <div class="mb-4">
+              <label class="form-label fw-semibold" for="notes">ملاحظات</label>
+              <textarea id="notes" name="notes" class="form-control" rows="3"
+                        placeholder="ملاحظات اختيارية على هذه الجلسة…">{{ inv_session.notes or '' }}</textarea>
+            </div>
+
+            <!-- Metadata (read-only) -->
+            <div class="border rounded p-3 bg-light mb-4">
+              <div class="row g-2 small text-muted">
+                <div class="col-6">
+                  <span class="fw-semibold d-block">الفرع</span>
+                  {{ inv_session.branch.name_ar }}
+                </div>
+                <div class="col-6">
+                  <span class="fw-semibold d-block">أُنشئت بواسطة</span>
+                  {{ inv_session.creator.full_name if inv_session.creator else '—' }}
+                </div>
+                <div class="col-6">
+                  <span class="fw-semibold d-block">تاريخ الإنشاء</span>
+                  {{ inv_session.created_at.strftime('%Y-%m-%d') if inv_session.created_at else '—' }}
+                </div>
+              </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-primary px-4">
+                <i class="bi bi-check-lg me-1"></i>حفظ التعديلات
+              </button>
+              <a href="{{ url_for('admin.inv_session_detail', session_id=inv_session.id) }}"
+                 class="btn btn-outline-secondary">
+                إلغاء
+              </a>
+            </div>
+
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

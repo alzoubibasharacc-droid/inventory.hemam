@@ -6,6 +6,10 @@ Cumulative changes applied:
   v2  Performance indexes, base_unit_id backfill (SQLite + PostgreSQL)
   v3  minimum_stock column, backfilled from min_quantity (SQLite + PostgreSQL)
   v4  Unit.symbol, Unit.is_active, Unit.created_at columns
+  v5  item_code unique per department, not global
+  v6  items.created_at column
+  v7  InventorySession table, session_id on inventory_counts, baseline sessions,
+      historical data backfill, partial unique index for active sessions
 
 Run after pulling a new version:
     python migrate.py
@@ -39,6 +43,19 @@ def column_exists(conn, table, column):
     if _is_sqlite(conn):
         return _column_exists_sqlite(conn, table, column)
     return _column_exists_pg(conn, table, column)
+
+
+def _table_exists(conn, table):
+    if _is_sqlite(conn):
+        row = conn.execute(db.text(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=:t"
+        ), {'t': table}).fetchone()
+    else:
+        row = conn.execute(db.text(
+            'SELECT 1 FROM information_schema.tables '
+            'WHERE table_schema = current_schema() AND table_name = :t'
+        ), {'t': table}).fetchone()
+    return row is not None
 
 
 def _index_exists_sqlite(conn, name):
@@ -372,6 +389,188 @@ def run_v6(conn):
         print('  = items.created_at already present')
 
 
+def run_v7(conn):
+    """
+    v7: Inventory Session foundation.
+
+    Steps (all idempotent):
+      1. Create inventory_sessions table.
+      2. Add session_id (nullable FK) to inventory_counts.
+      3. Add ix_inv_counts_session_id performance index.
+      4. Create one Baseline session per branch (idempotent — skips existing).
+      5. Backfill session_id on all orphan inventory_counts.
+      6. Add partial unique index: only one active session per branch.
+      7. Verify zero orphan counts remain.
+    """
+    sqlite = _is_sqlite(conn)
+
+    # ── 1. Create inventory_sessions table ───────────────────────────────────
+    if not _table_exists(conn, 'inventory_sessions'):
+        if sqlite:
+            conn.execute(db.text('''
+                CREATE TABLE inventory_sessions (
+                    id           INTEGER  PRIMARY KEY AUTOINCREMENT,
+                    name         VARCHAR(200) NOT NULL,
+                    branch_id    INTEGER  NOT NULL REFERENCES branches(id),
+                    session_type VARCHAR(20)  NOT NULL DEFAULT 'official',
+                    status       VARCHAR(20)  NOT NULL DEFAULT 'draft',
+                    count_date   DATE         NOT NULL,
+                    notes        TEXT,
+                    created_by   INTEGER  NOT NULL REFERENCES users(id),
+                    created_at   DATETIME,
+                    opened_at    DATETIME,
+                    closed_at    DATETIME
+                )
+            '''))
+        else:
+            conn.execute(db.text('''
+                CREATE TABLE inventory_sessions (
+                    id           SERIAL       PRIMARY KEY,
+                    name         VARCHAR(200) NOT NULL,
+                    branch_id    INTEGER      NOT NULL REFERENCES branches(id),
+                    session_type VARCHAR(20)  NOT NULL DEFAULT 'official',
+                    status       VARCHAR(20)  NOT NULL DEFAULT 'draft',
+                    count_date   DATE         NOT NULL,
+                    notes        TEXT,
+                    created_by   INTEGER      NOT NULL REFERENCES users(id),
+                    created_at   TIMESTAMP,
+                    opened_at    TIMESTAMP,
+                    closed_at    TIMESTAMP
+                )
+            '''))
+        print('  + inventory_sessions table created')
+    else:
+        print('  = inventory_sessions table already exists')
+
+    # ── 2. Add session_id (nullable) to inventory_counts ─────────────────────
+    if not column_exists(conn, 'inventory_counts', 'session_id'):
+        conn.execute(db.text(
+            'ALTER TABLE inventory_counts '
+            'ADD COLUMN session_id INTEGER REFERENCES inventory_sessions(id)'
+        ))
+        print('  + inventory_counts.session_id (nullable FK)')
+    else:
+        print('  = inventory_counts.session_id already present')
+
+    # ── 3. Performance index on session_id ───────────────────────────────────
+    if not index_exists(conn, 'ix_inv_counts_session_id'):
+        conn.execute(db.text(
+            'CREATE INDEX ix_inv_counts_session_id '
+            'ON inventory_counts (session_id)'
+        ))
+        print('  + ix_inv_counts_session_id')
+    else:
+        print('  = ix_inv_counts_session_id already exists')
+
+    # ── 4. Resolve created_by: first admin, else first user ──────────────────
+    admin_row = conn.execute(db.text(
+        "SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1"
+    )).fetchone()
+    if not admin_row:
+        admin_row = conn.execute(db.text(
+            'SELECT id FROM users ORDER BY id LIMIT 1'
+        )).fetchone()
+    if not admin_row:
+        print('  ! No users found — skipping baseline session creation')
+        return
+    created_by_id = admin_row[0]
+
+    # ── 5. Create one Baseline session per branch (idempotent) ───────────────
+    branches = conn.execute(db.text(
+        'SELECT id, name_ar FROM branches ORDER BY id'
+    )).fetchall()
+
+    created_count = 0
+    for branch_id, name_ar in branches:
+        existing = conn.execute(db.text(
+            "SELECT id FROM inventory_sessions "
+            "WHERE branch_id = :b AND session_type = 'baseline' LIMIT 1"
+        ), {'b': branch_id}).fetchone()
+
+        if existing:
+            continue
+
+        session_name = f'جرد أساسي — {name_ar}'
+        conn.execute(db.text('''
+            INSERT INTO inventory_sessions
+                (name, branch_id, session_type, status, count_date,
+                 notes, created_by, created_at)
+            VALUES
+                (:name, :branch_id, 'baseline', 'completed', '2026-05-31',
+                 'سجل تاريخي — تم إنشاؤه تلقائياً عند تفعيل نظام الجلسات',
+                 :created_by, CURRENT_TIMESTAMP)
+        '''), {
+            'name':       session_name,
+            'branch_id':  branch_id,
+            'created_by': created_by_id,
+        })
+        created_count += 1
+
+    if created_count:
+        print(f'  + created {created_count} baseline session(s)')
+    else:
+        print('  = baseline sessions already exist for all branches')
+
+    # ── 6. Backfill session_id on orphan inventory_counts ────────────────────
+    if sqlite:
+        # SQLite does not support UPDATE … FROM; use correlated subquery instead.
+        result = conn.execute(db.text('''
+            UPDATE inventory_counts
+            SET session_id = (
+                SELECT s.id
+                FROM inventory_sessions s,
+                     items              i,
+                     departments        d
+                WHERE i.id        = inventory_counts.item_id
+                  AND d.id        = i.department_id
+                  AND s.branch_id = d.branch_id
+                  AND s.session_type = 'baseline'
+                LIMIT 1
+            )
+            WHERE session_id IS NULL
+        '''))
+    else:
+        # PostgreSQL UPDATE … FROM syntax (more efficient on large datasets).
+        result = conn.execute(db.text('''
+            UPDATE inventory_counts ic
+            SET    session_id = s.id
+            FROM   inventory_sessions s
+            JOIN   items       i ON i.id   = ic.item_id
+            JOIN   departments d ON d.id   = i.department_id
+            WHERE  s.branch_id     = d.branch_id
+              AND  s.session_type  = 'baseline'
+              AND  ic.session_id   IS NULL
+        '''))
+    print(f'  + backfilled session_id on {result.rowcount} count record(s)')
+
+    # ── 7. Partial unique index: max one active session per branch ────────────
+    # Syntax is identical on SQLite 3.8.9+ and PostgreSQL 8.2+.
+    if not index_exists(conn, 'uq_one_active_session_per_branch'):
+        conn.execute(db.text(
+            "CREATE UNIQUE INDEX uq_one_active_session_per_branch "
+            "ON inventory_sessions (branch_id) "
+            "WHERE status = 'active'"
+        ))
+        print('  + uq_one_active_session_per_branch (partial unique index)')
+    else:
+        print('  = uq_one_active_session_per_branch already exists')
+
+    # ── 8. Safety check: no orphan counts ────────────────────────────────────
+    orphan_row = conn.execute(db.text(
+        'SELECT COUNT(*) FROM inventory_counts WHERE session_id IS NULL'
+    )).fetchone()
+    orphan_count = orphan_row[0] if orphan_row else 0
+    if orphan_count:
+        raise RuntimeError(
+            f'v7 safety check FAILED: {orphan_count} inventory_count row(s) '
+            'still have session_id = NULL after backfill. '
+            'Likely cause: count records linked to items whose department has '
+            'no matching branch, or items with no department. '
+            'Investigate before retrying.'
+        )
+    print('  ✓ safety check passed — zero orphan count records')
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def run():
@@ -396,6 +595,9 @@ def run():
 
             print('\n-- v6 (items.created_at) --')
             run_v6(conn)
+
+            print('\n-- v7 (InventorySession table, baseline sessions, backfill) --')
+            run_v7(conn)
 
             trans.commit()
             print('\nMigration complete.\n')

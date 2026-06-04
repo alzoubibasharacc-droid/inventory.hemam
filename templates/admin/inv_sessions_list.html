@@ -1,0 +1,192 @@
+{% extends 'base.html' %}
+{% block title %}جلسات الجرد — همم{% endblock %}
+
+{% block content %}
+<style>
+.type-badge, .status-badge {
+    font-size: 0.72rem;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-weight: 700;
+    display: inline-block;
+    white-space: nowrap;
+}
+
+.baseline-marker {
+    font-size: 0.65rem;
+    color: #888;
+    font-style: italic;
+}
+
+.session-table th {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: #666;
+    border-bottom: 2px solid #e9ecef;
+    white-space: nowrap;
+}
+
+.session-table td {
+    font-size: 0.875rem;
+    vertical-align: middle;
+}
+
+.count-pill {
+    background: #f4f6f0;
+    border-radius: 20px;
+    padding: 2px 10px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #444;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+</style>
+
+<div class="container-fluid">
+
+  <!-- ── Page header ───────────────────────────────────────────────────────── -->
+  <div class="section-header mb-4">
+    <div class="section-icon"><i class="bi bi-journal-text"></i></div>
+    <div>
+      <h4 class="mb-0">جلسات الجرد</h4>
+      <p class="text-muted mb-0 small">إدارة ومتابعة جميع جلسات الجرد</p>
+    </div>
+  </div>
+
+  <!-- ── Summary strip ────────────────────────────────────────────────────── -->
+  {% set total = rows | length %}
+  {% set baseline_count = rows | selectattr('0.session_type', 'equalto', 'baseline') | list | length %}
+  {% set active_count   = rows | selectattr('0.status',       'equalto', 'active')   | list | length %}
+
+  <div class="d-flex gap-3 flex-wrap mb-4">
+    <div class="ss-chip">
+      <i class="bi bi-journal-text" style="color:var(--brand-olive);"></i>
+      {{ total }} جلسة
+    </div>
+    {% if baseline_count %}
+    <div class="ss-chip">
+      <i class="bi bi-archive" style="color:#0dcaf0;"></i>
+      {{ baseline_count }} أساسية
+    </div>
+    {% endif %}
+    {% if active_count %}
+    <div class="ss-chip">
+      <i class="bi bi-circle-fill" style="color:#198754; font-size:.6rem;"></i>
+      {{ active_count }} نشطة
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ── Table ─────────────────────────────────────────────────────────────── -->
+  {% if rows %}
+  <div class="card">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 session-table">
+          <thead>
+            <tr>
+              <th class="ps-4">اسم الجلسة</th>
+              <th>الفرع</th>
+              <th>النوع</th>
+              <th>تاريخ الجرد</th>
+              <th>الحالة</th>
+              <th class="text-center">سجلات الجرد</th>
+              <th class="text-center pe-4">الإجراءات</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% set current_branch = namespace(id=None) %}
+            {% for inv_session, branch, count_records in rows %}
+
+            {# Branch separator row #}
+            {% if branch.id != current_branch.id %}
+            {% set current_branch.id = branch.id %}
+            <tr style="background:#f8faf5;">
+              <td colspan="7" class="ps-4 py-2">
+                <span style="font-size:0.78rem; font-weight:800; color:var(--brand-olive); text-transform:uppercase; letter-spacing:.05em;">
+                  <i class="bi bi-building me-1"></i>{{ branch.name_ar }}
+                </span>
+              </td>
+            </tr>
+            {% endif %}
+
+            <tr>
+              <!-- Name -->
+              <td class="ps-4">
+                <span class="fw-semibold">{{ inv_session.name }}</span>
+                {% if inv_session.is_baseline %}
+                <br><span class="baseline-marker">
+                  <i class="bi bi-shield-lock me-1"></i>لا يمكن حذفه
+                </span>
+                {% endif %}
+              </td>
+
+              <!-- Branch -->
+              <td class="text-muted small">{{ branch.name_ar }}</td>
+
+              <!-- Type badge -->
+              <td>
+                <span class="type-badge bg-{{ type_colors[inv_session.session_type] }}-subtle
+                             text-{{ type_colors[inv_session.session_type] }}">
+                  {{ type_labels[inv_session.session_type] }}
+                </span>
+              </td>
+
+              <!-- Count date -->
+              <td>
+                <span class="font-monospace small">{{ inv_session.count_date.strftime('%Y-%m-%d') }}</span>
+              </td>
+
+              <!-- Status badge -->
+              <td>
+                <span class="status-badge bg-{{ status_colors[inv_session.status] }}-subtle
+                             text-{{ status_colors[inv_session.status] }}">
+                  {{ status_labels[inv_session.status] }}
+                </span>
+              </td>
+
+              <!-- Count records pill -->
+              <td class="text-center">
+                <span class="count-pill">
+                  <i class="bi bi-card-list"></i>
+                  {{ '{:,}'.format(count_records) }}
+                </span>
+              </td>
+
+              <!-- Actions -->
+              <td class="text-center pe-4">
+                <div class="d-flex gap-2 justify-content-center">
+                  <a href="{{ url_for('admin.inv_session_detail', session_id=inv_session.id) }}"
+                     class="btn btn-sm btn-outline-secondary"
+                     title="عرض">
+                    <i class="bi bi-eye"></i>
+                  </a>
+                  <a href="{{ url_for('admin.inv_session_edit', session_id=inv_session.id) }}"
+                     class="btn btn-sm btn-outline-primary"
+                     title="تعديل">
+                    <i class="bi bi-pencil"></i>
+                  </a>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {% else %}
+  <div class="alert alert-info text-center py-5">
+    <i class="bi bi-journal-x fs-1 d-block mb-3" style="color:var(--brand-olive);"></i>
+    <h5 class="fw-bold">لا توجد جلسات جرد بعد</h5>
+    <p class="text-muted mb-0">قم بتشغيل سكريبت الترحيل لإنشاء الجلسات الأساسية</p>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

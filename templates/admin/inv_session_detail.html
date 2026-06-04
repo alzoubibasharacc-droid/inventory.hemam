@@ -1,0 +1,134 @@
+{% extends 'base.html' %}
+{% block title %}{{ inv_session.name }} — همم{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+  <!-- ── Breadcrumb ────────────────────────────────────────────────────────── -->
+  <nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb small">
+      <li class="breadcrumb-item">
+        <a href="{{ url_for('admin.inv_sessions_list') }}">جلسات الجرد</a>
+      </li>
+      <li class="breadcrumb-item active" aria-current="page">{{ inv_session.name }}</li>
+    </ol>
+  </nav>
+
+  <!-- ── Page header ───────────────────────────────────────────────────────── -->
+  <div class="d-flex align-items-start justify-content-between mb-4 flex-wrap gap-3">
+    <div class="d-flex align-items-center gap-3">
+      <div class="section-icon"><i class="bi bi-journal-text"></i></div>
+      <div>
+        <h4 class="mb-1">{{ inv_session.name }}</h4>
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          <span class="badge bg-{{ type_colors[inv_session.session_type] }}-subtle
+                       text-{{ type_colors[inv_session.session_type] }} border
+                       border-{{ type_colors[inv_session.session_type] }}-subtle rounded-pill">
+            {{ type_labels[inv_session.session_type] }}
+          </span>
+          <span class="badge bg-{{ status_colors[inv_session.status] }}-subtle
+                       text-{{ status_colors[inv_session.status] }} border
+                       border-{{ status_colors[inv_session.status] }}-subtle rounded-pill">
+            {{ status_labels[inv_session.status] }}
+          </span>
+          {% if inv_session.is_baseline %}
+          <span class="badge bg-light text-secondary border rounded-pill">
+            <i class="bi bi-shield-lock me-1"></i>أساسي — محمي
+          </span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <a href="{{ url_for('admin.inv_session_edit', session_id=inv_session.id) }}"
+       class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-pencil me-1"></i>تعديل
+    </a>
+  </div>
+
+  <!-- ── Info cards ────────────────────────────────────────────────────────── -->
+  <div class="row g-3 mb-4">
+
+    <!-- Branch -->
+    <div class="col-6 col-md-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <div class="text-muted small mb-1"><i class="bi bi-building me-1"></i>الفرع</div>
+          <div class="fw-bold">{{ inv_session.branch.name_ar }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Count date -->
+    <div class="col-6 col-md-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <div class="text-muted small mb-1"><i class="bi bi-calendar3 me-1"></i>تاريخ الجرد</div>
+          <div class="fw-bold font-monospace">{{ inv_session.count_date.strftime('%Y-%m-%d') }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Count records -->
+    <div class="col-6 col-md-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <div class="text-muted small mb-1"><i class="bi bi-card-list me-1"></i>سجلات الجرد</div>
+          <div class="fw-bold fs-5" style="color:var(--brand-olive);">{{ '{:,}'.format(count_records) }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Created at -->
+    <div class="col-6 col-md-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <div class="text-muted small mb-1"><i class="bi bi-clock-history me-1"></i>تاريخ الإنشاء</div>
+          <div class="fw-semibold small">
+            {{ inv_session.created_at.strftime('%Y-%m-%d') if inv_session.created_at else '—' }}
+          </div>
+          {% if inv_session.creator %}
+          <div class="text-muted" style="font-size:0.72rem;">
+            بواسطة {{ inv_session.creator.full_name }}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Notes ─────────────────────────────────────────────────────────────── -->
+  {% if inv_session.notes %}
+  <div class="card mb-4">
+    <div class="card-body">
+      <h6 class="card-title text-muted mb-2">
+        <i class="bi bi-chat-left-text me-1"></i>ملاحظات
+      </h6>
+      <p class="mb-0" style="white-space: pre-wrap;">{{ inv_session.notes }}</p>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ── Baseline notice ───────────────────────────────────────────────────── -->
+  {% if inv_session.is_baseline %}
+  <div class="alert alert-info d-flex align-items-start gap-3">
+    <i class="bi bi-info-circle-fill fs-5 mt-1 flex-shrink-0"></i>
+    <div>
+      <strong>جلسة أساسية</strong> — تحتوي هذه الجلسة على جميع بيانات الجرد التاريخية
+      التي كانت موجودة قبل تفعيل نظام الجلسات.
+      تاريخ الجرد مثبت على <strong>{{ inv_session.count_date.strftime('%Y-%m-%d') }}</strong>.
+      لا يمكن حذف هذه الجلسة ولا تغيير نوعها.
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ── Back link ─────────────────────────────────────────────────────────── -->
+  <div class="mt-3">
+    <a href="{{ url_for('admin.inv_sessions_list') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-right me-1"></i>عودة إلى القائمة
+    </a>
+  </div>
+
+</div>
+{% endblock %}
