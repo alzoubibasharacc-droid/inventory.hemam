@@ -1,515 +1,890 @@
 {% extends 'base.html' %}
 {% block title %}استيراد / تصدير الأصناف{% endblock %}
 
+{% block extra_css %}
+<style>
+/* ── Variables ──────────────────────────────────────────────────────────── */
+:root {
+  --io-900: #0f2a1e;
+  --io-800: #1a3c2e;
+  --io-700: #1e4535;
+  --io-600: #2d5a3d;
+  --io-500: #3d7a52;
+  --io-200: #b7ddc7;
+  --io-100: #e0f0e8;
+  --io-50:  #f2f8f4;
+  --io-surface: #ffffff;
+  --io-bg:  #f0f4f1;
+  --io-border: #d4e4da;
+  --io-border-lt: #eaf2ed;
+  --io-text:  #18291f;
+  --io-muted: #5e7a69;
+  --io-light: #96b5a4;
+  --io-accent: #f0a500;
+
+  --io-r-xs: 6px;
+  --io-r-sm: 10px;
+  --io-r:    14px;
+  --io-r-lg: 20px;
+  --io-sh-sm: 0 1px 4px rgba(15,42,30,.07);
+  --io-sh:    0 4px 18px rgba(15,42,30,.09);
+  --io-sh-lg: 0 8px 40px rgba(15,42,30,.13);
+}
+
+/* ── Page shell ─────────────────────────────────────────────────────────── */
+.io { font-family: 'Cairo', sans-serif !important; }
+.io * { font-family: inherit; }
+
+.io-wrap {
+  background: var(--io-bg);
+  min-height: calc(100vh - 120px);
+  padding: 0 4px 64px;
+  animation: io-up .4s ease both;
+}
+@keyframes io-up {
+  from { opacity:0; transform:translateY(12px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+
+/* ── Top bar ────────────────────────────────────────────────────────────── */
+.io-topbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 0 22px;
+}
+.io-topbar-icon {
+  width: 44px; height: 44px;
+  background: var(--io-700);
+  border-radius: var(--io-r-sm);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 18px;
+  flex-shrink: 0;
+  box-shadow: 0 3px 10px rgba(15,42,30,.25);
+}
+.io-topbar h1 {
+  font-size: 1.25rem; font-weight: 800;
+  color: var(--io-text); margin: 0;
+  line-height: 1.2;
+}
+.io-topbar p { font-size: .82rem; color: var(--io-muted); margin: 3px 0 0; }
+.io-topbar-back {
+  margin-right: auto;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 18px;
+  background: var(--io-surface);
+  border: 1.5px solid var(--io-border);
+  border-radius: var(--io-r-sm);
+  color: var(--io-muted);
+  font-size: .85rem; font-weight: 600;
+  text-decoration: none;
+  transition: all .18s;
+}
+.io-topbar-back:hover {
+  background: var(--io-100);
+  border-color: var(--io-500);
+  color: var(--io-700);
+}
+
+/* ── Two-panel grid ─────────────────────────────────────────────────────── */
+/* In RTL: first column = RIGHT, second column = LEFT                       */
+/* HTML order: [import (right/main), export (left/secondary)]               */
+.io-grid {
+  display: grid;
+  grid-template-columns: 1fr 370px;
+  gap: 18px;
+  align-items: start;
+}
+@media (max-width: 960px) {
+  .io-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Panel ──────────────────────────────────────────────────────────────── */
+.io-panel {
+  background: var(--io-surface);
+  border: 1px solid var(--io-border);
+  border-radius: var(--io-r-lg);
+  box-shadow: var(--io-sh);
+  overflow: hidden;
+}
+
+.io-panel-hd {
+  padding: 16px 20px;
+  display: flex; align-items: center; gap: 12px;
+  border-bottom: 1px solid rgba(255,255,255,.12);
+}
+.io-panel-hd.green {
+  background: linear-gradient(135deg, var(--io-800) 0%, var(--io-600) 100%);
+}
+.io-panel-hd.dark {
+  background: linear-gradient(135deg, var(--io-900) 0%, var(--io-800) 100%);
+}
+.io-panel-hd-ico {
+  width: 34px; height: 34px;
+  background: rgba(255,255,255,.15);
+  border-radius: var(--io-r-xs);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 15px;
+}
+.io-panel-hd-title { color: #fff; font-weight: 700; font-size: .97rem; }
+.io-panel-hd-sub   { color: rgba(255,255,255,.65); font-size: .78rem; margin-top: 1px; }
+
+.io-panel-bd { padding: 20px; }
+
+/* ── Form elements ──────────────────────────────────────────────────────── */
+.io-fgroup { margin-bottom: 14px; }
+.io-flabel {
+  display: block;
+  font-size: .73rem; font-weight: 700;
+  color: var(--io-muted);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin-bottom: 6px;
+}
+.io-select {
+  width: 100%;
+  padding: 9px 14px 9px 36px;
+  border: 1.5px solid var(--io-border);
+  border-radius: var(--io-r-sm);
+  background: var(--io-surface);
+  color: var(--io-text);
+  font-family: 'Cairo', sans-serif;
+  font-size: .88rem;
+  transition: border .18s, box-shadow .18s;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%235e7a69' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: left 12px center;
+  background-size: 11px;
+}
+.io-select:focus {
+  outline: none;
+  border-color: var(--io-600);
+  box-shadow: 0 0 0 3px rgba(45,90,61,.13);
+}
+
+/* ── Divider ────────────────────────────────────────────────────────────── */
+.io-hr { border: none; border-top: 1px solid var(--io-border-lt); margin: 18px 0; }
+
+/* ── What's included chips (export) ────────────────────────────────────── */
+.io-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
+.io-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 11px;
+  background: var(--io-100);
+  color: var(--io-700);
+  border: 1px solid var(--io-200);
+  border-radius: 20px;
+  font-size: .77rem; font-weight: 600;
+}
+
+/* ── Buttons ────────────────────────────────────────────────────────────── */
+.io-btn {
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+  width: 100%;
+  padding: 12px 20px;
+  border: none;
+  border-radius: var(--io-r-sm);
+  font-family: 'Cairo', sans-serif;
+  font-weight: 700;
+  font-size: .93rem;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all .2s;
+}
+.io-btn-export {
+  background: linear-gradient(135deg, #15803d, #22c55e);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(21,128,61,.3);
+}
+.io-btn-export:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 7px 22px rgba(21,128,61,.38);
+  color: #fff;
+}
+.io-btn-import {
+  background: linear-gradient(135deg, var(--io-800), var(--io-600));
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(15,42,30,.3);
+  font-size: 1rem;
+  padding: 13px 20px;
+}
+.io-btn-import:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 7px 22px rgba(15,42,30,.38);
+}
+.io-btn-import:disabled { opacity: .65; transform: none; cursor: not-allowed; }
+
+/* ── Column guide table ─────────────────────────────────────────────────── */
+.io-guide {
+  border: 1px solid var(--io-border);
+  border-radius: var(--io-r-sm);
+  overflow: hidden;
+  margin-bottom: 20px;
+  font-size: .81rem;
+}
+.io-guide table { width: 100%; border-collapse: collapse; }
+.io-guide thead th {
+  background: var(--io-800);
+  color: #fff;
+  padding: 9px 12px;
+  font-weight: 700;
+  font-size: .75rem;
+  text-align: right;
+}
+.io-guide tbody tr { border-bottom: 1px solid var(--io-border-lt); transition: background .13s; }
+.io-guide tbody tr:last-child { border: none; }
+.io-guide tbody tr:hover { background: var(--io-50); }
+.io-guide tbody tr.row-key  { background: #f0fdf4; }
+.io-guide tbody tr.row-key:hover { background: #dcfce7; }
+.io-guide tbody tr.row-ro   { background: #f8faff; }
+.io-guide tbody tr.row-ro:hover  { background: #eff6ff; }
+.io-guide td { padding: 8px 12px; color: var(--io-text); vertical-align: middle; }
+.io-col-nm {
+  font-family: 'Courier New', monospace;
+  font-size: .78rem; font-weight: 700;
+  color: var(--io-700);
+  white-space: nowrap;
+}
+.io-col-ds { color: var(--io-muted); line-height: 1.35; }
+
+/* Badges */
+.io-bdg {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 20px;
+  font-size: .71rem; font-weight: 700;
+  white-space: nowrap;
+}
+.io-bdg-req { background: #fee2e2; color: #b91c1c; }
+.io-bdg-upd { background: #dbeafe; color: #1d4ed8; }
+.io-bdg-key { background: #dcfce7; color: #15803d; }
+.io-bdg-opt { background: #f3f4f6; color: #4b5563; }
+.io-bdg-ro  { background: #f1f5f9; color: #94a3b8; }
+
+/* ── Drop zone ──────────────────────────────────────────────────────────── */
+.io-dz {
+  border: 2px dashed var(--io-200);
+  border-radius: var(--io-r);
+  padding: 32px 20px;
+  text-align: center;
+  cursor: pointer;
+  background: var(--io-50);
+  transition: all .22s;
+  position: relative;
+  margin-bottom: 16px;
+}
+.io-dz:hover, .io-dz.over {
+  border-color: var(--io-600);
+  background: var(--io-100);
+  box-shadow: 0 0 0 4px rgba(45,90,61,.09);
+}
+.io-dz-ico {
+  width: 52px; height: 52px;
+  background: var(--io-800);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 14px;
+  color: #fff; font-size: 20px;
+  transition: transform .22s;
+  box-shadow: 0 4px 12px rgba(15,42,30,.25);
+}
+.io-dz:hover .io-dz-ico { transform: translateY(-4px); }
+.io-dz-title { font-size: .97rem; font-weight: 700; color: var(--io-text); margin-bottom: 3px; }
+.io-dz-sub   { font-size: .82rem; color: var(--io-muted); }
+.io-dz-types { margin-top: 12px; display: flex; justify-content: center; gap: 7px; }
+.io-dz-type  {
+  padding: 3px 12px;
+  background: var(--io-surface);
+  border: 1.5px solid var(--io-border);
+  border-radius: 20px;
+  font-size: .74rem; font-weight: 700;
+  color: var(--io-700);
+  letter-spacing: .3px;
+}
+
+/* File selected banner */
+.io-file-ok {
+  display: flex; align-items: center; gap: 10px;
+  background: #f0fdf4;
+  border: 1.5px solid #86efac;
+  border-radius: var(--io-r-sm);
+  padding: 10px 14px;
+  color: #15803d; font-weight: 600; font-size: .88rem;
+  margin-bottom: 16px;
+  animation: io-up .25s ease;
+}
+
+/* ── Toggle ─────────────────────────────────────────────────────────────── */
+.io-toggle {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 14px;
+  background: var(--io-50);
+  border: 1.5px solid var(--io-border-lt);
+  border-radius: var(--io-r-sm);
+  margin-bottom: 14px;
+  cursor: pointer;
+  transition: border .18s, background .18s;
+}
+.io-toggle:hover { border-color: var(--io-200); background: var(--io-100); }
+.io-toggle-txt { flex: 1; }
+.io-toggle-lbl { font-size: .88rem; font-weight: 700; color: var(--io-text); }
+.io-toggle-sub { font-size: .76rem; color: var(--io-muted); margin-top: 2px; }
+
+/* ── Priority bar ───────────────────────────────────────────────────────── */
+.io-priority {
+  display: flex; align-items: flex-start; gap: 9px;
+  padding: 10px 14px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: var(--io-r-sm);
+  margin-bottom: 14px;
+  font-size: .81rem; color: #92400e;
+  line-height: 1.5;
+}
+
+/* ── Active units ───────────────────────────────────────────────────────── */
+.io-units-box {
+  background: var(--io-50);
+  border: 1px solid var(--io-border-lt);
+  border-radius: var(--io-r-sm);
+  padding: 12px 14px;
+  margin-bottom: 18px;
+}
+.io-units-lbl {
+  font-size: .73rem; font-weight: 700;
+  color: var(--io-muted);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin-bottom: 8px;
+}
+.io-units-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.io-unit-chip {
+  padding: 3px 11px;
+  background: var(--io-800);
+  color: #fff;
+  border-radius: 20px;
+  font-size: .74rem; font-weight: 500;
+}
+
+/* ── Loading ────────────────────────────────────────────────────────────── */
+.io-loading {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  padding: 22px;
+  color: var(--io-muted);
+  font-weight: 700;
+}
+
+/* ── Results ────────────────────────────────────────────────────────────── */
+.io-res { margin-top: 22px; animation: io-up .3s ease both; }
+
+.io-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.io-stat {
+  background: var(--io-surface);
+  border: 1px solid var(--io-border);
+  border-radius: var(--io-r);
+  padding: 18px 16px;
+  text-align: center;
+  box-shadow: var(--io-sh-sm);
+}
+.io-stat-n  { font-size: 2.1rem; font-weight: 800; line-height: 1; }
+.io-stat-lb { font-size: .79rem; font-weight: 600; color: var(--io-muted); margin-top: 5px; }
+
+.io-res-card {
+  background: var(--io-surface);
+  border: 1px solid var(--io-border);
+  border-radius: var(--io-r);
+  overflow: hidden;
+  margin-bottom: 14px;
+  box-shadow: var(--io-sh-sm);
+}
+.io-res-hd {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px;
+  font-weight: 700; font-size: .88rem;
+  cursor: pointer; user-select: none;
+  transition: filter .15s;
+}
+.io-res-hd:hover { filter: brightness(.97); }
+.io-res-hd.green  { background: #f0fdf4; color: #15803d; border-bottom: 1px solid #bbf7d0; }
+.io-res-hd.blue   { background: #eff6ff; color: #1d4ed8; border-bottom: 1px solid #bfdbfe; }
+.io-res-hd.amber  { background: #fffbeb; color: #b45309; border-bottom: 1px solid #fde68a; }
+.io-res-hd.red    { background: #fef2f2; color: #b91c1c; border-bottom: 1px solid #fecaca; }
+
+.io-res-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--io-border-lt);
+  font-size: .83rem;
+}
+.io-res-item:last-child { border: none; }
+.io-row-num {
+  min-width: 26px; height: 26px;
+  background: var(--io-100);
+  color: var(--io-700);
+  border-radius: var(--io-r-xs);
+  display: flex; align-items: center; justify-content: center;
+  font-size: .71rem; font-weight: 800;
+  flex-shrink: 0;
+}
+.io-res-name { font-weight: 700; color: var(--io-text); }
+.io-res-sub  { font-size: .77rem; color: var(--io-muted); margin-top: 2px; }
+
+.io-match-bdg {
+  display: inline-block;
+  padding: 1px 7px; border-radius: 20px;
+  font-size: .69rem; font-weight: 700;
+  margin-left: 5px;
+}
+.io-m-id   { background: #dcfce7; color: #15803d; }
+.io-m-code { background: #dbeafe; color: #1d4ed8; }
+.io-m-name { background: #f3f4f6; color: #4b5563; }
+
+/* misc */
+.io-chv { margin-right: auto; transition: transform .2s; }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="container-fluid">
+<div class="io">
+<div class="io-wrap">
 
-    <!-- Header -->
-    <div class="section-header mb-4">
-        <div class="section-icon"><i class="bi bi-arrow-left-right"></i></div>
-        <h4>استيراد / تصدير الأصناف</h4>
-        <a href="{{ url_for('admin.items') }}" class="btn btn-outline-secondary btn-sm ms-auto">
-            <i class="bi bi-arrow-right me-1"></i>إدارة الأصناف
-        </a>
+  <!-- Top bar -->
+  <div class="io-topbar">
+    <div class="io-topbar-icon"><i class="bi bi-arrow-left-right"></i></div>
+    <div>
+      <h1>استيراد / تصدير الأصناف</h1>
+      <p>إدارة بيانات المخزون عبر ملفات Excel</p>
     </div>
+    <a href="{{ url_for('admin.items') }}" class="io-topbar-back">
+      <i class="bi bi-grid-3x3-gap"></i> إدارة الأصناف
+    </a>
+  </div>
 
-    <div class="row g-4">
+  <!-- Two-panel grid (Import = right, Export = left in RTL) -->
+  <div class="io-grid">
 
-        <!-- ── Left column: forms ──────────────────────────────────────────── -->
-        <div class="col-12 col-lg-6">
+    <!-- ═══════════════ IMPORT (right panel / 1fr) ═══════════════ -->
+    <div class="io-panel">
+      <div class="io-panel-hd dark">
+        <div class="io-panel-hd-ico"><i class="bi bi-upload"></i></div>
+        <div>
+          <div class="io-panel-hd-title">استيراد الأصناف</div>
+          <div class="io-panel-hd-sub">رفع ملف Excel أو CSV لإنشاء أو تحديث الأصناف</div>
+        </div>
+      </div>
+      <div class="io-panel-bd">
 
-            <!-- Export card -->
-            <div class="card mb-4">
-                <div class="card-header fw-bold"
-                     style="background:var(--brand-green); color:#fff;">
-                    <i class="bi bi-file-earmark-arrow-down me-2"></i>تصدير الأصناف
-                </div>
-                <div class="card-body">
-                    <p class="text-muted small mb-3">
-                        يصدّر الأصناف في ملف Excel جاهز للتعديل وإعادة الاستيراد.
-                        يحتوي على: <code>item_id</code>، الفرع، القسم، الوحدة، الفئة، الحد الأدنى والحالة.
-                    </p>
-
-                    <form id="exportForm" method="GET"
-                          action="{{ url_for('admin.export_items') }}">
-
-                        <div class="row g-2 mb-3">
-                            <div class="col-12">
-                                <label class="form-label fw-semibold small mb-1">الفرع</label>
-                                <select id="exp-branch-sel" name="branch_id"
-                                        class="form-select form-select-sm"
-                                        onchange="filterExportDepts(this.value)">
-                                    <option value="">الكل (جميع الأفرع)</option>
-                                    {% for b in branches %}
-                                    <option value="{{ b.id }}">{{ b.name_ar }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <div class="col-12">
-                                <label class="form-label fw-semibold small mb-1">القسم</label>
-                                <select id="exp-dept-sel" name="department_id"
-                                        class="form-select form-select-sm">
-                                    <option value="">الكل (جميع الأقسام)</option>
-                                    {% for d in departments %}
-                                    <option value="{{ d.id }}" data-branch="{{ d.branch_id }}">
-                                        {{ d.name_ar }} — {{ d.branch.name_ar }}
-                                    </option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                        </div>
-
-                        <button type="submit" class="btn btn-success w-100 fw-bold">
-                            <i class="bi bi-download me-2"></i>تحميل ملف Excel
-                        </button>
-                    </form>
-                </div>
-            </div>
-
-            <!-- Import card -->
-            <div class="card">
-                <div class="card-header fw-bold"
-                     style="background:var(--brand-olive); color:#fff;">
-                    <i class="bi bi-upload me-2"></i>رفع الملف للاستيراد
-                </div>
-                <div class="card-body">
-                    <form id="importForm"
-                          action="{{ url_for('admin.import_items') }}"
-                          method="POST"
-                          enctype="multipart/form-data">
-
-                        <div class="mb-4">
-                            <label class="form-label">الفرع</label>
-                            <select id="branch-sel" class="form-select mb-2"
-                                    onchange="filterDepts(this.value)">
-                                <option value="">-- اختر الفرع --</option>
-                                {% for b in branches %}
-                                <option value="{{ b.id }}">{{ b.name_ar }}</option>
-                                {% endfor %}
-                            </select>
-
-                            <label class="form-label">القسم الافتراضي *</label>
-                            <select name="department_id" id="dept-sel"
-                                    class="form-select" required>
-                                <option value="">-- اختر القسم --</option>
-                                {% for d in departments %}
-                                <option value="{{ d.id }}" data-branch="{{ d.branch_id }}">
-                                    {{ d.name_ar }} — {{ d.branch.name_ar }}
-                                </option>
-                                {% endfor %}
-                            </select>
-                            <div class="form-text">
-                                يُستخدم للأصناف الجديدة وكقيمة افتراضية عند غياب عمود القسم.
-                            </div>
-                        </div>
-
-                        <div class="upload-zone mb-3" id="uploadZone"
-                             onclick="document.getElementById('fileInput').click()">
-                            <i class="bi bi-cloud-upload d-block fs-1"
-                               style="color:var(--brand-olive);"></i>
-                            <p class="fw-bold mt-2 mb-1">اضغط هنا لاختيار الملف</p>
-                            <p class="text-muted small mb-0">أو اسحب الملف وأفلته هنا</p>
-                            <p class="text-muted small">.xlsx و .csv مدعومان</p>
-                        </div>
-                        <input type="file" name="file" id="fileInput"
-                               accept=".xlsx,.csv" class="d-none"
-                               onchange="showFileName(this)">
-                        <div id="fileNameDisplay" class="alert alert-info d-none fw-semibold">
-                            <i class="bi bi-file-earmark-check me-2"></i>
-                            <span id="fileNameText"></span>
-                        </div>
-
-                        <div class="form-check form-switch mb-3 mt-3">
-                            <input class="form-check-input" type="checkbox"
-                                   name="auto_create_units" id="autoCreateUnits" value="1">
-                            <label class="form-check-label fw-semibold" for="autoCreateUnits">
-                                إنشاء وحدات غير موجودة تلقائياً
-                            </label>
-                        </div>
-
-                        <div class="alert alert-info py-2 px-3 mb-3" style="font-size:0.85rem;">
-                            <i class="bi bi-sort-down me-1"></i>
-                            <strong>أولوية المطابقة:</strong>
-                            item_id ← كود الصنف ← الاسم العربي ← الاسم الإنجليزي ← إنشاء جديد
-                        </div>
-
-                        <button type="submit" id="submitBtn"
-                                class="btn btn-primary w-100 btn-lg fw-bold mt-2">
-                            <i class="bi bi-cloud-upload me-2"></i>ابدأ الاستيراد
-                        </button>
-                    </form>
-
-                    <!-- Loading -->
-                    <div id="loadingState" class="text-center py-4 d-none">
-                        <div class="spinner-border text-primary mb-2" role="status"></div>
-                        <p class="fw-semibold text-muted">جاري معالجة الملف…</p>
-                    </div>
-                </div>
-            </div>
+        <!-- Column guide -->
+        <div class="io-guide">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:36%">العمود</th>
+                <th>الوصف</th>
+                <th style="width:20%; text-align:center;">النوع</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="row-key">
+                <td class="io-col-nm">item_id</td>
+                <td class="io-col-ds">أعلى أولوية — من ملف التصدير</td>
+                <td style="text-align:center;"><span class="io-bdg io-bdg-key">مطابقة</span></td>
+              </tr>
+              <tr>
+                <td class="io-col-nm">item_name_ar / الصنف</td>
+                <td class="io-col-ds">اسم الصنف بالعربية</td>
+                <td style="text-align:center;"><span class="io-bdg io-bdg-req">إلزامي</span></td>
+              </tr>
+              <tr>
+                <td class="io-col-nm">item_name_en</td>
+                <td class="io-col-ds">اسم الصنف بالإنجليزية</td>
+                <td style="text-align:center;"><span class="io-bdg io-bdg-upd">يُحدَّث</span></td>
+              </tr>
+              <tr class="row-key">
+                <td class="io-col-nm">branch_name</td>
+                <td class="io-col-ds">يمنع تضارب أسماء الأقسام بين الأفرع</td>
+                <td style="text-align:center;"><span class="io-bdg io-bdg-key">تحديد</span></td>
+              </tr>
+              <tr class="row-key">
+                <td class="io-col-nm">department_name / القسم</td>
+                <td class="io-col-ds">يتجاوز القسم الافتراضي للنموذج</td>
+                <td style="text-align:center;"><span class="io-bdg io-bdg-key">تحديد</span></td>
+              </tr>
+              <tr>
+                <td class="io-col-nm">item_code / الكود</td>
+                <td class="io-col-ds">أولوية ثانية للمطابقة</td>
+                <td style="text-align:center;"><span class="io-bdg io-bdg-opt">اختياري</span></td>
+              </tr>
+              <tr>
+                <td class="io-col-nm">unit_name / الوحدة</td>
+                <td class="io-col-ds">الوحدة الأساسية للتخزين</td>
+                <td style="text-align:center;"><span class="io-bdg io-bdg-req">للجديد</span></td>
+              </tr>
+              <tr>
+                <td class="io-col-nm">category_name / الفئة</td>
+                <td class="io-col-ds">الفئة (يجب أن تكون موجودة في النظام)</td>
+                <td style="text-align:center;"><span class="io-bdg io-bdg-upd">يُحدَّث</span></td>
+              </tr>
+              <tr>
+                <td class="io-col-nm">min_level / الحد الأدنى</td>
+                <td class="io-col-ds">الحد الأدنى للكمية</td>
+                <td style="text-align:center;"><span class="io-bdg io-bdg-upd">يُحدَّث</span></td>
+              </tr>
+              <tr>
+                <td class="io-col-nm">notes / ملاحظة التغليف</td>
+                <td class="io-col-ds">وصف التغليف — يظهر للموظفين</td>
+                <td style="text-align:center;"><span class="io-bdg io-bdg-upd">يُحدَّث</span></td>
+              </tr>
+              <tr>
+                <td class="io-col-nm">is_active</td>
+                <td class="io-col-ds">1 = نشط · 0 = معطّل</td>
+                <td style="text-align:center;"><span class="io-bdg io-bdg-upd">يُحدَّث</span></td>
+              </tr>
+              <tr>
+                <td class="io-col-nm">الوحدةN / المعاملN</td>
+                <td class="io-col-ds">تحويلات إضافية (N = 2، 3، 4…) — عدد غير محدود</td>
+                <td style="text-align:center;"><span class="io-bdg io-bdg-upd">يُحدَّث</span></td>
+              </tr>
+              <tr class="row-ro">
+                <td class="io-col-nm">created_at</td>
+                <td class="io-col-ds">تاريخ الإنشاء — يُتجاهل تلقائياً</td>
+                <td style="text-align:center;"><span class="io-bdg io-bdg-ro">قراءة فقط</span></td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
-        <!-- ── Right column: guide ────────────────────────────────────────── -->
-        <div class="col-12 col-lg-6">
+        <!-- Import form -->
+        <form id="importForm" action="{{ url_for('admin.import_items') }}"
+              method="POST" enctype="multipart/form-data">
 
-            <!-- Column guide -->
-            <div class="card mb-3">
-                <div class="card-header fw-bold"
-                     style="background:var(--brand-light); color:var(--brand-olive);">
-                    <i class="bi bi-info-circle me-2"></i>أعمدة الملف المدعومة
-                </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-sm table-bordered align-middle mb-0"
-                               style="font-size:0.82rem;">
-                            <thead style="background:var(--brand-olive); color:#fff;">
-                                <tr>
-                                    <th>العمود</th>
-                                    <th>الوصف</th>
-                                    <th class="text-center">إلزامي</th>
-                                    <th class="text-center">يُحدَّث</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr class="table-success">
-                                    <td class="fw-bold font-monospace">item_id</td>
-                                    <td>معرّف الصنف — أعلى أولوية للمطابقة (من ملف التصدير)</td>
-                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
-                                    <td class="text-center"><span class="badge bg-secondary">للمطابقة فقط</span></td>
-                                </tr>
-                                <tr>
-                                    <td class="fw-bold font-monospace">item_name_ar / الصنف</td>
-                                    <td>اسم الصنف بالعربية</td>
-                                    <td class="text-center"><span class="badge bg-danger">للجديد</span></td>
-                                    <td class="text-center"><span class="badge bg-success">نعم</span></td>
-                                </tr>
-                                <tr>
-                                    <td class="fw-bold font-monospace">item_name_en / name_en</td>
-                                    <td>اسم الصنف بالإنجليزية</td>
-                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
-                                    <td class="text-center"><span class="badge bg-success">نعم</span></td>
-                                </tr>
-                                <tr class="table-success">
-                                    <td class="fw-bold font-monospace">branch_name</td>
-                                    <td>اسم الفرع — يُستخدم مع القسم لتحديد دقيق (من ملف التصدير)</td>
-                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
-                                    <td class="text-center"><span class="badge bg-secondary">للتحديد</span></td>
-                                </tr>
-                                <tr class="table-success">
-                                    <td class="fw-bold font-monospace">department_name / القسم</td>
-                                    <td>اسم القسم — يتجاوز القسم الافتراضي في النموذج</td>
-                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
-                                    <td class="text-center"><span class="badge bg-secondary">للتحديد</span></td>
-                                </tr>
-                                <tr>
-                                    <td class="fw-bold font-monospace">item_code / الكود</td>
-                                    <td>كود الصنف — أولوية ثانية للمطابقة</td>
-                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
-                                    <td class="text-center"><span class="badge bg-secondary">إن فارغ</span></td>
-                                </tr>
-                                <tr>
-                                    <td class="fw-bold font-monospace">unit_name / الوحدة</td>
-                                    <td>الوحدة الأساسية للتخزين</td>
-                                    <td class="text-center"><span class="badge bg-danger">للجديد</span></td>
-                                    <td class="text-center"><span class="badge bg-success">نعم</span></td>
-                                </tr>
-                                <tr>
-                                    <td class="fw-bold font-monospace">category_name / الفئة</td>
-                                    <td>اسم الفئة (يجب أن تكون موجودة)</td>
-                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
-                                    <td class="text-center"><span class="badge bg-success">نعم</span></td>
-                                </tr>
-                                <tr>
-                                    <td class="fw-bold font-monospace">min_level / الحد الأدنى</td>
-                                    <td>الحد الأدنى للكمية</td>
-                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
-                                    <td class="text-center"><span class="badge bg-success">نعم</span></td>
-                                </tr>
-                                <tr>
-                                    <td class="fw-bold font-monospace">notes / ملاحظة التغليف</td>
-                                    <td>وصف التغليف — يظهر للموظفين</td>
-                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
-                                    <td class="text-center"><span class="badge bg-success">نعم</span></td>
-                                </tr>
-                                <tr>
-                                    <td class="fw-bold font-monospace">is_active</td>
-                                    <td>حالة الصنف — 1 نشط، 0 معطّل</td>
-                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
-                                    <td class="text-center"><span class="badge bg-success">نعم</span></td>
-                                </tr>
-                                <tr>
-                                    <td class="fw-bold font-monospace">created_at</td>
-                                    <td>تاريخ الإنشاء — للقراءة فقط، يُتجاهل عند الاستيراد</td>
-                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
-                                    <td class="text-center"><span class="badge bg-secondary">للقراءة</span></td>
-                                </tr>
-                                <tr>
-                                    <td class="fw-bold font-monospace">الوحدة2/المعامل2</td>
-                                    <td>وحدات تحويل إضافية (2، 3، 4)</td>
-                                    <td class="text-center"><span class="badge bg-secondary">لا</span></td>
-                                    <td class="text-center"><span class="badge bg-success">نعم</span></td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+          <!-- Drop zone -->
+          <div class="io-dz" id="dropzone"
+               onclick="document.getElementById('fileInput').click()">
+            <div class="io-dz-ico"><i class="bi bi-cloud-upload"></i></div>
+            <div class="io-dz-title">اضغط أو اسحب الملف هنا</div>
+            <div class="io-dz-sub">رفع ملف الأصناف للاستيراد</div>
+            <div class="io-dz-types">
+              <span class="io-dz-type">.xlsx</span>
+              <span class="io-dz-type">.csv</span>
             </div>
+          </div>
+          <input type="file" id="fileInput" name="file"
+                 accept=".xlsx,.csv" class="d-none"
+                 onchange="onFileSelected(this)">
 
-            <!-- Active units -->
-            <div class="card">
-                <div class="card-body py-2 px-3">
-                    <p class="fw-semibold mb-2 small" style="color:var(--brand-olive);">
-                        <i class="bi bi-rulers me-1"></i>وحدات القياس النشطة
-                        <a href="{{ url_for('admin.units') }}"
-                           class="ms-2 small text-muted" style="font-weight:normal;">
-                            (إدارة الوحدات)
-                        </a>:
-                    </p>
-                    <div class="d-flex flex-wrap gap-1">
-                        {% for u in active_units %}
-                        <span class="badge" style="background:var(--brand-olive);"
-                              title="{{ u.name_en or '' }}">
-                            {{ u.name_ar }}{% if u.symbol %} · {{ u.symbol }}{% endif %}
-                        </span>
-                        {% else %}
-                        <span class="text-muted small">لا توجد وحدات نشطة</span>
-                        {% endfor %}
-                    </div>
-                </div>
+          <div id="fileOkBanner" class="io-file-ok d-none">
+            <i class="bi bi-file-earmark-check fs-5"></i>
+            <span id="fileOkName"></span>
+          </div>
+
+          <!-- Branch / Dept -->
+          <div class="io-fgroup">
+            <label class="io-flabel">الفرع</label>
+            <select id="imp-branch" class="io-select"
+                    onchange="filterImportDepts(this.value)">
+              <option value="">— جميع الأفرع —</option>
+              {% for b in branches %}
+              <option value="{{ b.id }}">{{ b.name_ar }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="io-fgroup">
+            <label class="io-flabel">القسم الافتراضي *</label>
+            <select id="imp-dept" name="department_id" class="io-select" required>
+              <option value="">— اختر القسم —</option>
+              {% for d in departments %}
+              <option value="{{ d.id }}" data-branch="{{ d.branch_id }}">
+                {{ d.name_ar }} — {{ d.branch.name_ar }}
+              </option>
+              {% endfor %}
+            </select>
+            <div style="font-size:.76rem; color:var(--io-muted); margin-top:5px; padding-right:2px;">
+              للأصناف الجديدة وكقيمة افتراضية إذا غاب عمود القسم في الملف
             </div>
+          </div>
+
+          <!-- Auto-create units -->
+          <label class="io-toggle" for="autoUnits">
+            <div class="io-toggle-txt">
+              <div class="io-toggle-lbl">إنشاء الوحدات الجديدة تلقائياً</div>
+              <div class="io-toggle-sub">إذا لم تكن الوحدة موجودة، يتم إنشاؤها بدلاً من تخطي الصنف</div>
+            </div>
+            <input class="form-check-input m-0" type="checkbox"
+                   name="auto_create_units" id="autoUnits" value="1">
+          </label>
+
+          <!-- Priority info -->
+          <div class="io-priority">
+            <i class="bi bi-sort-numeric-down-alt mt-1 flex-shrink-0"></i>
+            <div>
+              <strong style="color:var(--io-text);">أولوية المطابقة:</strong>
+              item_id ← كود الصنف ← الاسم العربي ← الاسم الإنجليزي ← إنشاء جديد
+            </div>
+          </div>
+
+          <!-- Active units -->
+          <div class="io-units-box">
+            <div class="io-units-lbl"><i class="bi bi-rulers me-1"></i>وحدات القياس النشطة</div>
+            <div class="io-units-chips">
+              {% for u in active_units %}
+              <span class="io-unit-chip" title="{{ u.name_en or '' }}">
+                {{ u.name_ar }}{% if u.symbol %} · {{ u.symbol }}{% endif %}
+              </span>
+              {% else %}
+              <span style="font-size:.8rem; color:var(--io-muted);">لا توجد وحدات نشطة</span>
+              {% endfor %}
+            </div>
+          </div>
+
+          <button type="submit" id="importBtn" class="io-btn io-btn-import">
+            <i class="bi bi-cloud-upload"></i>
+            ابدأ الاستيراد
+          </button>
+        </form>
+
+        <div id="importLoading" class="io-loading d-none">
+          <div class="spinner-border spinner-border-sm" style="color:var(--io-600);" role="status"></div>
+          جاري معالجة الملف…
         </div>
-    </div>
 
-    <!-- ── Import Results (rendered by JS) ─────────────────────────────────── -->
-    <div id="resultsSection" class="mt-4 d-none"></div>
+      </div>
+    </div><!-- /import panel -->
 
+    <!-- ═══════════════ EXPORT (left panel / 370px) ═══════════════ -->
+    <div class="io-panel">
+      <div class="io-panel-hd green">
+        <div class="io-panel-hd-ico"><i class="bi bi-file-earmark-arrow-down"></i></div>
+        <div>
+          <div class="io-panel-hd-title">تصدير الأصناف</div>
+          <div class="io-panel-hd-sub">تنزيل ملف Excel لتعديله وإعادة رفعه</div>
+        </div>
+      </div>
+      <div class="io-panel-bd">
+
+        <form id="exportForm" method="GET" action="{{ url_for('admin.export_items') }}">
+
+          <div class="io-fgroup">
+            <label class="io-flabel">الفرع</label>
+            <select id="exp-branch" name="branch_id" class="io-select"
+                    onchange="filterExportDepts(this.value)">
+              <option value="">الكل — جميع الأفرع</option>
+              {% for b in branches %}
+              <option value="{{ b.id }}">{{ b.name_ar }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="io-fgroup">
+            <label class="io-flabel">القسم</label>
+            <select id="exp-dept" name="department_id" class="io-select">
+              <option value="">الكل — جميع الأقسام</option>
+              {% for d in departments %}
+              <option value="{{ d.id }}" data-branch="{{ d.branch_id }}">
+                {{ d.name_ar }} — {{ d.branch.name_ar }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <hr class="io-hr">
+
+          <div style="margin-bottom:12px;">
+            <div class="io-flabel">ما يتضمنه الملف</div>
+            <div class="io-chips">
+              <span class="io-chip"><i class="bi bi-hash"></i>item_id</span>
+              <span class="io-chip"><i class="bi bi-building"></i>الفرع والقسم</span>
+              <span class="io-chip"><i class="bi bi-translate"></i>الاسم ع / إن</span>
+              <span class="io-chip"><i class="bi bi-rulers"></i>الوحدة الأساسية</span>
+              <span class="io-chip"><i class="bi bi-arrow-repeat"></i>وحدات التحويل</span>
+              <span class="io-chip"><i class="bi bi-tag"></i>الفئة والكود</span>
+              <span class="io-chip"><i class="bi bi-exclamation-diamond"></i>الحد الأدنى</span>
+              <span class="io-chip"><i class="bi bi-toggle-on"></i>الحالة</span>
+            </div>
+          </div>
+
+          <hr class="io-hr">
+
+          <button type="submit" class="io-btn io-btn-export">
+            <i class="bi bi-download"></i>
+            تحميل ملف Excel
+          </button>
+
+        </form>
+      </div>
+    </div><!-- /export panel -->
+
+  </div><!-- /io-grid -->
+
+  <!-- Results -->
+  <div id="resultsSection" class="io-res d-none"></div>
+
+</div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-/* ── Export branch → dept filter ────────────────────────────────────────── */
+/* ── Dept filters ──────────────────────────────────────────────────────── */
 function filterExportDepts(branchId) {
-    var sel = document.getElementById('exp-dept-sel');
-    Array.from(sel.options).forEach(function(opt) {
-        if (!opt.value) return;
-        opt.style.display = (!branchId || opt.dataset.branch === branchId) ? '' : 'none';
-    });
-    sel.value = '';
+  filterDeptSel('exp-dept', branchId);
+}
+function filterImportDepts(branchId) {
+  filterDeptSel('imp-dept', branchId);
+}
+function filterDeptSel(selId, branchId) {
+  var sel = document.getElementById(selId);
+  Array.from(sel.options).forEach(function(o) {
+    if (!o.value) return;
+    o.style.display = (!branchId || o.dataset.branch === branchId) ? '' : 'none';
+  });
+  sel.value = '';
 }
 
-/* ── Import branch → dept filter ────────────────────────────────────────── */
-function filterDepts(branchId) {
-    Array.from(document.getElementById('dept-sel').options).forEach(function(opt) {
-        if (!opt.value) return;
-        opt.style.display = (!branchId || opt.dataset.branch === branchId) ? '' : 'none';
-    });
-    document.getElementById('dept-sel').value = '';
-}
-
-function showFileName(input) {
-    if (input.files.length > 0) {
-        document.getElementById('fileNameText').textContent = input.files[0].name;
-        document.getElementById('fileNameDisplay').classList.remove('d-none');
-    }
-}
-
-var zone = document.getElementById('uploadZone');
-zone.addEventListener('dragover',  function(e) { e.preventDefault(); zone.classList.add('dragover'); });
-zone.addEventListener('dragleave', function()  { zone.classList.remove('dragover'); });
-zone.addEventListener('drop', function(e) {
-    e.preventDefault();
-    zone.classList.remove('dragover');
-    var files = e.dataTransfer.files;
-    if (files.length) {
-        document.getElementById('fileInput').files = files;
-        showFileName(document.getElementById('fileInput'));
-    }
+/* ── Drag & drop ───────────────────────────────────────────────────────── */
+var dz = document.getElementById('dropzone');
+['dragover','dragenter'].forEach(function(ev) {
+  dz.addEventListener(ev, function(e) { e.preventDefault(); dz.classList.add('over'); });
+});
+['dragleave','dragend'].forEach(function(ev) {
+  dz.addEventListener(ev, function() { dz.classList.remove('over'); });
+});
+dz.addEventListener('drop', function(e) {
+  e.preventDefault(); dz.classList.remove('over');
+  var fi = document.getElementById('fileInput');
+  if (e.dataTransfer.files.length) {
+    fi.files = e.dataTransfer.files;
+    onFileSelected(fi);
+  }
 });
 
-/* ── AJAX submit ─────────────────────────────────────────────────────────── */
+function onFileSelected(input) {
+  if (!input.files.length) return;
+  var name = input.files[0].name;
+  document.getElementById('fileOkName').textContent = name;
+  document.getElementById('fileOkBanner').classList.remove('d-none');
+  document.getElementById('dropzone').style.display = 'none';
+}
+
+/* ── AJAX submit ───────────────────────────────────────────────────────── */
 document.getElementById('importForm').addEventListener('submit', async function(e) {
-    e.preventDefault();
+  e.preventDefault();
+  var btn     = document.getElementById('importBtn');
+  var loading = document.getElementById('importLoading');
+  var results = document.getElementById('resultsSection');
 
-    var btn         = document.getElementById('submitBtn');
-    var loading     = document.getElementById('loadingState');
-    var resultsDiv  = document.getElementById('resultsSection');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري المعالجة…';
+  loading.classList.remove('d-none');
+  results.classList.add('d-none');
+  results.innerHTML = '';
 
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري المعالجة…';
-    loading.classList.remove('d-none');
-    resultsDiv.classList.add('d-none');
-    resultsDiv.innerHTML = '';
-
-    try {
-        var resp = await fetch(this.action, { method: 'POST', body: new FormData(this) });
-        var data = await resp.json();
-        loading.classList.add('d-none');
-
-        if (data.error) {
-            resultsDiv.innerHTML = renderError(data.error);
-        } else {
-            resultsDiv.innerHTML = renderResults(data);
-        }
-        resultsDiv.classList.remove('d-none');
-        resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-    } catch (err) {
-        loading.classList.add('d-none');
-        resultsDiv.innerHTML = renderError('حدث خطأ في الاتصال: ' + err.message);
-        resultsDiv.classList.remove('d-none');
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-cloud-upload me-2"></i>ابدأ الاستيراد';
-    }
+  try {
+    var resp = await fetch(this.action, { method: 'POST', body: new FormData(this) });
+    var data = await resp.json();
+    loading.classList.add('d-none');
+    results.innerHTML = data.error ? renderError(data.error) : renderResults(data);
+    results.classList.remove('d-none');
+    results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch(err) {
+    loading.classList.add('d-none');
+    results.innerHTML = renderError('خطأ في الاتصال: ' + err.message);
+    results.classList.remove('d-none');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-cloud-upload"></i> ابدأ الاستيراد';
+  }
 });
 
-/* ── Renderers ───────────────────────────────────────────────────────────── */
+/* ── Result renderers ──────────────────────────────────────────────────── */
 function renderError(msg) {
-    return `<div class="alert alert-danger fw-semibold">
-        <i class="bi bi-x-circle me-2"></i>${escHtml(msg)}
-    </div>`;
+  return `<div style="display:flex;align-items:center;gap:12px;background:#fee2e2;border:1.5px solid #fca5a5;border-radius:12px;padding:16px 20px;color:#b91c1c;font-weight:700;">
+    <i class="bi bi-x-circle-fill fs-5"></i><span>${esc(msg)}</span></div>`;
 }
 
-function renderResults(data) {
-    var s = data.summary;
-    var html = '';
+function renderResults(d) {
+  var s = d.summary;
+  var html = `<div class="io-stats">
+    <div class="io-stat" style="border-top:3px solid #16a34a;">
+      <div class="io-stat-n" style="color:#16a34a;">${s.created}</div>
+      <div class="io-stat-lb">صنف جديد</div>
+    </div>
+    <div class="io-stat" style="border-top:3px solid #2563eb;">
+      <div class="io-stat-n" style="color:#2563eb;">${s.updated}</div>
+      <div class="io-stat-lb">صنف محدَّث</div>
+    </div>
+    <div class="io-stat" style="border-top:3px solid #d97706;">
+      <div class="io-stat-n" style="color:#d97706;">${s.skipped}</div>
+      <div class="io-stat-lb">تم تخطيه</div>
+    </div>
+    ${s.units_created ? `<div class="io-stat" style="border-top:3px solid var(--io-700);">
+      <div class="io-stat-n" style="color:var(--io-700);">${s.units_created}</div>
+      <div class="io-stat-lb">وحدة أُنشئت</div></div>` : ''}
+  </div>`;
 
-    /* Summary cards */
-    html += `<div class="row g-3 mb-4">
-        <div class="col-6 col-md-3">
-            <div class="card p-3 text-center" style="border:2px solid var(--brand-green);">
-                <div class="fw-bold fs-2" style="color:var(--brand-green);">${s.created}</div>
-                <div class="text-muted small fw-semibold">صنف جديد</div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3">
-            <div class="card p-3 text-center" style="border:2px solid #0d6efd;">
-                <div class="fw-bold fs-2" style="color:#0d6efd;">${s.updated}</div>
-                <div class="text-muted small fw-semibold">صنف محدَّث</div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3">
-            <div class="card p-3 text-center" style="border:2px solid #e6a817;">
-                <div class="fw-bold fs-2" style="color:#e6a817;">${s.skipped}</div>
-                <div class="text-muted small fw-semibold">تم تخطيه</div>
-            </div>
-        </div>
-        ${s.units_created ? `
-        <div class="col-6 col-md-3">
-            <div class="card p-3 text-center" style="border:1px solid var(--brand-olive);">
-                <div class="fw-bold fs-2" style="color:var(--brand-olive);">${s.units_created}</div>
-                <div class="text-muted small fw-semibold">وحدة أُنشئت</div>
-            </div>
-        </div>` : ''}
-    </div>`;
+  if (d.created_items && d.created_items.length)
+    html += card('green','bi-plus-circle-fill',`الأصناف الجديدة (${d.created_items.length})`,'rc-crt',
+      d.created_items.map(function(r) {
+        return `<div class="io-res-item"><div class="io-row-num">${r.row}</div>
+          <div><div class="io-res-name">${esc(r.name)}</div>
+          <div class="io-res-sub">ID: ${r.id}</div></div></div>`;
+      }).join(''));
 
-    /* Created items */
-    if (data.created_items && data.created_items.length) {
-        html += collapsibleCard(
-            'bi-plus-circle-fill text-success',
-            `الأصناف الجديدة (${data.created_items.length})`,
-            '#cfe2ff', '#084298', 'created-list',
-            data.created_items.map(function(r) {
-                return `<li class="list-group-item list-group-item-primary small py-2">
-                    <i class="bi bi-plus-circle me-2 text-success"></i>
-                    سطر ${r.row} — <strong>${escHtml(r.name)}</strong>
-                    <span class="badge bg-secondary ms-2">ID: ${r.id}</span>
-                </li>`;
-            }).join('')
-        );
-    }
+  if (d.updated_items && d.updated_items.length)
+    html += card('blue','bi-pencil-fill',`الأصناف المحدَّثة (${d.updated_items.length})`,'rc-upd',
+      d.updated_items.map(function(r) {
+        var mc = {'item_id':'io-m-id','item_code':'io-m-code','name_ar':'io-m-name','name_en':'io-m-name'}[r.match_method]||'io-m-name';
+        var mb = r.match_method ? `<span class="io-match-bdg ${mc}">${esc(r.match_method)}</span>` : '';
+        var ch = (r.changes && r.changes.length) ? r.changes.join(' · ') : 'لا تغييرات';
+        return `<div class="io-res-item"><div class="io-row-num">${r.row}</div>
+          <div><div class="io-res-name">${mb}${esc(r.name)}</div>
+          <div class="io-res-sub">${esc(ch)}</div></div></div>`;
+      }).join(''));
 
-    /* Updated items */
-    if (data.updated_items && data.updated_items.length) {
-        html += collapsibleCard(
-            'bi-arrow-repeat text-primary',
-            `الأصناف المحدَّثة (${data.updated_items.length})`,
-            '#cfe2ff', '#084298', 'updated-list',
-            data.updated_items.map(function(r) {
-                var matchBadge = {
-                    'item_id':   '<span class="badge bg-success ms-1">item_id</span>',
-                    'item_code': '<span class="badge bg-primary ms-1">كود</span>',
-                    'name_ar':   '<span class="badge bg-secondary ms-1">اسم عربي</span>',
-                    'name_en':   '<span class="badge bg-secondary ms-1">اسم إنجليزي</span>',
-                }[r.match_method] || '';
-                var changes = r.changes && r.changes.length
-                    ? '<span class="text-muted ms-2 small">(' + escHtml(r.changes.join('، ')) + ')</span>'
-                    : '<span class="text-muted ms-2 small">(لا تغييرات)</span>';
-                return `<li class="list-group-item small py-2">
-                    <i class="bi bi-pencil-square me-2 text-primary"></i>
-                    سطر ${r.row} — <strong>${escHtml(r.name)}</strong>
-                    ${matchBadge}${changes}
-                </li>`;
-            }).join('')
-        );
-    }
+  if (d.skipped_rows && d.skipped_rows.length)
+    html += card('amber','bi-skip-forward-fill',`السطور المتخطاة (${d.skipped_rows.length})`,'rc-skp',
+      d.skipped_rows.map(function(r) {
+        return `<div class="io-res-item"><div class="io-row-num">${r.row}</div>
+          <div><div class="io-res-name">${esc(r.name||'—')}</div>
+          <div class="io-res-sub">${esc(r.reason)}</div></div></div>`;
+      }).join(''));
 
-    /* Skipped rows */
-    if (data.skipped_rows && data.skipped_rows.length) {
-        html += collapsibleCard(
-            'bi-skip-forward-fill text-warning',
-            `السطور المتخطاة (${data.skipped_rows.length})`,
-            '#fff3cd', '#856404', 'skipped-list',
-            data.skipped_rows.map(function(r) {
-                var name = r.name ? ` — <strong>${escHtml(r.name)}</strong>` : '';
-                return `<li class="list-group-item list-group-item-warning small py-2">
-                    <i class="bi bi-dash-circle me-2"></i>
-                    سطر ${r.row}${name}: ${escHtml(r.reason)}
-                </li>`;
-            }).join('')
-        );
-    }
+  if (d.warnings && d.warnings.length)
+    html += card('red','bi-exclamation-triangle-fill',`التنبيهات (${d.warnings.length})`,'rc-wrn',
+      d.warnings.map(function(w) {
+        return `<div class="io-res-item">
+          <i class="bi bi-dot fs-4 flex-shrink-0" style="color:#d97706;line-height:1;margin-top:2px;"></i>
+          <span>${esc(w)}</span></div>`;
+      }).join(''));
 
-    /* Warnings */
-    if (data.warnings && data.warnings.length) {
-        html += collapsibleCard(
-            'bi-exclamation-triangle-fill text-warning',
-            `التنبيهات (${data.warnings.length})`,
-            '#fff3cd', '#856404', 'warn-list',
-            data.warnings.map(function(w) {
-                return `<li class="list-group-item list-group-item-warning small py-2">
-                    <i class="bi bi-exclamation-triangle me-2"></i>${escHtml(w)}
-                </li>`;
-            }).join('')
-        );
-    }
-
-    if (!html.includes('list-group-item')) {
-        html += `<div class="alert alert-secondary">لم يتم معالجة أي صنف.</div>`;
-    }
-
-    return html;
+  return html;
 }
 
-function collapsibleCard(icon, title, bgColor, textColor, id, itemsHtml) {
-    return `
-    <div class="card mb-3">
-        <div class="card-header fw-bold d-flex align-items-center"
-             style="background:${bgColor}; color:${textColor}; cursor:pointer;"
-             onclick="toggleList('${id}')">
-            <i class="bi ${icon} me-2"></i>${escHtml(title)}
-            <i class="bi bi-chevron-down ms-auto" id="${id}-chevron"></i>
-        </div>
-        <div id="${id}" class="card-body p-0">
-            <ul class="list-group list-group-flush">${itemsHtml}</ul>
-        </div>
-    </div>`;
+function card(type, icon, title, id, body) {
+  return `<div class="io-res-card">
+    <div class="io-res-hd ${type}" onclick="toggleCard('${id}')">
+      <i class="bi ${icon}"></i>${title}
+      <i class="bi bi-chevron-down io-chv" id="${id}-c"></i>
+    </div>
+    <div id="${id}">${body}</div>
+  </div>`;
 }
-
-function toggleList(id) {
-    var el  = document.getElementById(id);
-    var chv = document.getElementById(id + '-chevron');
-    var hidden = el.style.display === 'none';
-    el.style.display  = hidden ? '' : 'none';
-    chv.className     = hidden ? 'bi bi-chevron-down ms-auto' : 'bi bi-chevron-up ms-auto';
+function toggleCard(id) {
+  var el = document.getElementById(id);
+  var ic = document.getElementById(id+'-c');
+  var h = el.style.display === 'none';
+  el.style.display = h ? '' : 'none';
+  ic.className = (h ? 'bi bi-chevron-down' : 'bi bi-chevron-up') + ' io-chv';
 }
-
-function escHtml(str) {
-    return String(str || '')
-        .replace(/&/g,  '&amp;')
-        .replace(/</g,  '&lt;')
-        .replace(/>/g,  '&gt;')
-        .replace(/"/g,  '&quot;');
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 </script>
 {% endblock %}
