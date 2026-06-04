@@ -27,20 +27,32 @@ def export_items():
     if dept_id:
         q = q.filter(Item.department_id == dept_id)
     elif branch_id:
-        q = q.join(Department).filter(Department.branch_id == branch_id)
+        # Use a subquery instead of explicit join to avoid conflicting with
+        # joinedload(Item.department) which already JOINs the departments table.
+        dept_subq = (
+            db.select(Department.id)
+            .where(Department.branch_id == branch_id)
+            .scalar_subquery()
+        )
+        q = q.filter(Item.department_id.in_(dept_subq))
 
     items = q.order_by(Item.department_id, Item.name_ar).all()
 
-    # Build a human-readable filename suffix
+    # Build filename suffix using ASCII-safe names (IDs + English names).
+    # HTTP headers must be ASCII — Arabic chars in Content-Disposition
+    # cause Render's nginx proxy to return 502.
     suffix = ''
     if dept_id:
-        d = Department.query.get(dept_id)
+        d = db.session.get(Department, dept_id)
         if d:
-            suffix = f'_{d.branch.name_ar}_{d.name_ar}'
+            b_slug = (d.branch.name_en or f'branch{d.branch_id}').replace(' ', '_')
+            d_slug = (d.name_en       or f'dept{dept_id}').replace(' ', '_')
+            suffix = f'_{b_slug}_{d_slug}'
     elif branch_id:
-        b = Branch.query.get(branch_id)
+        b = db.session.get(Branch, branch_id)
         if b:
-            suffix = f'_{b.name_ar}'
+            b_slug = (b.name_en or f'branch{branch_id}').replace(' ', '_')
+            suffix = f'_{b_slug}'
 
     # How many extra conversion columns do we need?
     # (base-unit conversion excluded — multiplier=1 at position unit_name)
@@ -127,8 +139,7 @@ def export_items():
     resp.headers['Content-Type'] = (
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
-    safe_suffix = suffix.replace(' ', '_')
-    resp.headers['Content-Disposition'] = f'attachment; filename=items_export{safe_suffix}.xlsx'
+    resp.headers['Content-Disposition'] = f'attachment; filename=items_export{suffix}.xlsx'
     return resp
 
 
