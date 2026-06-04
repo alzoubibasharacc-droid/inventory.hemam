@@ -530,16 +530,20 @@ def run_v7(conn):
             WHERE session_id IS NULL
         '''))
     else:
-        # PostgreSQL UPDATE … FROM syntax (more efficient on large datasets).
+        # PostgreSQL UPDATE … FROM with comma-style joins.
+        # The target table alias cannot appear inside FROM clause JOINs in PG,
+        # so we list all tables in FROM and correlate via WHERE instead.
         result = conn.execute(db.text('''
-            UPDATE inventory_counts ic
+            UPDATE inventory_counts
             SET    session_id = s.id
-            FROM   inventory_sessions s
-            JOIN   items       i ON i.id   = ic.item_id
-            JOIN   departments d ON d.id   = i.department_id
-            WHERE  s.branch_id     = d.branch_id
+            FROM   inventory_sessions s,
+                   items              i,
+                   departments        d
+            WHERE  i.id            = inventory_counts.item_id
+              AND  d.id            = i.department_id
+              AND  s.branch_id     = d.branch_id
               AND  s.session_type  = 'baseline'
-              AND  ic.session_id   IS NULL
+              AND  inventory_counts.session_id IS NULL
         '''))
     print(f'  + backfilled session_id on {result.rowcount} count record(s)')
 
