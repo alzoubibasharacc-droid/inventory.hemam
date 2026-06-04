@@ -4,6 +4,7 @@ from sqlalchemy import func, and_
 from models import db, Branch, Department, Item, InventoryCount
 from datetime import datetime, date
 import calendar
+from utils.constants import now_jordan
 from io import BytesIO
 
 import openpyxl
@@ -31,7 +32,7 @@ def _fmt(n):
 # ── Filter helper ─────────────────────────────────────────────────────────────
 
 def _parse_filters():
-    now       = datetime.now()
+    now       = now_jordan()
     branch_id = request.args.get('branch_id', type=int)
     dept_id   = request.args.get('dept_id',   type=int)
     date_from_str = request.args.get('date_from', '')
@@ -457,7 +458,7 @@ def index():
         selected_dept=dept_id,
         date_from=date_from_str,
         date_to=date_to_str,
-        now=datetime.now(),
+        now=now_jordan(),
     )
 
 
@@ -535,5 +536,5 @@ def export_pdf():
         date_to=date_to_str,
         branch_label=branch_label,
         dept_label=dept_label,
-        now=datetime.now(),
+        now=now_jordan(),
     )

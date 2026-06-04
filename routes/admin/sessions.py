@@ -5,10 +5,11 @@ from utils.decorators import admin_required
 from routes.admin import admin_bp
 from datetime import datetime, date
 import calendar
+from utils.constants import now_jordan
 
 
 def _parse_period():
-    now = datetime.now()
+    now = now_jordan()
     date_from_str = request.args.get('date_from', '')
     date_to_str   = request.args.get('date_to',   '')
 

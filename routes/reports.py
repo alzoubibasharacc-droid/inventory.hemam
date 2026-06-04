@@ -6,6 +6,7 @@ from models import db, Branch, Department, Item, InventoryCount, Unit, User
 from datetime import datetime, date
 import calendar
 import io
+from utils.constants import now_jordan
 
 reports_bp = Blueprint('reports', __name__, url_prefix='/reports')
 
@@ -67,7 +68,7 @@ def _item_totals_sql(branch_id, dept_id, user_id, date_from, date_to):
 
 def _parse_date_range():
     """Parse date_from / date_to from request args. Defaults to current month."""
-    now = datetime.now()
+    now = now_jordan()
     date_from = date_to = None
     try:
         df_raw = request.args.get('date_from', '').strip()
@@ -215,7 +216,7 @@ def _build_xlsx(counts, filters_label):
 @reports_bp.route('/')
 @login_required
 def index():
-    now = datetime.now()
+    now = now_jordan()
 
     date_from_str = request.args.get('date_from', '')
     date_to_str   = request.args.get('date_to',   '')
@@ -316,7 +317,7 @@ def export_page():
         flash('صلاحية المدير مطلوبة لتصدير البيانات', 'danger')
         return redirect(url_for('reports.index'))
 
-    now         = datetime.now()
+    now         = now_jordan()
     branches    = Branch.query.all()
     departments = Department.query.all()
     employees   = User.query.filter_by(is_active=True).order_by(User.full_name).all()

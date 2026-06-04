@@ -2,8 +2,9 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user
 from models import db, Branch, Department, Item, InventoryCount, Unit, UnitConversion
 from sqlalchemy import func, distinct
-from datetime import datetime, date
+from datetime import date
 from utils.decorators import get_scope
+from utils.constants import now_jordan
 
 inventory_bp = Blueprint('inventory', __name__, url_prefix='/inventory')
 
@@ -13,7 +14,7 @@ inventory_bp = Blueprint('inventory', __name__, url_prefix='/inventory')
 @inventory_bp.route('/dashboard')
 @login_required
 def dashboard():
-    now = datetime.now()
+    now = now_jordan()
     month, year = now.month, now.year
 
     if current_user.is_admin:
@@ -83,7 +84,7 @@ def dashboard():
 @inventory_bp.route('/count')
 @login_required
 def count():
-    now = datetime.now()
+    now = now_jordan()
 
     # Lock the count date for this browser session on first visit.
     # Subsequent visits (even after midnight) reuse the same locked date.
@@ -414,7 +415,7 @@ def edit_entry(entry_id):
     entry.entered_quantity = entered_qty
     entry.entered_unit_id  = int(unit_id)
     entry.notes            = notes or None
-    entry.updated_at       = datetime.now()
+    entry.updated_at       = now_jordan()
     db.session.commit()
 
     entered_unit = Unit.query.get(int(unit_id))
