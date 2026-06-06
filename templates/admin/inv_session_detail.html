@@ -40,10 +40,46 @@
       </div>
     </div>
 
-    <a href="{{ url_for('admin.inv_session_edit', session_id=inv_session.id) }}"
-       class="btn btn-outline-primary btn-sm">
-      <i class="bi bi-pencil me-1"></i>تعديل
-    </a>
+    <div class="d-flex gap-2 flex-wrap">
+      <a href="{{ url_for('admin.inv_session_edit', session_id=inv_session.id) }}"
+         class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-pencil me-1"></i>تعديل
+      </a>
+
+      {% if not inv_session.is_baseline %}
+
+        {% if inv_session.status in ('draft', 'paused') %}
+        <form method="POST"
+              action="{{ url_for('admin.inv_session_activate', session_id=inv_session.id) }}"
+              onsubmit="return confirm('تفعيل هذه الجلسة سيوقف أي جلسة نشطة أخرى لنفس الفرع. هل تريد المتابعة؟')">
+          <button type="submit" class="btn btn-success btn-sm">
+            <i class="bi bi-play-fill me-1"></i>تفعيل
+          </button>
+        </form>
+        {% endif %}
+
+        {% if inv_session.status == 'active' %}
+        <form method="POST"
+              action="{{ url_for('admin.inv_session_pause', session_id=inv_session.id) }}"
+              onsubmit="return confirm('هل تريد إيقاف هذه الجلسة مؤقتاً؟')">
+          <button type="submit" class="btn btn-warning btn-sm">
+            <i class="bi bi-pause-fill me-1"></i>إيقاف مؤقت
+          </button>
+        </form>
+        {% endif %}
+
+        {% if inv_session.status in ('active', 'paused') %}
+        <form method="POST"
+              action="{{ url_for('admin.inv_session_complete', session_id=inv_session.id) }}"
+              onsubmit="return confirm('هل تريد إغلاق هذه الجلسة كمكتملة؟ لن يمكن العودة إليها بعد ذلك.')">
+          <button type="submit" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-check2-circle me-1"></i>إغلاق كمكتملة
+          </button>
+        </form>
+        {% endif %}
+
+      {% endif %}
+    </div>
   </div>
 
   <!-- ── Info cards ────────────────────────────────────────────────────────── -->

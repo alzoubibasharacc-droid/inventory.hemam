@@ -2,6 +2,7 @@ from flask import render_template, request, redirect, url_for, flash
 from sqlalchemy import func
 from models import db, InventorySession, Branch, InventoryCount
 from utils.decorators import admin_required
+from utils.constants import get_active_session
 from routes.admin import admin_bp
 from datetime import date
 
@@ -121,3 +122,48 @@ def inv_session_edit(session_id):
         inv_session=inv_session,
         **_session_context(),
     )
+
+
+# ── Activate ──────────────────────────────────────────────────────────────────
+
+@admin_bp.route('/inv-sessions/<int:session_id>/activate', methods=['POST'])
+@admin_required
+def inv_session_activate(session_id):
+    inv_session = InventorySession.query.get_or_404(session_id)
+    try:
+        inv_session.open()
+        db.session.commit()
+        flash(f'تم تفعيل جلسة "{inv_session.name}" بنجاح', 'success')
+    except ValueError as e:
+        flash(str(e), 'warning')
+    return redirect(url_for('admin.inv_session_detail', session_id=session_id))
+
+
+# ── Pause ─────────────────────────────────────────────────────────────────────
+
+@admin_bp.route('/inv-sessions/<int:session_id>/pause', methods=['POST'])
+@admin_required
+def inv_session_pause(session_id):
+    inv_session = InventorySession.query.get_or_404(session_id)
+    try:
+        inv_session.pause()
+        db.session.commit()
+        flash(f'تم إيقاف جلسة "{inv_session.name}" مؤقتاً', 'success')
+    except ValueError as e:
+        flash(str(e), 'warning')
+    return redirect(url_for('admin.inv_session_detail', session_id=session_id))
+
+
+# ── Complete ──────────────────────────────────────────────────────────────────
+
+@admin_bp.route('/inv-sessions/<int:session_id>/complete', methods=['POST'])
+@admin_required
+def inv_session_complete(session_id):
+    inv_session = InventorySession.query.get_or_404(session_id)
+    try:
+        inv_session.close()
+        db.session.commit()
+        flash(f'تم إغلاق جلسة "{inv_session.name}" كمكتملة', 'success')
+    except ValueError as e:
+        flash(str(e), 'warning')
+    return redirect(url_for('admin.inv_session_detail', session_id=session_id))

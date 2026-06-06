@@ -3,6 +3,9 @@ from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
+import sqlite3
 
 _JORDAN = ZoneInfo('Asia/Amman')
 
@@ -11,6 +14,17 @@ def _now():
     return datetime.now(_JORDAN).replace(tzinfo=None)
 
 db = SQLAlchemy()
+
+
+# ── SQLite: enable FK enforcement on every new connection ─────────────────────
+# PostgreSQL enforces FKs by default; SQLite requires this pragma per connection.
+
+@event.listens_for(Engine, 'connect')
+def _set_sqlite_fk_pragma(dbapi_conn, _):
+    if isinstance(dbapi_conn, sqlite3.Connection):
+        cursor = dbapi_conn.cursor()
+        cursor.execute('PRAGMA foreign_keys=ON')
+        cursor.close()
 
 
 class Branch(db.Model):
@@ -195,6 +209,61 @@ class InventorySession(db.Model):
         """Completed and archived sessions are read-only for counts; metadata remains editable by admins."""
         return self.status not in ('archived',)
 
+    # ── Lifecycle transitions ─────────────────────────────────────────────────
+    # These methods own all state-machine rules. Callers must commit db.session.
+
+    def open(self) -> None:
+        """
+        Activate this session. Any other active session for the same branch is
+        automatically paused to enforce the one-active-per-branch rule.
+
+        Valid from: draft, paused
+        Invalid for: baseline, already-active, completed, archived
+        """
+        if self.is_baseline:
+            raise ValueError('الجلسات الأساسية للقراءة فقط — لا يمكن تفعيلها')
+        if self.status == 'active':
+            raise ValueError('الجلسة نشطة بالفعل')
+        if self.status in ('completed', 'archived'):
+            raise ValueError(f'لا يمكن إعادة فتح جلسة بحالة "{self.status}"')
+        # Displace any currently-active session for this branch
+        others = InventorySession.query.filter(
+            InventorySession.branch_id == self.branch_id,
+            InventorySession.status    == 'active',
+            InventorySession.id        != self.id,
+        ).all()
+        for other in others:
+            other.status = 'paused'
+        self.status    = 'active'
+        self.opened_at = _now()
+
+    def pause(self) -> None:
+        """
+        Pause this session.
+
+        Valid from: active
+        Invalid for: baseline, any other status
+        """
+        if self.is_baseline:
+            raise ValueError('الجلسات الأساسية للقراءة فقط — لا يمكن إيقافها')
+        if self.status != 'active':
+            raise ValueError('يمكن إيقاف الجلسات النشطة فقط')
+        self.status = 'paused'
+
+    def close(self) -> None:
+        """
+        Mark this session as completed.
+
+        Valid from: active, paused
+        Invalid for: baseline, draft, completed, archived
+        """
+        if self.is_baseline:
+            raise ValueError('الجلسات الأساسية للقراءة فقط — لا يمكن إغلاقها')
+        if self.status not in ('active', 'paused'):
+            raise ValueError('يمكن إغلاق الجلسات النشطة أو الموقوفة فقط')
+        self.status    = 'completed'
+        self.closed_at = _now()
+
 
 class InventoryCount(db.Model):
     """
@@ -202,16 +271,19 @@ class InventoryCount(db.Model):
     quantity          → always stored in base units (after conversion).
     entered_quantity  → what the employee typed (preserved for audit).
     entered_unit_id   → which unit the employee selected.
-    session_id        → FK to InventorySession; nullable for backward compatibility.
+    session_id        → FK to InventorySession; NOT NULL — every count must
+                        belong to a session. Enforced at application, model,
+                        and database levels.
+    count_date/month/year → kept for backward compatibility; session_id is the
+                            primary grouping key going forward.
     """
     __tablename__ = 'inventory_counts'
 
     id = db.Column(db.Integer, primary_key=True)
     item_id = db.Column(db.Integer, db.ForeignKey('items.id'), nullable=False)
 
-    # Session link — nullable during transition; all future counts must have a session
     session_id = db.Column(
-        db.Integer, db.ForeignKey('inventory_sessions.id'), nullable=True
+        db.Integer, db.ForeignKey('inventory_sessions.id'), nullable=False
     )
 
     # Internal storage — always in item's base unit
@@ -240,6 +312,22 @@ class InventoryCount(db.Model):
         db.Index('ix_inv_counts_count_date', 'count_date'),
         db.Index('ix_inv_counts_session_id', 'session_id'),
     )
+
+
+# ── InventoryCount: application-level session_id validation ──────────────────
+# Runs before the DB sees the row — catches missing session_id early with a
+# clear error message rather than a cryptic DB constraint violation.
+
+def _require_session_id(_mapper, _connection, target):
+    if target.session_id is None:
+        raise ValueError(
+            f'InventoryCount.session_id cannot be NULL '
+            f'(item_id={target.item_id}). '
+            'Resolve an InventorySession before inserting a count.'
+        )
+
+event.listen(InventoryCount, 'before_insert', _require_session_id)
+event.listen(InventoryCount, 'before_update', _require_session_id)
 
 
 class User(UserMixin, db.Model):

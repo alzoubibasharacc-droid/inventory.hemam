@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
-from models import db, Branch, Department, Item, InventoryCount, Unit, User
+from models import db, Branch, Department, Item, InventoryCount, InventorySession, Unit, User
 from datetime import datetime, date
 import calendar
 import io
@@ -19,12 +19,20 @@ _WHITE  = 'FFFFFF'
 
 # ── Query helpers ─────────────────────────────────────────────────────────────
 
-def _base_filters(q, branch_id, dept_id, user_id, date_from, date_to):
-    """Apply shared filter conditions to an InventoryCount query using count_date."""
-    if date_from:
-        q = q.filter(InventoryCount.count_date >= date_from)
-    if date_to:
-        q = q.filter(InventoryCount.count_date <= date_to)
+def _base_filters(q, branch_id, dept_id, user_id, date_from, date_to, session_id=None):
+    """
+    Apply shared filter conditions to an InventoryCount query.
+
+    Primary:  session_id (when provided — session is the new grouping key)
+    Fallback: count_date range (backward-compat date-based filtering)
+    """
+    if session_id:
+        q = q.filter(InventoryCount.session_id == session_id)
+    else:
+        if date_from:
+            q = q.filter(InventoryCount.count_date >= date_from)
+        if date_to:
+            q = q.filter(InventoryCount.count_date <= date_to)
     if branch_id:
         q = q.filter(Department.branch_id == branch_id)
     if dept_id:
@@ -34,7 +42,7 @@ def _base_filters(q, branch_id, dept_id, user_id, date_from, date_to):
     return q
 
 
-def _build_entry_query(branch_id, dept_id, user_id, date_from, date_to):
+def _build_entry_query(branch_id, dept_id, user_id, date_from, date_to, session_id=None):
     """Return a fully-filtered InventoryCount query with eager-loaded relationships."""
     q = (
         InventoryCount.query
@@ -48,10 +56,10 @@ def _build_entry_query(branch_id, dept_id, user_id, date_from, date_to):
             joinedload(InventoryCount.entered_unit),
         )
     )
-    return _base_filters(q, branch_id, dept_id, user_id, date_from, date_to)
+    return _base_filters(q, branch_id, dept_id, user_id, date_from, date_to, session_id)
 
 
-def _item_totals_sql(branch_id, dept_id, user_id, date_from, date_to):
+def _item_totals_sql(branch_id, dept_id, user_id, date_from, date_to, session_id=None):
     """Return a dict {item_id: total_base_quantity} computed entirely in SQL."""
     q = (
         db.session.query(
@@ -62,7 +70,7 @@ def _item_totals_sql(branch_id, dept_id, user_id, date_from, date_to):
         .join(Department, Item.department_id == Department.id)
         .group_by(InventoryCount.item_id)
     )
-    q = _base_filters(q, branch_id, dept_id, user_id, date_from, date_to)
+    q = _base_filters(q, branch_id, dept_id, user_id, date_from, date_to, session_id)
     return {row.item_id: (row.total or 0.0) for row in q.all()}
 
 
@@ -88,11 +96,12 @@ def _parse_date_range():
 
 def _parse_export_filters():
     """Parse all export filters from request args."""
-    branch_id = request.args.get('branch_id', type=int)
-    dept_id   = request.args.get('dept_id',   type=int)
-    user_id   = request.args.get('user_id',   type=int)
+    branch_id  = request.args.get('branch_id',  type=int)
+    dept_id    = request.args.get('dept_id',     type=int)
+    user_id    = request.args.get('user_id',     type=int)
+    session_id = request.args.get('session_id',  type=int)
     date_from, date_to = _parse_date_range()
-    return branch_id, dept_id, user_id, date_from, date_to
+    return branch_id, dept_id, user_id, date_from, date_to, session_id
 
 
 # ── Excel builder ─────────────────────────────────────────────────────────────
@@ -218,10 +227,11 @@ def _build_xlsx(counts, filters_label):
 def index():
     now = now_jordan()
 
-    date_from_str = request.args.get('date_from', '')
-    date_to_str   = request.args.get('date_to',   '')
-    branch_id     = request.args.get('branch_id', type=int)
-    dept_id       = request.args.get('dept_id',   type=int)
+    date_from_str = request.args.get('date_from',  '')
+    date_to_str   = request.args.get('date_to',    '')
+    branch_id     = request.args.get('branch_id',  type=int)
+    dept_id       = request.args.get('dept_id',    type=int)
+    session_id    = request.args.get('session_id', type=int)
 
     # Block employees from manually accessing outside their assigned scope
     if not current_user.is_manager:
@@ -265,10 +275,13 @@ def index():
         branches    = Branch.query.all()
         departments = Department.query.filter_by(branch_id=branch_id).all() if branch_id else []
 
-    totals = _item_totals_sql(branch_id, dept_id, None, date_from, date_to)
+    # Resolve session object for display (None when filtering by date range)
+    active_session = InventorySession.query.get(session_id) if session_id else None
+
+    totals = _item_totals_sql(branch_id, dept_id, None, date_from, date_to, session_id)
 
     all_entries = (
-        _build_entry_query(branch_id, dept_id, None, date_from, date_to)
+        _build_entry_query(branch_id, dept_id, None, date_from, date_to, session_id)
         .order_by(Department.name_ar, Item.name_ar, InventoryCount.created_at)
         .all()
     )
@@ -304,6 +317,8 @@ def index():
         departments=departments,
         selected_branch=branch_id,
         selected_dept=dept_id,
+        selected_session=session_id,
+        active_session=active_session,
         date_from=date_from_str,
         date_to=date_to_str,
         now=now,
@@ -322,11 +337,12 @@ def export_page():
     departments = Department.query.all()
     employees   = User.query.filter_by(is_active=True).order_by(User.full_name).all()
 
-    branch_id     = request.args.get('branch_id', type=int)
-    dept_id       = request.args.get('dept_id',   type=int)
-    user_id       = request.args.get('user_id',   type=int)
-    date_from_str = request.args.get('date_from', '')
-    date_to_str   = request.args.get('date_to',   '')
+    branch_id     = request.args.get('branch_id',  type=int)
+    dept_id       = request.args.get('dept_id',    type=int)
+    user_id       = request.args.get('user_id',    type=int)
+    session_id    = request.args.get('session_id', type=int)
+    date_from_str = request.args.get('date_from',  '')
+    date_to_str   = request.args.get('date_to',    '')
 
     date_from = date_to = None
     try:
@@ -341,19 +357,27 @@ def export_page():
     preview_count = None
     if request.args:
         preview_count = (
-            _build_entry_query(branch_id, dept_id, user_id, date_from, date_to)
+            _build_entry_query(branch_id, dept_id, user_id, date_from, date_to, session_id)
             .count()
         )
+
+    inv_sessions = (
+        InventorySession.query
+        .order_by(InventorySession.branch_id, InventorySession.count_date.desc())
+        .all()
+    )
 
     return render_template(
         'inventory/export.html',
         branches=branches,
         departments=departments,
         employees=employees,
+        inv_sessions=inv_sessions,
         now=now,
         selected_branch=branch_id,
         selected_dept=dept_id,
         selected_user=user_id,
+        selected_session=session_id,
         date_from=date_from_str,
         date_to=date_to_str,
         preview_count=preview_count,
@@ -367,10 +391,10 @@ def export_download():
         flash('صلاحية المدير مطلوبة لتصدير البيانات', 'danger')
         return redirect(url_for('reports.index'))
 
-    branch_id, dept_id, user_id, date_from, date_to = _parse_export_filters()
+    branch_id, dept_id, user_id, date_from, date_to, session_id = _parse_export_filters()
 
     counts = (
-        _build_entry_query(branch_id, dept_id, user_id, date_from, date_to)
+        _build_entry_query(branch_id, dept_id, user_id, date_from, date_to, session_id)
         .order_by(Department.branch_id, Department.name_ar, Item.name_ar)
         .all()
     )

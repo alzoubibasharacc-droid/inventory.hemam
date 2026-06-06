@@ -32,9 +32,10 @@ def _fmt(n):
 # ── Filter helper ─────────────────────────────────────────────────────────────
 
 def _parse_filters():
-    now       = now_jordan()
-    branch_id = request.args.get('branch_id', type=int)
-    dept_id   = request.args.get('dept_id',   type=int)
+    now        = now_jordan()
+    branch_id  = request.args.get('branch_id',  type=int)
+    dept_id    = request.args.get('dept_id',    type=int)
+    session_id = request.args.get('session_id', type=int)
     date_from_str = request.args.get('date_from', '')
     date_to_str   = request.args.get('date_to',   '')
 
@@ -54,25 +55,22 @@ def _parse_filters():
         date_from_str = date_from.isoformat()
         date_to_str   = date_to.isoformat()
 
-    return branch_id, dept_id, date_from, date_to, date_from_str, date_to_str
+    return branch_id, dept_id, date_from, date_to, date_from_str, date_to_str, session_id
 
 
 # ── Core analytics SQL ─────────────────────────────────────────────────────────
 
-def _analytics_data(branch_id, dept_id, date_from, date_to):
+def _analytics_data(branch_id, dept_id, date_from, date_to, session_id=None):
     """
     Five-subquery approach — all heavy work in SQL, single round-trip.
+
+    Primary filter: session_id (when provided — session is the grouping key).
+    Fallback filter: count_date range (backward-compat date-based filtering).
 
     Returns list of tuples:
         (Item, Department, Branch,
          entry_count, total_qty, min_qty, max_qty,
          first_date, last_date, first_qty, last_qty)
-
-    first_qty / last_qty = SUM of all entries on the earliest/latest
-    count_date for that item (not a single row).
-
-    min_qty / max_qty = MIN/MAX of per-day SUM totals, so multiple
-    entries on the same day are combined before comparison.
     """
 
     # ── Subquery 1: per-item aggregation (counts, total, date bounds) ─────────
@@ -86,11 +84,14 @@ def _analytics_data(branch_id, dept_id, date_from, date_to):
         )
         .join(Item,       InventoryCount.item_id      == Item.id)
         .join(Department, Item.department_id           == Department.id)
-        .filter(
+    )
+    if session_id:
+        agg_q = agg_q.filter(InventoryCount.session_id == session_id)
+    else:
+        agg_q = agg_q.filter(
             InventoryCount.count_date >= date_from,
             InventoryCount.count_date <= date_to,
         )
-    )
     if branch_id:
         agg_q = agg_q.filter(Department.branch_id == branch_id)
     if dept_id:
@@ -134,11 +135,14 @@ def _analytics_data(branch_id, dept_id, date_from, date_to):
         )
         .join(Item,       InventoryCount.item_id  == Item.id)
         .join(Department, Item.department_id       == Department.id)
-        .filter(
+    )
+    if session_id:
+        daily_q = daily_q.filter(InventoryCount.session_id == session_id)
+    else:
+        daily_q = daily_q.filter(
             InventoryCount.count_date >= date_from,
             InventoryCount.count_date <= date_to,
         )
-    )
     if branch_id:
         daily_q = daily_q.filter(Department.branch_id == branch_id)
     if dept_id:
@@ -428,7 +432,7 @@ def index():
         flash('هذه الصفحة للمدراء فقط', 'warning')
         return redirect(url_for('inventory.dashboard'))
 
-    branch_id, dept_id, date_from, date_to, date_from_str, date_to_str = _parse_filters()
+    branch_id, dept_id, date_from, date_to, date_from_str, date_to_str, session_id = _parse_filters()
 
     # Non-admin managers see only their own branch
     if not current_user.is_admin and current_user.branch_id:
@@ -442,7 +446,7 @@ def index():
         Department.query.order_by(Department.name_ar).all()
     )
 
-    raw_rows = _analytics_data(branch_id, dept_id, date_from, date_to)
+    raw_rows = _analytics_data(branch_id, dept_id, date_from, date_to, session_id)
     groups, increases, decreases, unchanged = _process_rows(raw_rows)
 
     return render_template(
@@ -469,11 +473,11 @@ def export_excel():
         flash('التصدير للمدراء فقط', 'warning')
         return redirect(url_for('analytics.index'))
 
-    branch_id, dept_id, date_from, date_to, date_from_str, date_to_str = _parse_filters()
+    branch_id, dept_id, date_from, date_to, date_from_str, date_to_str, session_id = _parse_filters()
     if not current_user.is_admin and current_user.branch_id:
         branch_id = current_user.branch_id
 
-    raw_rows = _analytics_data(branch_id, dept_id, date_from, date_to)
+    raw_rows = _analytics_data(branch_id, dept_id, date_from, date_to, session_id)
     groups, increases, decreases, unchanged = _process_rows(raw_rows)
     total_items = increases + decreases + unchanged
 
@@ -508,11 +512,11 @@ def export_pdf():
         flash('التصدير للمدراء فقط', 'warning')
         return redirect(url_for('analytics.index'))
 
-    branch_id, dept_id, date_from, date_to, date_from_str, date_to_str = _parse_filters()
+    branch_id, dept_id, date_from, date_to, date_from_str, date_to_str, session_id = _parse_filters()
     if not current_user.is_admin and current_user.branch_id:
         branch_id = current_user.branch_id
 
-    raw_rows = _analytics_data(branch_id, dept_id, date_from, date_to)
+    raw_rows = _analytics_data(branch_id, dept_id, date_from, date_to, session_id)
     groups, increases, decreases, unchanged = _process_rows(raw_rows)
 
     branch_label = dept_label = ''

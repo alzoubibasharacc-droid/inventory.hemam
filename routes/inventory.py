@@ -4,7 +4,7 @@ from models import db, Branch, Department, Item, InventoryCount, Unit, UnitConve
 from sqlalchemy import func, distinct
 from datetime import date
 from utils.decorators import get_scope
-from utils.constants import now_jordan
+from utils.constants import now_jordan, resolve_session_for_branch
 
 inventory_bp = Blueprint('inventory', __name__, url_prefix='/inventory')
 
@@ -86,20 +86,6 @@ def dashboard():
 def count():
     now = now_jordan()
 
-    # Lock the count date for this browser session on first visit.
-    # Subsequent visits (even after midnight) reuse the same locked date.
-    count_date = flask_session.get('count_session_date')
-    if not count_date:
-        count_date = now.strftime('%Y-%m-%d')
-        flask_session['count_session_date'] = count_date
-
-    try:
-        cd = date.fromisoformat(count_date)
-    except (ValueError, TypeError):
-        cd = now.date()
-        count_date = cd.strftime('%Y-%m-%d')
-        flask_session['count_session_date'] = count_date
-
     # Employees: block attempts to view another branch via URL
     if not current_user.is_manager and current_user.branch_id:
         req_branch = request.args.get('branch_id', type=int)
@@ -120,33 +106,67 @@ def count():
     else:
         branches = Branch.query.all()
 
+    # Resolve session for the selected branch — primary grouping context.
+    inv_session = None
+    if branch_id:
+        try:
+            inv_session = resolve_session_for_branch(branch_id)
+        except RuntimeError:
+            pass
+
+    # Effective count date for display:
+    #   Session's count_date is authoritative; cookie-lock is the legacy fallback.
+    if inv_session:
+        cd = inv_session.count_date
+        count_date = cd.isoformat()
+    else:
+        count_date = flask_session.get('count_session_date')
+        if not count_date:
+            count_date = now.strftime('%Y-%m-%d')
+            flask_session['count_session_date'] = count_date
+        try:
+            cd = date.fromisoformat(count_date)
+        except (ValueError, TypeError):
+            cd = now.date()
+            count_date = cd.strftime('%Y-%m-%d')
+            flask_session['count_session_date'] = count_date
+
     total_items = counted_items = 0
     if branch_id:
         items_q = (
             Item.query.join(Department)
             .filter(Department.branch_id == branch_id, Item.is_active == True)
         )
-        counts_q = (
-            db.session.query(func.count(distinct(InventoryCount.item_id)))
-            .join(Item).join(Department)
-            .filter(
-                Department.branch_id == branch_id,
-                InventoryCount.count_date == cd,
+        if inv_session:
+            counts_q = (
+                db.session.query(func.count(distinct(InventoryCount.item_id)))
+                .filter(InventoryCount.session_id == inv_session.id)
             )
-        )
+            if scope_dept:
+                counts_q = counts_q.join(Item).filter(Item.department_id == scope_dept)
+        else:
+            counts_q = (
+                db.session.query(func.count(distinct(InventoryCount.item_id)))
+                .join(Item).join(Department)
+                .filter(
+                    Department.branch_id == branch_id,
+                    InventoryCount.count_date == cd,
+                )
+            )
+            if scope_dept:
+                counts_q = counts_q.filter(Item.department_id == scope_dept)
         if scope_dept:
-            items_q  = items_q.filter(Item.department_id == scope_dept)
-            counts_q = counts_q.filter(Item.department_id == scope_dept)
+            items_q = items_q.filter(Item.department_id == scope_dept)
         total_items   = items_q.count()
         counted_items = counts_q.scalar() or 0
 
-    recent_q = (
-        InventoryCount.query
-        .join(Item).join(Department)
-        .filter(InventoryCount.count_date == cd)
-    )
-    if branch_id:
-        recent_q = recent_q.filter(Department.branch_id == branch_id)
+    recent_q = InventoryCount.query.join(Item).join(Department)
+    if inv_session:
+        recent_q = recent_q.filter(InventoryCount.session_id == inv_session.id)
+    else:
+        recent_q = recent_q.filter(InventoryCount.count_date == cd)
+        if branch_id:
+            recent_q = recent_q.filter(Department.branch_id == branch_id)
     if scope_dept:
         recent_q = recent_q.filter(Item.department_id == scope_dept)
     if not current_user.is_manager:
@@ -163,6 +183,7 @@ def count():
         counted_items=counted_items,
         recent_entries=recent_entries,
         count_date=count_date,
+        inv_session=inv_session,
     )
 
 
@@ -171,10 +192,9 @@ def count():
 @inventory_bp.route('/count/search')
 @login_required
 def count_search():
-    q          = request.args.get('q', '').strip()
-    branch_id  = request.args.get('branch_id', type=int)
-    dept_id    = request.args.get('dept_id',   type=int)
-    count_date = request.args.get('count_date', '').strip()
+    q         = request.args.get('q', '').strip()
+    branch_id = request.args.get('branch_id', type=int)
+    dept_id   = request.args.get('dept_id',   type=int)
 
     if not (current_user.is_admin or current_user.is_manager):
         # Reject attempts to search outside the employee's assigned scope
@@ -199,18 +219,20 @@ def count_search():
     items = items_q.order_by(Item.name_ar).limit(20).all()
 
     counted_ids = set()
-    if count_date and items:
-        try:
-            cd = date.fromisoformat(count_date)
-        except (ValueError, TypeError):
-            cd = None
-        if cd:
-            item_ids = [i.id for i in items]
+    if items:
+        item_ids = [i.id for i in items]
+        search_session = None
+        if branch_id:
+            try:
+                search_session = resolve_session_for_branch(branch_id)
+            except RuntimeError:
+                pass
+        if search_session:
             rows = (
                 db.session.query(InventoryCount.item_id)
                 .filter(
                     InventoryCount.item_id.in_(item_ids),
-                    InventoryCount.count_date == cd,
+                    InventoryCount.session_id == search_session.id,
                 ).distinct().all()
             )
             counted_ids = {r[0] for r in rows}
@@ -265,20 +287,6 @@ def count_entry():
     if entered_qty <= 0:
         return jsonify({'ok': False, 'error': 'الكمية يجب أن تكون أكبر من صفر'}), 400
 
-    # Always use the server-side locked session date — ignore any client-submitted date.
-    session_date_s = flask_session.get('count_session_date')
-    if not session_date_s:
-        session_date_s = date.today().isoformat()
-        flask_session['count_session_date'] = session_date_s
-    try:
-        count_date_obj = date.fromisoformat(session_date_s)
-    except (ValueError, TypeError):
-        count_date_obj = date.today()
-        flask_session['count_session_date'] = count_date_obj.isoformat()
-
-    month = count_date_obj.month
-    year  = count_date_obj.year
-
     item = Item.query.get(item_id)
     if not item:
         return jsonify({'ok': False, 'error': 'الصنف غير موجود'}), 404
@@ -290,11 +298,22 @@ def count_entry():
         if current_user.department_id and item.department_id != current_user.department_id:
             return jsonify({'ok': False, 'error': 'وصول غير مصرح به'}), 403
 
+    try:
+        inv_session = resolve_session_for_branch(item.department.branch_id)
+    except RuntimeError as e:
+        return jsonify({'ok': False, 'error': str(e)}), 409
+
+    # count_date is authoritative from the session; month/year kept for backward compat
+    count_date_obj = inv_session.count_date
+    month          = count_date_obj.month
+    year           = count_date_obj.year
+
     multiplier    = item.get_multiplier(int(unit_id))
     base_quantity = entered_qty * multiplier
 
     entry = InventoryCount(
         item_id          = item.id,
+        session_id       = inv_session.id,
         quantity         = base_quantity,
         entered_quantity = entered_qty,
         entered_unit_id  = int(unit_id),
@@ -307,9 +326,10 @@ def count_entry():
     db.session.add(entry)
     db.session.commit()
 
+    # Aggregate total for this item within the session (primary grouping: session_id)
     all_entries = InventoryCount.query.filter(
         InventoryCount.item_id    == item.id,
-        InventoryCount.count_date == count_date_obj,
+        InventoryCount.session_id == inv_session.id,
     ).all()
     total_base = sum(e.quantity for e in all_entries)
 
@@ -322,6 +342,9 @@ def count_entry():
     return jsonify({
         'ok':              True,
         'entry_id':        entry.id,
+        'session_id':      inv_session.id,
+        'session_name':    inv_session.name,
+        'session_type':    inv_session.session_type,
         'total_base':      total_base,
         'base_unit':       item.effective_base_unit.name_ar,
         'entry_count':     len(all_entries),
@@ -360,23 +383,39 @@ def delete_entry(entry_id):
         flash('الحذف متاح للمدير فقط', 'danger')
         return redirect(url_for('inventory.count'))
 
-    item       = entry.item
-    dept       = item.department
-    count_date = entry.count_date
+    item             = entry.item
+    dept             = item.department
+    entry_session_id = entry.session_id
+    entry_session    = entry.session          # capture before delete
+    count_date       = entry.count_date       # kept for legacy redirect
 
     db.session.delete(entry)
     db.session.commit()
 
     if request.is_json:
-        remaining = InventoryCount.query.filter(
-            InventoryCount.item_id    == item.id,
-            InventoryCount.count_date == count_date,
-        ).all()
+        # Group by session_id when available; fall back to count_date for legacy entries
+        if entry_session_id is not None:
+            remaining = InventoryCount.query.filter(
+                InventoryCount.item_id    == item.id,
+                InventoryCount.session_id == entry_session_id,
+            ).all()
+        else:
+            remaining = InventoryCount.query.filter(
+                InventoryCount.item_id    == item.id,
+                InventoryCount.count_date == count_date,
+            ).all()
         total_base = sum(e.quantity for e in remaining)
-        return jsonify({'ok': True, 'total_base': total_base, 'entry_count': len(remaining)})
+        return jsonify({
+            'ok':           True,
+            'total_base':   total_base,
+            'entry_count':  len(remaining),
+            'session_id':   entry_session_id,
+            'session_name': entry_session.name         if entry_session else None,
+            'session_type': entry_session.session_type if entry_session else None,
+        })
 
     flash('تم حذف الإدخال', 'info')
-    return redirect(url_for('inventory.count', branch_id=dept.branch_id, count_date=count_date.isoformat()))
+    return redirect(url_for('inventory.count', branch_id=dept.branch_id))
 
 
 # ── edit a single count entry ────────────────────────────────────────────
@@ -422,6 +461,9 @@ def edit_entry(entry_id):
     return jsonify({
         'ok':           True,
         'entry_id':     entry.id,
+        'session_id':   entry.session_id,
+        'session_name': entry.session.name         if entry.session else None,
+        'session_type': entry.session.session_type if entry.session else None,
         'entered_qty':  entered_qty,
         'entered_unit': entered_unit.name_ar if entered_unit else '',
         'item_name':    item.name_ar,

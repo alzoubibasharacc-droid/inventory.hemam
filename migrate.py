@@ -10,6 +10,7 @@ Cumulative changes applied:
   v6  items.created_at column
   v7  InventorySession table, session_id on inventory_counts, baseline sessions,
       historical data backfill, partial unique index for active sessions
+  v8  session_id NOT NULL at DB level (PostgreSQL); application-layer guard for SQLite
 
 Run after pulling a new version:
     python migrate.py
@@ -575,6 +576,47 @@ def run_v7(conn):
     print('  ✓ safety check passed — zero orphan count records')
 
 
+def run_v8(conn):
+    """
+    Make inventory_counts.session_id NOT NULL at the database level.
+
+    Prerequisites: v7 must have backfilled every row (no NULLs may remain).
+    SQLite does not support ALTER COLUMN — constraint is enforced at the
+    application layer (before_insert / before_update listeners) and via
+    PRAGMA foreign_keys = ON per connection.
+    """
+    # Safety pre-check — abort before touching any DDL
+    null_row = conn.execute(db.text(
+        'SELECT COUNT(*) FROM inventory_counts WHERE session_id IS NULL'
+    )).fetchone()
+    null_count = null_row[0] if null_row else 0
+    if null_count:
+        raise RuntimeError(
+            f'v8 aborted: {null_count} inventory_count row(s) still have '
+            'session_id = NULL. Ensure v7 backfill completed successfully.'
+        )
+    print('  ✓ pre-check passed — no NULL session_id rows')
+
+    if _is_sqlite(conn):
+        print('  = SQLite: ALTER COLUMN not supported — '
+              'NOT NULL enforced at application layer')
+        return
+
+    # PostgreSQL: check current nullability before issuing DDL
+    row = conn.execute(db.text(
+        "SELECT is_nullable FROM information_schema.columns "
+        "WHERE table_name = 'inventory_counts' AND column_name = 'session_id'"
+    )).fetchone()
+    if row and row[0] == 'NO':
+        print('  = session_id already NOT NULL on PostgreSQL')
+    else:
+        conn.execute(db.text(
+            'ALTER TABLE inventory_counts '
+            'ALTER COLUMN session_id SET NOT NULL'
+        ))
+        print('  + session_id SET NOT NULL on PostgreSQL')
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def run():
@@ -602,6 +644,9 @@ def run():
 
             print('\n-- v7 (InventorySession table, baseline sessions, backfill) --')
             run_v7(conn)
+
+            print('\n-- v8 (session_id NOT NULL constraint) --')
+            run_v8(conn)
 
             trans.commit()
             print('\nMigration complete.\n')
