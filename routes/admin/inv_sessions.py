@@ -88,6 +88,7 @@ KANBAN_TRANSITIONS = {
 def inv_sessions_kanban():
     date_from_str = request.args.get('date_from', '').strip()
     date_to_str   = request.args.get('date_to',   '').strip()
+    status_filter = request.args.get('status',    '').strip()
 
     date_from = date_to = None
     try:
@@ -99,6 +100,47 @@ def inv_sessions_kanban():
     except ValueError:
         date_to_str = ''
 
+    today = date.today()
+
+    # ── Alert counts (branch-scoped for non-managers) ─────────────────────────
+    _active_q = InventorySession.query.filter(InventorySession.status == 'active')
+    if not current_user.is_manager and current_user.branch_id:
+        _active_q = _active_q.filter(InventorySession.branch_id == current_user.branch_id)
+    _active_ids_q = _active_q.with_entities(InventorySession.id)
+
+    # Sessions with at least one count entry
+    _sessions_with_counts = db.session.query(InventoryCount.session_id).distinct()
+    alert_no_counts = _active_q.filter(
+        ~InventorySession.id.in_(_sessions_with_counts)
+    ).count()
+
+    alert_overdue = _active_q.filter(InventorySession.count_date < today).count()
+
+    # Items in active session departments that have no count entry in any active session
+    _counted_items_q = (
+        db.session.query(InventoryCount.item_id)
+        .filter(InventoryCount.session_id.in_(_active_ids_q))
+        .distinct()
+    )
+    alert_uncounted_items = (
+        db.session.query(func.count(distinct(Item.id)))
+        .join(SessionDepartment, SessionDepartment.department_id == Item.department_id)
+        .filter(
+            SessionDepartment.session_id.in_(_active_ids_q),
+            Item.is_active == True,
+            Item.id.notin_(_counted_items_q),
+        )
+        .scalar()
+    ) or 0
+
+    alerts = {
+        'no_counts':       alert_no_counts,
+        'overdue':         alert_overdue,
+        'uncounted_items': alert_uncounted_items,
+        'has_alerts':      bool(alert_no_counts or alert_overdue or alert_uncounted_items),
+    }
+
+    # ── Sessions query (with optional date + status filters) ──────────────────
     q = (
         InventorySession.query
         .options(
@@ -112,6 +154,21 @@ def inv_sessions_kanban():
         q = q.filter(InventorySession.count_date >= date_from)
     if date_to:
         q = q.filter(InventorySession.count_date <= date_to)
+
+    if status_filter == 'active':
+        q = q.filter(InventorySession.status == 'active')
+    elif status_filter == 'completed':
+        q = q.filter(InventorySession.status == 'completed')
+    elif status_filter == 'overdue':
+        q = q.filter(InventorySession.status == 'active',
+                     InventorySession.count_date < today)
+    elif status_filter == 'no_counts':
+        _swc = db.session.query(InventoryCount.session_id).distinct()
+        q = q.filter(InventorySession.status == 'active',
+                     ~InventorySession.id.in_(_swc))
+    elif status_filter == 'uncounted':
+        q = q.filter(InventorySession.status == 'active')
+
     sessions = q.order_by(InventorySession.count_date.desc()).all()
 
     session_ids = [s.id for s in sessions]
@@ -169,6 +226,9 @@ def inv_sessions_kanban():
         columns=columns,
         date_from=date_from_str,
         date_to=date_to_str,
+        status_filter=status_filter,
+        alerts=alerts,
+        today=today,
         **_session_context(),
     )
 

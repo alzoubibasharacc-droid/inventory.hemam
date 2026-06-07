@@ -327,6 +327,31 @@
 
 /* Drag-over highlight for columns */
 .kb-col-body.sortable-over { outline: 2px solid var(--brand-green); outline-offset: -2px; border-radius: 8px; }
+
+/* ── Ops & Alerts bar ───────────────────────────────────────────────────── */
+.ops-alert-card {
+    padding: 14px 16px; border-radius: 12px; border: 1px solid;
+    transition: transform .12s, box-shadow .12s; height: 100%;
+}
+.ops-alert-card.warn  { background: rgba(255,193,7,.08);  border-color: rgba(255,193,7,.4); }
+.ops-alert-card.crit  { background: rgba(220,53,69,.06);  border-color: rgba(220,53,69,.3); }
+.ops-alert-card.muted { background: #f9fafb; border-color: #e9ecef; }
+.ops-alert-link { display: block; text-decoration: none; height: 100%; }
+.ops-alert-link:hover .ops-alert-card { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,.1); }
+.ops-alert-num   { font-size: 1.75rem; font-weight: 900; line-height: 1; }
+.ops-alert-title { font-size: 0.83rem; font-weight: 700; }
+.ops-alert-action { font-size: 0.72rem; opacity: .7; }
+
+/* ── Status filter pills ────────────────────────────────────────────────── */
+.kb-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 14px; border-radius: 20px; font-size: 0.8rem; font-weight: 600;
+    text-decoration: none; border: 1.5px solid #dde0da; background: #fff; color: #555;
+    transition: all .12s;
+}
+.kb-pill:hover  { background: #f0f4f0; border-color: #c0cabe; color: var(--brand-olive); }
+.kb-pill.active { background: var(--brand-olive); color: #fff; border-color: var(--brand-olive); }
+.kb-pill.active:hover { background: var(--brand-green); border-color: var(--brand-green); }
 </style>
 
 <div class="container-fluid kb-page">
@@ -344,6 +369,7 @@
 
       <!-- Date range filter -->
       <form method="GET" class="d-flex gap-2 align-items-center flex-wrap">
+        <input type="hidden" name="status" value="{{ status_filter }}">
         <div class="d-flex align-items-center gap-1">
           <span class="text-muted small text-nowrap">من</span>
           <input type="date" name="date_from" class="form-control form-control-sm"
@@ -372,18 +398,53 @@
     </div>
   </div>
 
-  <!-- ── Transition rules hint ─────────────────────────────────────────────── -->
-  <div class="d-flex flex-wrap gap-2 mb-4 align-items-center">
-    <span class="text-muted small"><i class="bi bi-info-circle me-1"></i>انتقالات مسموحة:</span>
-    {% for from_s, arrow, to_s in [
-        ('مسودة',  '→', 'نشط'),
-        ('نشط',   '→', 'موقوف'),
-        ('موقوف', '→', 'نشط'),
-        ('نشط',   '→', 'مكتمل'),
+  <!-- ── Ops & Alerts bar ──────────────────────────────────────────────────── -->
+  {% if alerts.has_alerts %}
+  <div class="row g-2 mb-3">
+    {% for status_val, count, label, action_text, icon, severity in [
+        ('no_counts', alerts.no_counts,       'جلسات بدون جرد',   'عرض الجلسات',    'clipboard-x',  'warn'),
+        ('uncounted', alerts.uncounted_items,  'صنف غير مجرود',    'مراجعة الجرد',   'box-seam',     'crit'),
+        ('overdue',   alerts.overdue,          'جلسة متأخرة',       'عرض المتأخرات',  'alarm-fill',   'crit'),
     ] %}
-    <span class="badge bg-light text-secondary border small fw-normal">
-      {{ from_s }} {{ arrow }} {{ to_s }}
-    </span>
+    <div class="col-12 col-sm-4">
+      {% if count > 0 %}
+      <a href="{{ url_for('admin.inv_sessions_kanban', date_from=date_from, date_to=date_to, status=status_val) }}"
+         class="ops-alert-link">
+      {% endif %}
+        <div class="ops-alert-card {{ severity if count > 0 else 'muted' }}">
+          <div class="d-flex align-items-center gap-3">
+            <i class="bi bi-{{ icon }} fs-2
+                      {% if count > 0 and severity == 'warn' %}text-warning
+                      {% elif count > 0 %}text-danger
+                      {% else %}text-muted{% endif %}"></i>
+            <div>
+              <div class="ops-alert-num
+                          {% if count > 0 and severity == 'warn' %}text-warning
+                          {% elif count > 0 %}text-danger
+                          {% else %}text-muted{% endif %}">{{ count }}</div>
+              <div class="ops-alert-title {% if count == 0 %}text-muted{% endif %}">{{ label }}</div>
+              <div class="ops-alert-action">{{ action_text if count > 0 else 'لا توجد تنبيهات' }}</div>
+            </div>
+          </div>
+        </div>
+      {% if count > 0 %}</a>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- ── Status filter pills ───────────────────────────────────────────────── -->
+  <div class="d-flex flex-wrap gap-2 mb-4 align-items-center">
+    {% for filter_val, filter_label, pill_icon in [
+        ('',          'جميع الجلسات', 'grid-3x3-gap'),
+        ('active',    'نشط',          'play-fill'),
+        ('completed', 'مكتمل',        'check-circle-fill'),
+        ('overdue',   'متأخرة',       'alarm-fill'),
+    ] %}
+    <a href="{{ url_for('admin.inv_sessions_kanban', date_from=date_from, date_to=date_to, status=filter_val) }}"
+       class="kb-pill {% if status_filter == filter_val %}active{% endif %}">
+      <i class="bi bi-{{ pill_icon }}"></i>{{ filter_label }}
+    </a>
     {% endfor %}
   </div>
 
