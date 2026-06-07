@@ -365,6 +365,41 @@ event.listen(InventoryCount, 'before_insert', _require_session_id)
 event.listen(InventoryCount, 'before_update', _require_session_id)
 
 
+class SessionAuditLog(db.Model):
+    """
+    Records admin corrections to InventoryCount quantities.
+    Written whenever an admin edits a count in a completed session.
+    Also written (without the 'completed' requirement) when session.status != 'active'
+    and the admin explicitly overrides via the admin edit route.
+    """
+    __tablename__ = 'session_audit_log'
+
+    id            = db.Column(db.Integer, primary_key=True)
+    session_id    = db.Column(
+        db.Integer,
+        db.ForeignKey('inventory_sessions.id', ondelete='CASCADE'),
+        nullable=False,
+    )
+    item_id       = db.Column(
+        db.Integer,
+        db.ForeignKey('items.id', ondelete='SET NULL'),
+        nullable=True,
+    )
+    changed_by    = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    changed_at    = db.Column(db.DateTime, nullable=False, default=_now)
+    field_changed = db.Column(db.String(100), nullable=False, default='quantity')
+    old_value     = db.Column(db.Text, nullable=True)
+    new_value     = db.Column(db.Text, nullable=True)
+    reason        = db.Column(db.Text, nullable=True)
+
+    item   = db.relationship('Item', foreign_keys=[item_id])
+    editor = db.relationship('User', foreign_keys=[changed_by])
+
+    __table_args__ = (
+        db.Index('ix_audit_log_session_id', 'session_id'),
+    )
+
+
 class User(UserMixin, db.Model):
     __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)

@@ -12,6 +12,7 @@ Cumulative changes applied:
       historical data backfill, partial unique index for active sessions
   v8  session_id NOT NULL at DB level (PostgreSQL); application-layer guard for SQLite
   v9  session_departments join table; backfill baseline sessions with all branch departments
+  v10 session_audit_log table for admin corrections on count quantities
 
 Run after pulling a new version:
     python migrate.py
@@ -685,6 +686,50 @@ def run_v9(conn):
         print('  = baseline session departments already assigned')
 
 
+def run_v10(conn):
+    """Create session_audit_log table for admin corrections on count quantities."""
+    if _table_exists(conn, 'session_audit_log'):
+        print('  = session_audit_log already exists')
+        return
+
+    if _is_sqlite(conn):
+        conn.execute(db.text('''
+            CREATE TABLE session_audit_log (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id    INTEGER NOT NULL REFERENCES inventory_sessions(id) ON DELETE CASCADE,
+                item_id       INTEGER REFERENCES items(id) ON DELETE SET NULL,
+                changed_by    INTEGER NOT NULL REFERENCES users(id),
+                changed_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                field_changed VARCHAR(100) NOT NULL DEFAULT \'quantity\',
+                old_value     TEXT,
+                new_value     TEXT,
+                reason        TEXT
+            )
+        '''))
+        conn.execute(db.text(
+            'CREATE INDEX ix_audit_log_session_id ON session_audit_log(session_id)'
+        ))
+    else:
+        conn.execute(db.text('''
+            CREATE TABLE session_audit_log (
+                id            SERIAL PRIMARY KEY,
+                session_id    INTEGER NOT NULL REFERENCES inventory_sessions(id) ON DELETE CASCADE,
+                item_id       INTEGER REFERENCES items(id) ON DELETE SET NULL,
+                changed_by    INTEGER NOT NULL REFERENCES users(id),
+                changed_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+                field_changed VARCHAR(100) NOT NULL DEFAULT \'quantity\',
+                old_value     TEXT,
+                new_value     TEXT,
+                reason        TEXT
+            )
+        '''))
+        conn.execute(db.text(
+            'CREATE INDEX ix_audit_log_session_id ON session_audit_log(session_id)'
+        ))
+
+    print('  + created session_audit_log table')
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def run():
@@ -718,6 +763,9 @@ def run():
 
             print('\n-- v9 (session_departments table + baseline backfill) --')
             run_v9(conn)
+
+            print('\n-- v10 (session_audit_log table) --')
+            run_v10(conn)
 
             trans.commit()
             print('\nMigration complete.\n')

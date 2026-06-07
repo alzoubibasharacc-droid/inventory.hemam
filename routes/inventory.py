@@ -439,6 +439,14 @@ def count_entry():
             'error': 'لا توجد جلسة جرد نشطة حالياً. تواصل مع المدير لتفعيل جلسة جرد.',
         }), 409
 
+    # Non-admin users (employees + managers) may only count in active sessions.
+    # Admins use the dedicated edit_count route for completed-session corrections.
+    if not current_user.is_admin and inv_session.status != 'active':
+        return jsonify({
+            'ok':   False,
+            'error': 'جلسة الجرد غير نشطة حالياً. تواصل مع المدير.',
+        }), 409
+
     # Verify employee's department is included in this session's scope
     if not current_user.is_manager and inv_session.session_departments:
         allowed_dept_ids = {sd.department_id for sd in inv_session.session_departments}

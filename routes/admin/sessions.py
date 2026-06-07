@@ -1,11 +1,17 @@
-from flask import render_template, request
+from flask import render_template, request, jsonify, redirect, url_for, flash
+from flask_login import current_user
 from sqlalchemy import func, distinct
 from sqlalchemy.orm import joinedload
-from models import db, Department, Item, InventoryCount, InventorySession, SessionDepartment
+from models import (
+    db, Department, Item, InventoryCount, InventorySession,
+    SessionDepartment, SessionAuditLog,
+)
 from utils.decorators import admin_required
 from routes.admin import admin_bp
 from datetime import date
 
+
+# ── Tracking Kanban ───────────────────────────────────────────────────────────
 
 @admin_bp.route('/sessions')
 @admin_required
@@ -116,6 +122,8 @@ def sessions():
     )
 
 
+# ── Session detail (item-level progress + admin corrections) ──────────────────
+
 @admin_bp.route('/sessions/<int:session_id>')
 @admin_required
 def session_detail(session_id):
@@ -193,6 +201,20 @@ def session_detail(session_id):
     else:
         status = 'in_progress'
 
+    # Audit log — admins only
+    audit_logs = []
+    if current_user.is_admin:
+        audit_logs = (
+            db.session.query(SessionAuditLog)
+            .filter_by(session_id=session_id)
+            .options(
+                joinedload(SessionAuditLog.item),
+                joinedload(SessionAuditLog.editor),
+            )
+            .order_by(SessionAuditLog.changed_at.desc())
+            .all()
+        )
+
     return render_template(
         'admin/session_detail.html',
         inv_session=inv_session,
@@ -202,4 +224,105 @@ def session_detail(session_id):
         counted_items=counted_items,
         pct=pct,
         status=status,
+        audit_logs=audit_logs,
     )
+
+
+# ── Admin: edit a count entry in any non-baseline session ─────────────────────
+
+@admin_bp.route('/sessions/<int:session_id>/counts/<int:item_id>/edit', methods=['POST'])
+@admin_required
+def edit_count(session_id, item_id):
+    inv_session = InventorySession.query.get_or_404(session_id)
+    item        = Item.query.get_or_404(item_id)
+
+    if inv_session.is_baseline:
+        return jsonify({'ok': False, 'error': 'الجلسات الأساسية للقراءة فقط'}), 403
+
+    # Managers (non-admin) may not edit completed sessions
+    if not current_user.is_admin and inv_session.status == 'completed':
+        return jsonify({'ok': False, 'error': 'لا يمكن تعديل جلسة مكتملة'}), 403
+
+    data        = request.get_json(silent=True) or {}
+    new_qty_raw = data.get('quantity')
+    reason      = (data.get('reason') or '').strip()
+
+    if new_qty_raw is None:
+        return jsonify({'ok': False, 'error': 'الكمية مطلوبة'}), 400
+
+    try:
+        new_qty = float(new_qty_raw)
+    except (ValueError, TypeError):
+        return jsonify({'ok': False, 'error': 'الكمية غير صالحة'}), 400
+
+    if new_qty < 0:
+        return jsonify({'ok': False, 'error': 'الكمية لا يمكن أن تكون سالبة'}), 400
+
+    # Reason is mandatory when overriding a completed session
+    if current_user.is_admin and inv_session.status == 'completed' and not reason:
+        return jsonify({'ok': False, 'error': 'سبب التعديل مطلوب للجلسات المكتملة'}), 400
+
+    latest_entry = (
+        InventoryCount.query
+        .filter_by(session_id=session_id, item_id=item_id)
+        .order_by(InventoryCount.created_at.desc())
+        .first()
+    )
+
+    if not latest_entry:
+        return jsonify({'ok': False, 'error': 'لا يوجد إدخال سابق لهذا الصنف في هذه الجلسة'}), 404
+
+    old_qty = latest_entry.quantity
+    latest_entry.quantity = new_qty
+
+    if current_user.is_admin and inv_session.status == 'completed':
+        db.session.add(SessionAuditLog(
+            session_id=session_id,
+            item_id=item_id,
+            changed_by=current_user.id,
+            field_changed='quantity',
+            old_value=str(old_qty),
+            new_value=str(new_qty),
+            reason=reason or None,
+        ))
+
+    db.session.commit()
+
+    unit_name = ''
+    if item.effective_base_unit:
+        unit_name = item.effective_base_unit.name_ar
+
+    return jsonify({
+        'ok':          True,
+        'new_quantity': new_qty,
+        'unit':        unit_name,
+        'item_name':   item.name_ar,
+        'logged':      current_user.is_admin and inv_session.status == 'completed',
+    })
+
+
+# ── Admin: delete a session and all its count data ────────────────────────────
+
+@admin_bp.route('/sessions/<int:session_id>/delete', methods=['POST'])
+@admin_required
+def delete_session(session_id):
+    if not current_user.is_admin:
+        flash('هذه العملية متاحة للمدير العام فقط', 'danger')
+        return redirect(url_for('admin.session_detail', session_id=session_id))
+
+    inv_session = InventorySession.query.get_or_404(session_id)
+
+    if inv_session.is_baseline:
+        flash('لا يمكن حذف الجلسات الأساسية', 'danger')
+        return redirect(url_for('admin.session_detail', session_id=session_id))
+
+    session_name    = inv_session.name
+    count_date_str  = inv_session.count_date.isoformat()
+
+    # Manual cascade: InventoryCount rows have no DB-level ON DELETE CASCADE
+    InventoryCount.query.filter_by(session_id=session_id).delete()
+    db.session.delete(inv_session)  # DB cascade removes session_departments + audit_log
+    db.session.commit()
+
+    flash(f'تم حذف جلسة "{session_name}" وجميع بياناتها بنجاح', 'success')
+    return redirect(url_for('admin.sessions', count_date=count_date_str))

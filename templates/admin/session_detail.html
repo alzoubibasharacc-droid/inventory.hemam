@@ -51,11 +51,9 @@
     vertical-align: middle;
 }
 .item-sub { font-size: 0.72rem; color: #888; margin-top: 1px; }
-
 .count-meta { text-align: left; font-size: 0.75rem; color: #888; white-space: nowrap; }
 .count-meta .who  { color: var(--brand-olive); font-weight: 600; }
 .count-meta .when { color: #aaa; }
-
 .not-counted-pill {
     font-size: 0.72rem;
     color: #dc3545;
@@ -88,6 +86,36 @@
 
 .dept-body { border: 1px solid #e8ece0; border-top: none; border-radius: 0 0 12px 12px; background: #fff; }
 
+/* Inline quantity display in rows */
+.qty-display {
+    font-size: 0.82rem;
+    color: var(--brand-olive);
+    font-weight: 700;
+    white-space: nowrap;
+    min-width: 70px;
+    text-align: left;
+}
+
+/* Edit button */
+.btn-edit-count {
+    background: none;
+    border: 1px solid #d0d8c8;
+    border-radius: 6px;
+    color: #666;
+    padding: 3px 8px;
+    font-size: 0.72rem;
+    cursor: pointer;
+    transition: background .12s, color .12s, border-color .12s;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.btn-edit-count:hover { background: var(--brand-olive); color: #fff; border-color: var(--brand-olive); }
+
+/* Audit log table */
+.audit-section { margin-top: 40px; }
+.audit-table { font-size: 0.8rem; }
+.audit-table th { font-size: 0.72rem; color: var(--brand-olive); }
+
 @media print {
     .no-print { display: none !important; }
     .item-row { padding: 7px 14px; }
@@ -96,6 +124,9 @@
 }
 @media (max-width: 576px) { .count-meta { display: none; } .item-row { gap: 8px; } }
 </style>
+
+{% set can_edit = current_user.is_admin or (current_user.is_manager and inv_session.status in ('active', 'paused')) %}
+{% set need_reason = current_user.is_admin and inv_session.status == 'completed' %}
 
 <div class="container-fluid">
 
@@ -113,7 +144,7 @@
     <div class="ms-auto no-print d-flex gap-2">
       <a href="{{ url_for('inventory.inventory_report', session_id=inv_session.id) }}"
          class="btn btn-outline-primary btn-sm">
-        <i class="bi bi-file-text me-1"></i>تقرير مفصل
+        <i class="bi bi-file-text me-1"></i>تقرير
       </a>
       <button onclick="window.print()" class="btn btn-outline-secondary btn-sm">
         <i class="bi bi-printer me-1"></i>طباعة
@@ -122,6 +153,12 @@
          class="btn btn-outline-secondary btn-sm">
         <i class="bi bi-arrow-right me-1"></i>العودة
       </a>
+      {% if current_user.is_admin and not inv_session.is_baseline %}
+      <button class="btn btn-outline-danger btn-sm"
+              data-bs-toggle="modal" data-bs-target="#deleteModal">
+        <i class="bi bi-trash me-1"></i>حذف الجلسة
+      </button>
+      {% endif %}
     </div>
   </div>
 
@@ -137,6 +174,16 @@
           {{ inv_session.name }}
           &nbsp;·&nbsp;
           <i class="bi bi-calendar3 me-1"></i>{{ inv_session.count_date.strftime('%Y-%m-%d') }}
+          &nbsp;·&nbsp;
+          {% if inv_session.status == 'active' %}
+          <span class="badge bg-success" style="font-size:.7rem;">نشط</span>
+          {% elif inv_session.status == 'completed' %}
+          <span class="badge bg-primary" style="font-size:.7rem;">مكتمل</span>
+          {% elif inv_session.status == 'paused' %}
+          <span class="badge bg-warning text-dark" style="font-size:.7rem;">موقوف</span>
+          {% else %}
+          <span class="badge bg-secondary" style="font-size:.7rem;">{{ inv_session.status }}</span>
+          {% endif %}
         </div>
       </div>
       <div>
@@ -171,10 +218,13 @@
       </div>
       <div class="dept-body">
         {% for row in group.rows %}
-        <div class="item-row {% if row.is_counted %}counted{% else %}uncounted{% endif %}">
+        <div class="item-row {% if row.is_counted %}counted{% else %}uncounted{% endif %}"
+             data-item-id="{{ row.item.id }}">
+
           <div class="status-icon {% if row.is_counted %}icon-counted{% else %}icon-uncounted{% endif %}">
             <i class="bi bi-{% if row.is_counted %}check-lg{% else %}x-lg{% endif %}"></i>
           </div>
+
           <div style="flex:1; min-width:0;">
             <div class="item-name">
               {% if row.item.item_code %}
@@ -189,7 +239,15 @@
             </div>
             {% endif %}
           </div>
+
           {% if row.is_counted %}
+          <div class="qty-display" data-qty="{{ row.latest.quantity }}">
+            {{ row.latest.quantity | int if row.latest.quantity == row.latest.quantity | int
+               else '%.2f' | format(row.latest.quantity) }}
+            <span style="font-weight:400; font-size:.7rem; color:#888;">
+              {{ row.item.effective_base_unit.name_ar if row.item.effective_base_unit else '' }}
+            </span>
+          </div>
           <div class="count-meta">
             <div class="who"><i class="bi bi-person me-1"></i>{{ row.latest.user.full_name }}</div>
             <div class="when">
@@ -197,9 +255,20 @@
               {% if row.entry_count > 1 %}&nbsp;· {{ row.entry_count }} إدخالات{% endif %}
             </div>
           </div>
+          {% if can_edit %}
+          <button class="btn-edit-count no-print"
+                  data-item-id="{{ row.item.id }}"
+                  data-item-name="{{ row.item.name_ar }}"
+                  data-qty="{{ row.latest.quantity }}"
+                  data-unit="{{ row.item.effective_base_unit.name_ar if row.item.effective_base_unit else '' }}"
+                  onclick="openEditModal(this)">
+            <i class="bi bi-pencil me-1"></i>تعديل
+          </button>
+          {% endif %}
           {% else %}
           <span class="not-counted-pill"><i class="bi bi-dash me-1"></i>لم يُجرَّد</span>
           {% endif %}
+
         </div>
         {% endfor %}
       </div>
@@ -212,5 +281,243 @@
   </div>
   {% endif %}
 
+  <!-- Audit log (admin only) -->
+  {% if current_user.is_admin and audit_logs %}
+  <div class="audit-section no-print">
+    <div class="section-header mb-3">
+      <div class="section-icon"><i class="bi bi-shield-check"></i></div>
+      <h5 class="mb-0">سجل التعديلات</h5>
+    </div>
+    <div class="card">
+      <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 audit-table">
+          <thead class="table-light">
+            <tr>
+              <th>الصنف</th>
+              <th>القيمة السابقة</th>
+              <th>القيمة الجديدة</th>
+              <th>بواسطة</th>
+              <th>التاريخ والوقت</th>
+              <th>السبب</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for log in audit_logs %}
+            <tr>
+              <td>{{ log.item.name_ar if log.item else '—' }}</td>
+              <td class="text-danger fw-semibold">{{ log.old_value or '—' }}</td>
+              <td class="text-success fw-semibold">{{ log.new_value or '—' }}</td>
+              <td>{{ log.editor.full_name if log.editor else '—' }}</td>
+              <td class="text-muted">{{ log.changed_at.strftime('%Y-%m-%d %H:%M') }}</td>
+              <td class="text-muted fst-italic">{{ log.reason or '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% elif current_user.is_admin and inv_session.status == 'completed' %}
+  <div class="audit-section no-print">
+    <p class="text-muted small"><i class="bi bi-shield-check me-1"></i>لا توجد تعديلات مسجلة على هذه الجلسة.</p>
+  </div>
+  {% endif %}
+
+</div><!-- /container-fluid -->
+
+
+<!-- ── Edit Count Modal ─────────────────────────────────────────────────────── -->
+{% if can_edit %}
+<div class="modal fade" id="editModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title">
+          <i class="bi bi-pencil me-2"></i>تعديل الكمية
+        </h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small mb-3" id="editItemName"></p>
+
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">الكمية الجديدة
+            <span id="editUnitLabel" class="text-muted fw-normal"></span>
+          </label>
+          <input type="number" id="editQtyInput" class="form-control"
+                 min="0" step="0.001" placeholder="0">
+          <div class="form-text text-muted small">
+            الكمية الحالية: <span id="editCurrentQty" class="fw-semibold"></span>
+          </div>
+        </div>
+
+        {% if need_reason %}
+        <div class="mb-1" id="reasonBlock">
+          <label class="form-label small fw-semibold">
+            سبب التعديل <span class="text-danger">*</span>
+          </label>
+          <textarea id="editReasonInput" class="form-control form-control-sm"
+                    rows="2" placeholder="أدخل سبب تعديل الكمية…"></textarea>
+          <div class="form-text text-warning small">
+            <i class="bi bi-exclamation-triangle me-1"></i>
+            هذه الجلسة مكتملة — سيتم تسجيل التعديل في سجل المراجعة.
+          </div>
+        </div>
+        {% else %}
+        <div style="display:none;">
+          <textarea id="editReasonInput"></textarea>
+        </div>
+        {% endif %}
+
+        <div id="editError" class="alert alert-danger py-2 small mt-2 d-none"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">إلغاء</button>
+        <button type="button" class="btn btn-primary btn-sm" id="editSaveBtn"
+                onclick="submitEdit()">
+          <i class="bi bi-check-lg me-1"></i>حفظ التعديل
+        </button>
+      </div>
+    </div>
+  </div>
 </div>
+{% endif %}
+
+
+<!-- ── Delete Session Modal ─────────────────────────────────────────────────── -->
+{% if current_user.is_admin and not inv_session.is_baseline %}
+<div class="modal fade" id="deleteModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content border-danger">
+      <div class="modal-header bg-danger text-white">
+        <h6 class="modal-title">
+          <i class="bi bi-exclamation-triangle me-2"></i>تأكيد حذف الجلسة
+        </h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>سيتم حذف الجلسة <strong>{{ inv_session.name }}</strong> نهائياً.</p>
+        <ul class="small text-muted mb-2">
+          <li>جميع بيانات الجرد ({{ total_items }} صنف)</li>
+          <li>سجلات التعديلات المرتبطة</li>
+          <li>تعيينات الأقسام</li>
+        </ul>
+        <div class="alert alert-danger py-2 small mb-0">
+          <i class="bi bi-exclamation-circle me-1"></i>
+          هذه العملية لا يمكن التراجع عنها.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">إلغاء</button>
+        <form method="POST"
+              action="{{ url_for('admin.delete_session', session_id=inv_session.id) }}"
+              style="display:inline;">
+          <button type="submit" class="btn btn-danger btn-sm">
+            <i class="bi bi-trash me-1"></i>حذف نهائي
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+
+{% endblock %}
+
+
+{% block scripts %}
+{% if can_edit %}
+<script>
+const SESSION_ID = {{ inv_session.id }};
+const NEED_REASON = {{ 'true' if need_reason else 'false' }};
+
+let _currentItemId = null;
+
+function openEditModal(btn) {
+    _currentItemId = parseInt(btn.dataset.itemId);
+    const qty      = parseFloat(btn.dataset.qty);
+    const unit     = btn.dataset.unit;
+    const name     = btn.dataset.itemName;
+
+    document.getElementById('editItemName').textContent    = name;
+    document.getElementById('editCurrentQty').textContent  = qty + (unit ? ' ' + unit : '');
+    document.getElementById('editUnitLabel').textContent   = unit ? '(' + unit + ')' : '';
+    document.getElementById('editQtyInput').value          = qty;
+    document.getElementById('editReasonInput').value       = '';
+    document.getElementById('editError').classList.add('d-none');
+
+    new bootstrap.Modal(document.getElementById('editModal')).show();
+}
+
+async function submitEdit() {
+    const qty    = parseFloat(document.getElementById('editQtyInput').value);
+    const reason = document.getElementById('editReasonInput').value.trim();
+    const errEl  = document.getElementById('editError');
+
+    errEl.classList.add('d-none');
+
+    if (isNaN(qty) || qty < 0) {
+        errEl.textContent = 'أدخل كمية صحيحة (أكبر من أو تساوي صفر)';
+        errEl.classList.remove('d-none');
+        return;
+    }
+
+    if (NEED_REASON && !reason) {
+        errEl.textContent = 'سبب التعديل مطلوب للجلسات المكتملة';
+        errEl.classList.remove('d-none');
+        return;
+    }
+
+    const btn = document.getElementById('editSaveBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>جاري الحفظ…';
+
+    try {
+        const res = await fetch(
+            `/admin/sessions/${SESSION_ID}/counts/${_currentItemId}/edit`,
+            {
+                method:  'POST',
+                headers: {'Content-Type': 'application/json'},
+                body:    JSON.stringify({quantity: qty, reason: reason}),
+            }
+        );
+        const data = await res.json();
+
+        if (!res.ok || !data.ok) {
+            errEl.textContent = data.error || 'حدث خطأ غير متوقع';
+            errEl.classList.remove('d-none');
+            return;
+        }
+
+        // Update the quantity display in the row without a full reload
+        const row    = document.querySelector(`.item-row[data-item-id="${_currentItemId}"]`);
+        const qtyEl  = row?.querySelector('.qty-display');
+        if (qtyEl) {
+            const displayQty = Number.isInteger(data.new_quantity)
+                ? data.new_quantity
+                : data.new_quantity.toFixed(2);
+            qtyEl.innerHTML = `${displayQty} <span style="font-weight:400;font-size:.7rem;color:#888;">${data.unit}</span>`;
+            // Also update the edit button's data-qty
+            const editBtn = row.querySelector('.btn-edit-count');
+            if (editBtn) editBtn.dataset.qty = data.new_quantity;
+        }
+
+        bootstrap.Modal.getInstance(document.getElementById('editModal'))?.hide();
+
+        {% if need_reason %}
+        // Reload to show the new audit log entry
+        window.location.reload();
+        {% endif %}
+
+    } catch (err) {
+        errEl.textContent = 'فشل الاتصال بالخادم';
+        errEl.classList.remove('d-none');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>حفظ التعديل';
+    }
+}
+</script>
+{% endif %}
 {% endblock %}
