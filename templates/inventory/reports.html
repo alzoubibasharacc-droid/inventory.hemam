@@ -11,6 +11,7 @@
         <div class="d-flex gap-2 ms-auto">
             {% if current_user.is_admin %}
             <a href="{{ url_for('reports.export_page',
+                                session_id=selected_session or '',
                                 branch_id=selected_branch or '',
                                 dept_id=selected_dept or '',
                                 date_from=date_from,
@@ -28,35 +29,71 @@
     <!-- Filters -->
     <div class="card mb-4 no-print">
         <div class="card-body">
-            <form method="GET" class="row g-3 align-items-end">
-                <div class="col-6 col-md-3">
+            <form method="GET" id="reports-filter-form" class="row g-3 align-items-end">
+
+                <!-- Session dropdown -->
+                <div class="col-12">
+                    <label class="form-label fw-semibold">
+                        <i class="bi bi-calendar-check me-1" style="color:var(--brand-olive);"></i>
+                        تصفية حسب جلسة جرد
+                    </label>
+                    <select name="session_id" id="session-select" class="form-select"
+                            onchange="onSessionChange(this)">
+                        <option value="">— عرض حسب النطاق الزمني —</option>
+                        {% for s in inv_sessions %}
+                        {% set slabel = {'active':'نشط','completed':'مكتمل','paused':'موقوف','draft':'مسودة'}.get(s.status, s.status) %}
+                        <option value="{{ s.id }}"
+                                data-branch-id="{{ s.branch_id }}"
+                                {% if s.id == selected_session %}selected{% endif %}>
+                            {{ s.name }} — {{ s.branch.name_ar if s.branch else '' }} | {{ s.count_date }} [{{ slabel }}]
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Date range (hidden when session is selected) -->
+                <div class="col-6 col-md-3" id="date-from-wrap"
+                     {% if active_session %}style="display:none"{% endif %}>
                     <label class="form-label">من تاريخ</label>
                     <input type="date" name="date_from" class="form-control" value="{{ date_from }}">
                 </div>
-                <div class="col-6 col-md-3">
+                <div class="col-6 col-md-3" id="date-to-wrap"
+                     {% if active_session %}style="display:none"{% endif %}>
                     <label class="form-label">إلى تاريخ</label>
                     <input type="date" name="date_to" class="form-control" value="{{ date_to }}">
                 </div>
+
+                <!-- Branch (hidden when session is selected — session determines branch) -->
                 {% if current_user.is_admin or current_user.is_manager %}
-                <div class="col-12 col-md-3">
+                <div class="col-12 col-md-3" id="branch-wrap"
+                     {% if active_session %}style="display:none"{% endif %}>
                     <label class="form-label">الفرع</label>
-                    <select name="branch_id" class="form-select" onchange="this.form.submit()">
+                    <select name="branch_id" id="branch-select" class="form-select"
+                            onchange="this.form.submit()">
                         <option value="">جميع الفروع</option>
                         {% for b in branches %}
-                        <option value="{{ b.id }}" {% if b.id == selected_branch %}selected{% endif %}>{{ b.name_ar }}</option>
+                        <option value="{{ b.id }}"
+                                {% if b.id == selected_branch %}selected{% endif %}>
+                            {{ b.name_ar }}
+                        </option>
                         {% endfor %}
                     </select>
                 </div>
                 {% endif %}
+
                 <div class="col-12 col-md-3">
                     <label class="form-label">القسم</label>
                     <select name="dept_id" class="form-select">
                         <option value="">جميع الأقسام</option>
                         {% for d in departments %}
-                        <option value="{{ d.id }}" {% if d.id == selected_dept %}selected{% endif %}>{{ d.name_ar }}</option>
+                        <option value="{{ d.id }}"
+                                {% if d.id == selected_dept %}selected{% endif %}>
+                            {{ d.name_ar }}
+                        </option>
                         {% endfor %}
                     </select>
                 </div>
+
                 <div class="col-12 col-md-2">
                     <button type="submit" class="btn btn-primary w-100">
                         <i class="bi bi-search me-1"></i>بحث
@@ -66,24 +103,184 @@
         </div>
     </div>
 
+    <!-- Session info banner -->
+    {% if active_session %}
+    {% set slabel = {'active':'نشط','completed':'مكتمل','paused':'موقوف','draft':'مسودة'}.get(active_session.status, active_session.status) %}
+    <div class="card mb-4 no-print border-0"
+         style="background:linear-gradient(135deg,var(--brand-olive) 0%,var(--brand-green) 100%);">
+        <div class="card-body text-white py-3 px-4">
+            <div class="d-flex align-items-center gap-3 flex-wrap">
+                <i class="bi bi-calendar-check fs-3 opacity-75"></i>
+                <div>
+                    <h6 class="mb-0 fw-bold">{{ active_session.name }}</h6>
+                    <small class="opacity-75">
+                        {{ active_session.branch.name_ar if active_session.branch else '' }}
+                        · {{ active_session.count_date }}
+                        · <span class="badge bg-white text-dark">{{ slabel }}</span>
+                    </small>
+                </div>
+                <div class="ms-auto">
+                    <a href="{{ url_for('inventory.inventory_report', session_id=active_session.id) }}"
+                       class="btn btn-light btn-sm fw-semibold">
+                        <i class="bi bi-bar-chart-line me-1"></i>تقرير تفصيلي
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Print header -->
     <div class="d-none d-print-block mb-4 text-center">
         <img src="{{ url_for('static', filename='images/logo.svg') }}" alt="همم" style="height:80px;">
         <h4 class="fw-bold mt-2">مطاعم همم - تقرير الجرد</h4>
+        {% if active_session %}
+        <p class="text-muted">
+            {{ active_session.name }} — {{ active_session.branch.name_ar if active_session.branch else '' }}
+            | {{ active_session.count_date }}
+        </p>
+        {% else %}
         <p class="text-muted">{{ date_from }} — {{ date_to }}</p>
+        {% endif %}
         <hr>
     </div>
 
+    <!-- Results -->
     {% if grouped %}
         {% for dept_name, rows in grouped.items() %}
+        {% if rows %}
         <div class="card mb-3">
             <div class="card-header d-flex justify-content-between align-items-center"
                  style="background:var(--brand-olive); color:#fff;">
                 <span class="fw-bold">
                     <i class="bi bi-building me-2"></i>{{ dept_name }}
                 </span>
-                <span class="badge bg-light text-dark">{{ rows|length }} صنف</span>
+                {% if active_session %}
+                {% set cnt_count = rows | selectattr('is_counted') | list | length %}
+                {% set tot_count = rows | length %}
+                <div class="d-flex gap-2 align-items-center">
+                    <span class="badge bg-success">
+                        <i class="bi bi-check2"></i> {{ cnt_count }}
+                    </span>
+                    <span class="badge bg-danger">
+                        <i class="bi bi-x"></i> {{ tot_count - cnt_count }}
+                    </span>
+                    <span class="badge bg-light text-dark">{{ tot_count }} صنف</span>
+                </div>
+                {% else %}
+                <span class="badge bg-light text-dark">{{ rows | length }} صنف</span>
+                {% endif %}
             </div>
+
+            {% if active_session %}
+            {# ── Session view: counted ✅ + uncounted ❌ split ── #}
+            {% set counted_rows   = rows | selectattr('is_counted') | list %}
+            {% set uncounted_rows = rows | rejectattr('is_counted') | list %}
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th width="32">#</th>
+                            {% if current_user.is_manager %}
+                            <th>الكود</th>
+                            {% endif %}
+                            <th>الصنف</th>
+                            <th>التغليف</th>
+                            <th class="text-center">الكمية</th>
+                            <th class="text-center">الوحدة</th>
+                            <th class="text-center">بواسطة</th>
+                            <th class="text-center">الوقت</th>
+                            <th class="text-center no-print">الحالة</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in counted_rows %}
+                        {% set item   = row.item %}
+                        {% set latest = row.entries[-1] if row.entries else none %}
+                        <tr>
+                            <td class="text-muted small">{{ loop.index }}</td>
+                            {% if current_user.is_manager %}
+                            <td>
+                                {% if item.item_code %}
+                                <span class="badge"
+                                      style="background:var(--brand-olive);font-family:monospace;font-size:.72rem;">
+                                    {{ item.item_code }}
+                                </span>
+                                {% else %}<span class="text-muted small">—</span>{% endif %}
+                            </td>
+                            {% endif %}
+                            <td class="fw-semibold">{{ item.name_ar }}</td>
+                            <td class="text-muted small">
+                                {% if item.packaging_note %}
+                                <i class="bi bi-tag me-1" style="color:var(--brand-orange);"></i>
+                                {{ item.packaging_note }}
+                                {% else %}—{% endif %}
+                            </td>
+                            <td class="text-center fw-bold" style="color:var(--brand-orange);">
+                                {{ row.total_base | int if row.total_base == row.total_base | int
+                                   else row.total_base | round(3) }}
+                            </td>
+                            <td class="text-center">
+                                <span class="badge bg-secondary">
+                                    {{ item.effective_base_unit.name_ar }}
+                                </span>
+                            </td>
+                            <td class="text-center text-muted small">
+                                {{ latest.user.full_name if latest else '—' }}
+                            </td>
+                            <td class="text-center text-muted small">
+                                {{ latest.created_at.strftime('%H:%M') if latest and latest.created_at else '—' }}
+                            </td>
+                            <td class="text-center no-print">
+                                <span class="badge bg-success">
+                                    <i class="bi bi-check2-circle me-1"></i>مجرود
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+
+                        {% for row in uncounted_rows %}
+                        {% set item = row.item %}
+                        <tr style="background:rgba(220,53,69,0.04);">
+                            <td class="text-muted small">{{ counted_rows|length + loop.index }}</td>
+                            {% if current_user.is_manager %}
+                            <td>
+                                {% if item.item_code %}
+                                <span class="badge"
+                                      style="background:var(--brand-olive);font-family:monospace;font-size:.72rem;">
+                                    {{ item.item_code }}
+                                </span>
+                                {% else %}<span class="text-muted small">—</span>{% endif %}
+                            </td>
+                            {% endif %}
+                            <td class="text-muted">{{ item.name_ar }}</td>
+                            <td class="text-muted small">
+                                {% if item.packaging_note %}
+                                <i class="bi bi-tag me-1" style="color:var(--brand-orange);"></i>
+                                {{ item.packaging_note }}
+                                {% else %}—{% endif %}
+                            </td>
+                            <td class="text-center text-muted">—</td>
+                            <td class="text-center">
+                                <span class="badge bg-secondary">
+                                    {{ item.effective_base_unit.name_ar }}
+                                </span>
+                            </td>
+                            <td class="text-center text-muted small">—</td>
+                            <td class="text-center text-muted small">—</td>
+                            <td class="text-center no-print">
+                                <span class="badge bg-danger">
+                                    <i class="bi bi-x-circle me-1"></i>غير مجرود
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {% else %}
+            {# ── Date-range view: original aggregated table ── #}
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
                     <thead>
@@ -102,8 +299,8 @@
                     </thead>
                     <tbody>
                         {% for row in rows %}
-                        {% set item = row.item %}
-                        {% set total = row.total_base %}
+                        {% set item    = row.item %}
+                        {% set total   = row.total_base %}
                         {% set entries = row.entries %}
                         <tr{% if row.low_stock %} style="background:rgba(255,193,7,0.1);"{% endif %}>
                             <td class="text-muted small">{{ loop.index }}</td>
@@ -111,7 +308,7 @@
                             <td>
                                 {% if item.item_code %}
                                 <span class="badge"
-                                      style="background:var(--brand-olive); font-family:monospace; font-size:0.72rem;">
+                                      style="background:var(--brand-olive);font-family:monospace;font-size:.72rem;">
                                     {{ item.item_code }}
                                 </span>
                                 {% else %}
@@ -127,15 +324,17 @@
                                 {% else %}—{% endif %}
                             </td>
                             <td class="text-center">
-                                <span class="fw-bold" style="color:{% if row.low_stock %}#dc3545{% else %}var(--brand-orange){% endif %};">
+                                <span class="fw-bold"
+                                      style="color:{% if row.low_stock %}#dc3545{% else %}var(--brand-orange){% endif %};">
                                     {{ total | int if total == total | int else total | round(3) }}
                                 </span>
                                 {% if row.low_stock %}
                                 <br>
                                 <span class="badge"
-                                      style="background:rgba(220,53,69,0.1); color:#dc3545; border:1px solid rgba(220,53,69,0.3); font-size:0.68rem;">
+                                      style="background:rgba(220,53,69,0.1);color:#dc3545;border:1px solid rgba(220,53,69,0.3);font-size:.68rem;">
                                     <i class="bi bi-exclamation-triangle-fill me-1"></i>أدنى من
-                                    {{ row.minimum_stock | int if row.minimum_stock == row.minimum_stock | int else row.minimum_stock | round(3) }}
+                                    {{ row.minimum_stock | int if row.minimum_stock == row.minimum_stock | int
+                                       else row.minimum_stock | round(3) }}
                                 </span>
                                 {% endif %}
                             </td>
@@ -146,12 +345,12 @@
                             </td>
                             <td class="text-center">
                                 <span class="badge"
-                                      style="background:{% if entries|length > 1 %}var(--brand-green){% else %}var(--brand-light); color:var(--brand-olive);{% endif %}">
+                                      style="background:{% if entries|length > 1 %}var(--brand-green){% else %}var(--brand-light);color:var(--brand-olive);{% endif %}">
                                     {{ entries|length }}
                                 </span>
                             </td>
                             <td class="no-print">
-                                {% if entries|length > 0 %}
+                                {% if entries %}
                                 <button class="btn btn-sm btn-outline-secondary py-0"
                                         type="button"
                                         data-bs-toggle="collapse"
@@ -174,11 +373,13 @@
                                             {{ e.entered_quantity | int
                                                if e.entered_quantity and e.entered_quantity == e.entered_quantity | int
                                                else (e.entered_quantity or e.quantity) }}
-                                            {{ e.entered_unit.name_ar if e.entered_unit else item.effective_base_unit.name_ar }}
+                                            {{ e.entered_unit.name_ar if e.entered_unit
+                                               else item.effective_base_unit.name_ar }}
                                         </span>
                                         <span class="text-muted small">
                                             →
-                                            {{ e.quantity | int if e.quantity == e.quantity | int else e.quantity | round(3) }}
+                                            {{ e.quantity | int if e.quantity == e.quantity | int
+                                               else e.quantity | round(3) }}
                                             {{ item.effective_base_unit.name_ar }}
                                         </span>
                                         <span class="text-muted small ms-auto">
@@ -198,7 +399,9 @@
                     </tbody>
                 </table>
             </div>
+            {% endif %}
         </div>
+        {% endif %}
         {% endfor %}
     {% else %}
     <div class="alert alert-info text-center py-5">
@@ -207,5 +410,30 @@
         <p class="text-muted mb-0">اختر فترة مختلفة أو تأكد من إدخال بيانات الجرد</p>
     </div>
     {% endif %}
+
 </div>
+
+<script>
+function onSessionChange(select) {
+    const val          = select.value;
+    const dateFromWrap = document.getElementById('date-from-wrap');
+    const dateToWrap   = document.getElementById('date-to-wrap');
+    const branchWrap   = document.getElementById('branch-wrap');
+    const branchSelect = document.getElementById('branch-select');
+
+    if (val) {
+        if (dateFromWrap) dateFromWrap.style.display = 'none';
+        if (dateToWrap)   dateToWrap.style.display   = 'none';
+        if (branchWrap)   branchWrap.style.display   = 'none';
+        // Set branch to match session so backend scoping aligns
+        const branchId = select.options[select.selectedIndex].dataset.branchId;
+        if (branchSelect && branchId) branchSelect.value = branchId;
+    } else {
+        if (dateFromWrap) dateFromWrap.style.display = '';
+        if (dateToWrap)   dateToWrap.style.display   = '';
+        if (branchWrap)   branchWrap.style.display   = '';
+    }
+    select.form.submit();
+}
+</script>
 {% endblock %}

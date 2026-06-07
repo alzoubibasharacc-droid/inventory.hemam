@@ -303,6 +303,7 @@ def index():
                 'dept':           dept_name,
                 'minimum_stock':  ms,
                 'low_stock':      ms > 0 and tb < ms,
+                'is_counted':     True,
             }
         item_agg[iid]['entries'].append(entry)
 
@@ -310,11 +311,59 @@ def index():
     for agg in item_agg.values():
         grouped[agg['dept']].append(agg)
 
+    # Append uncounted items when a session is selected
+    if session_id and active_session:
+        dept_ids_in_scope = [
+            sd.department_id for sd in active_session.session_departments
+        ]
+        if dept_id:
+            dept_ids_in_scope = [d for d in dept_ids_in_scope if d == dept_id]
+        counted_ids = set(item_agg.keys())
+        if dept_ids_in_scope:
+            q_uncounted = (
+                db.session.query(Item, Department)
+                .join(Department, Item.department_id == Department.id)
+                .filter(
+                    Item.department_id.in_(dept_ids_in_scope),
+                    Item.is_active == True,
+                )
+                .order_by(Department.name_ar, Item.name_ar)
+            )
+            if counted_ids:
+                q_uncounted = q_uncounted.filter(~Item.id.in_(counted_ids))
+            for item, dept in q_uncounted.all():
+                dept_name = dept.name_ar
+                if dept_name not in grouped:
+                    grouped[dept_name] = []
+                grouped[dept_name].append({
+                    'item':          item,
+                    'total_base':    0,
+                    'entries':       [],
+                    'dept':          dept_name,
+                    'minimum_stock': item.effective_minimum_stock,
+                    'low_stock':     False,
+                    'is_counted':    False,
+                })
+
+    # Build inv_sessions list for the filter dropdown (scoped for employees)
+    inv_sessions_q = (
+        InventorySession.query
+        .options(joinedload(InventorySession.branch))
+        .filter(InventorySession.session_type != 'baseline')
+        .order_by(InventorySession.count_date.desc(), InventorySession.branch_id)
+    )
+    if not current_user.is_manager and current_user.branch_id:
+        inv_sessions_q = inv_sessions_q.filter(
+            InventorySession.branch_id == current_user.branch_id
+        )
+    inv_sessions = inv_sessions_q.all()
+
     return render_template(
         'inventory/reports.html',
         grouped=grouped,
         branches=branches,
         departments=departments,
+        inv_sessions=inv_sessions,
         selected_branch=branch_id,
         selected_dept=dept_id,
         selected_session=session_id,
@@ -403,17 +452,24 @@ def export_download():
         flash('لا توجد بيانات مطابقة للفلتر المحدد', 'warning')
         return redirect(url_for('reports.export_page', **request.args))
 
-    parts = []
-    if date_from and date_to:
-        parts.append(f'من {date_from} إلى {date_to}')
-    elif date_from:
-        parts.append(f'من {date_from}')
-    elif date_to:
-        parts.append(f'حتى {date_to}')
+    active_session = InventorySession.query.get(session_id) if session_id else None
 
-    if branch_id:
-        b = Branch.query.get(branch_id)
-        if b: parts.append(b.name_ar)
+    parts = []
+    if active_session:
+        parts.append(f'{active_session.name} | {active_session.count_date}')
+        if active_session.branch:
+            parts.append(active_session.branch.name_ar)
+    else:
+        if date_from and date_to:
+            parts.append(f'من {date_from} إلى {date_to}')
+        elif date_from:
+            parts.append(f'من {date_from}')
+        elif date_to:
+            parts.append(f'حتى {date_to}')
+        if branch_id:
+            b = Branch.query.get(branch_id)
+            if b: parts.append(b.name_ar)
+
     if dept_id:
         d = Department.query.get(dept_id)
         if d: parts.append(d.name_ar)
@@ -422,7 +478,12 @@ def export_download():
         if u: parts.append(u.full_name)
 
     filters_label = '  |  '.join(parts) if parts else 'كل الفترات'
-    filename      = f'inventory_{date_from}_{date_to}.xlsx'
+
+    if active_session:
+        safe_name = ''.join(c for c in active_session.name if c.isalnum() or c in ' _-').strip()
+        filename = f'تقرير_جرد_{safe_name}_{active_session.count_date}.xlsx'
+    else:
+        filename = f'inventory_{date_from}_{date_to}.xlsx'
 
     xlsx_bytes = _build_xlsx(counts, filters_label)
     return Response(
