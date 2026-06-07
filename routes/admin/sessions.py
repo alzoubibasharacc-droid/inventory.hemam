@@ -316,8 +316,7 @@ def delete_session(session_id):
         flash('لا يمكن حذف الجلسات الأساسية', 'danger')
         return redirect(url_for('admin.session_detail', session_id=session_id))
 
-    session_name    = inv_session.name
-    count_date_str  = inv_session.count_date.isoformat()
+    session_name = inv_session.name
 
     # Manual cascade: InventoryCount rows have no DB-level ON DELETE CASCADE
     InventoryCount.query.filter_by(session_id=session_id).delete()
@@ -325,4 +324,4 @@ def delete_session(session_id):
     db.session.commit()
 
     flash(f'تم حذف جلسة "{session_name}" وجميع بياناتها بنجاح', 'success')
-    return redirect(url_for('admin.sessions', count_date=count_date_str))
+    return redirect(url_for('admin.inv_sessions_kanban'))

@@ -43,25 +43,25 @@
     letter-spacing: .04em;
     text-transform: uppercase;
 }
-.kb-col-header.draft    { background: #e9ecef; color: #495057; }
-.kb-col-header.active   { background: #d1e7dd; color: #0a5c36; }
-.kb-col-header.paused   { background: #ffe5cc; color: #8c4a00; }
-.kb-col-header.completed { background: #cfe2ff; color: #084298; }
+.kb-col-header.draft    { background: #475569; color: #fff; }
+.kb-col-header.active   { background: #166534; color: #fff; }
+.kb-col-header.paused   { background: #c2410c; color: #fff; }
+.kb-col-header.completed { background: #1e40af; color: #fff; }
 
 .kb-col-dot {
     width: 9px; height: 9px;
     border-radius: 50%;
     flex-shrink: 0;
 }
-.kb-col-dot.draft     { background: #6c757d; }
-.kb-col-dot.active    { background: #198754; }
-.kb-col-dot.paused    { background: #fd7e14; }
-.kb-col-dot.completed { background: #0d6efd; }
+.kb-col-dot.draft     { background: rgba(255,255,255,0.55); }
+.kb-col-dot.active    { background: rgba(255,255,255,0.55); }
+.kb-col-dot.paused    { background: rgba(255,255,255,0.55); }
+.kb-col-dot.completed { background: rgba(255,255,255,0.55); }
 
 .kb-col-count {
     margin-right: auto;
-    background: rgba(0,0,0,0.12);
-    color: inherit;
+    background: rgba(255,255,255,0.22);
+    color: #fff;
     font-size: 0.7rem;
     font-weight: 700;
     border-radius: 20px;
@@ -77,10 +77,10 @@
     flex-direction: column;
     gap: 8px;
 }
-.kb-col-header.draft    + .kb-col-body { background: #f3f4f6; }
-.kb-col-header.active   + .kb-col-body { background: #f0faf4; }
-.kb-col-header.paused   + .kb-col-body { background: #fdf4ec; }
-.kb-col-header.completed + .kb-col-body { background: #eef4ff; }
+.kb-col-header.draft    + .kb-col-body { background: #f8fafc; }
+.kb-col-header.active   + .kb-col-body { background: #f0fdf4; }
+.kb-col-header.paused   + .kb-col-body { background: #fff7ed; }
+.kb-col-header.completed + .kb-col-body { background: #eff6ff; }
 
 /* SortableJS states */
 .kb-ghost {
@@ -112,10 +112,10 @@
 .kb-card:hover  { box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
 
 /* Status accent border */
-.kb-card[data-status="draft"]     { border-right-color: #6c757d; }
-.kb-card[data-status="active"]    { border-right-color: #198754; }
-.kb-card[data-status="paused"]    { border-right-color: #fd7e14; }
-.kb-card[data-status="completed"] { border-right-color: #0d6efd; }
+.kb-card[data-status="draft"]     { border-right-color: #94a3b8; }
+.kb-card[data-status="active"]    { border-right-color: #16a34a; }
+.kb-card[data-status="paused"]    { border-right-color: #ea580c; }
+.kb-card[data-status="completed"] { border-right-color: #2563eb; }
 
 /* Completed / baseline cards are non-draggable */
 .kb-card.no-drag {
@@ -270,7 +270,10 @@
     font-size: 0.8rem;
     transition: background .12s, color .12s, border-color .12s;
 }
-.kb-action-btn:hover { background: #f0f4f0; color: var(--brand-olive); border-color: #c8d4c8; }
+.kb-action-btn:hover           { background: #f0f4f0; color: var(--brand-olive); border-color: #c8d4c8; }
+.kb-action-btn.view-btn:hover  { background: #eff6ff; color: #1e40af; border-color: #93c5fd; }
+.kb-action-btn.edit-btn:hover  { background: #f0fdf4; color: #166534; border-color: #86efac; }
+.kb-action-btn.stats-btn:hover { background: #faf5ff; color: #6d28d9; border-color: #c4b5fd; }
 
 /* Empty column state */
 .kb-col-empty {
@@ -338,10 +341,6 @@
       </div>
     </div>
     <div class="d-flex gap-2 align-items-center flex-wrap">
-      <a href="{{ url_for('admin.inv_sessions_list') }}"
-         class="btn btn-outline-secondary btn-sm">
-        <i class="bi bi-list-ul me-1"></i>عرض قائمة
-      </a>
       <a href="{{ url_for('admin.inv_session_create') }}"
          class="btn btn-primary btn-sm">
         <i class="bi bi-plus-lg me-1"></i>جلسة جديدة
@@ -367,17 +366,17 @@
   <!-- ── Kanban board ───────────────────────────────────────────────────────── -->
   <div class="kb-board">
 
-    {% for col_status, col_label, col_css in [
-        ('draft',     'مسودة',   'draft'),
-        ('active',    'نشط',     'active'),
-        ('paused',    'موقوف',   'paused'),
-        ('completed', 'مكتمل',  'completed'),
+    {% for col_status, col_label, col_css, col_icon in [
+        ('draft',     'مسودة',  'draft',     'bi-file-earmark-text'),
+        ('active',    'نشط',    'active',    'bi-play-fill'),
+        ('paused',    'موقوف',  'paused',    'bi-pause-fill'),
+        ('completed', 'مكتمل', 'completed', 'bi-check-circle-fill'),
     ] %}
     <div class="kb-col" data-status="{{ col_status }}">
 
       <!-- Column header -->
       <div class="kb-col-header {{ col_css }}">
-        <span class="kb-col-dot {{ col_css }}"></span>
+        <i class="bi {{ col_icon }}"></i>
         <span>{{ col_label }}</span>
         <span class="kb-col-count" id="cnt-{{ col_status }}">
           {{ columns[col_status] | length }}
@@ -459,16 +458,16 @@
               </span>
               {% endif %}
               <a href="{{ url_for('admin.inv_session_detail', session_id=session.id) }}"
-                 class="kb-action-btn" title="عرض التفاصيل">
+                 class="kb-action-btn view-btn" title="عرض التفاصيل">
                 <i class="bi bi-eye"></i>
               </a>
               <a href="{{ url_for('admin.inv_session_edit', session_id=session.id) }}"
-                 class="kb-action-btn" title="تعديل">
+                 class="kb-action-btn edit-btn" title="تعديل">
                 <i class="bi bi-pencil"></i>
               </a>
               <a href="{{ url_for('admin.session_detail', session_id=session.id) }}"
-                 class="kb-action-btn" title="متابعة التقدم">
-                <i class="bi bi-bar-chart-line"></i>
+                 class="kb-action-btn stats-btn" title="متابعة التقدم">
+                <i class="bi bi-graph-up"></i>
               </a>
             </div>
 

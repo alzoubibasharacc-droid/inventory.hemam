@@ -172,10 +172,67 @@
             </div>
 
           </form>
+
+          {% if not inv_session.is_baseline %}
+          <hr class="mt-4 mb-3">
+          <div class="d-flex align-items-center gap-3 p-3 rounded-3 border border-danger-subtle"
+               style="background:rgba(220,53,69,0.04);">
+            <div class="flex-grow-1">
+              <div class="fw-semibold text-danger small mb-1">
+                <i class="bi bi-exclamation-triangle me-1"></i>حذف الجلسة
+              </div>
+              <div class="text-muted small">
+                سيتم حذف جميع بيانات الجرد المرتبطة بشكل دائم — لا يمكن التراجع عن هذا الإجراء.
+              </div>
+            </div>
+            <button type="button" class="btn btn-outline-danger btn-sm flex-shrink-0"
+                    data-bs-toggle="modal" data-bs-target="#deleteSessionModal">
+              <i class="bi bi-trash me-1"></i>حذف الجلسة
+            </button>
+          </div>
+          {% endif %}
+
         </div>
       </div>
     </div>
   </div>
 
 </div>
+
+{% if not inv_session.is_baseline %}
+<div class="modal fade" id="deleteSessionModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title text-danger fw-bold">
+          <i class="bi bi-trash me-2"></i>تأكيد الحذف
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-danger d-flex gap-2 mb-3">
+          <i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1"></i>
+          <div class="small">
+            سيتم حذف الجلسة <strong>{{ inv_session.name }}</strong> وجميع بيانات الجرد
+            المرتبطة بها بشكل نهائي.
+          </div>
+        </div>
+        <p class="text-muted small mb-0">اضغط "تأكيد الحذف" للمتابعة.</p>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-secondary btn-sm"
+                data-bs-dismiss="modal">إلغاء</button>
+        <form method="POST"
+              action="{{ url_for('admin.delete_session', session_id=inv_session.id) }}"
+              class="d-inline">
+          <button type="submit" class="btn btn-danger btn-sm">
+            <i class="bi bi-trash me-1"></i>تأكيد الحذف
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {% endblock %}
