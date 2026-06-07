@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session as flask_session
 from flask_login import login_required, current_user
-from models import db, Branch, Department, Item, InventoryCount, Unit, UnitConversion
+from models import db, Branch, Department, Item, InventoryCount, Unit, UnitConversion, InventorySession, SessionDepartment
 from sqlalchemy import func, distinct
 from datetime import date
 from utils.decorators import get_scope
@@ -79,6 +79,72 @@ def dashboard():
     )
 
 
+# ── session task list (employee entry point) ──────────────────────────────────
+
+@inventory_bp.route('/sessions')
+@login_required
+def session_list():
+    """
+    Employee landing page: shows session task cards scoped to the employee's
+    branch and department. Managers are redirected to the admin session panel.
+    """
+    if current_user.is_manager:
+        return redirect(url_for('admin.inv_sessions_list'))
+
+    # Employee has no branch or dept assigned → show no-assignment state
+    if not current_user.branch_id or not current_user.department_id:
+        return render_template('inventory/sessions.html', task_cards=[], no_assignment=True)
+
+    # Active and paused sessions for this branch where the employee's dept is included
+    sessions = (
+        InventorySession.query
+        .join(SessionDepartment, SessionDepartment.session_id == InventorySession.id)
+        .filter(
+            InventorySession.branch_id == current_user.branch_id,
+            InventorySession.status.in_(['active', 'paused']),
+            SessionDepartment.department_id == current_user.department_id,
+        )
+        # active before paused ('a' < 'p' → ascending puts active first)
+        .order_by(InventorySession.status, InventorySession.opened_at.desc())
+        .all()
+    )
+
+    dept = Department.query.get(current_user.department_id)
+
+    task_cards = []
+    for session in sessions:
+        total = (
+            Item.query
+            .filter(
+                Item.department_id == current_user.department_id,
+                Item.is_active == True,
+            )
+            .count()
+        )
+        counted = (
+            db.session.query(func.count(distinct(InventoryCount.item_id)))
+            .join(Item)
+            .filter(
+                InventoryCount.session_id == session.id,
+                Item.department_id == current_user.department_id,
+            )
+            .scalar() or 0
+        )
+        task_cards.append({
+            'session': session,
+            'dept':    dept,
+            'total':   total,
+            'counted': counted,
+            'percent': int(counted / total * 100) if total else 0,
+        })
+
+    return render_template(
+        'inventory/sessions.html',
+        task_cards=task_cards,
+        no_assignment=False,
+    )
+
+
 # ── count (main page, GET only) ───────────────────────────────────────────────
 
 @inventory_bp.route('/count')
@@ -113,6 +179,17 @@ def count():
             inv_session = resolve_session_for_branch(branch_id)
         except RuntimeError:
             pass
+
+    # For employees: if the resolved session does not include their department,
+    # redirect to the session task list so they see the correct scope.
+    if (inv_session
+            and not current_user.is_manager
+            and current_user.department_id
+            and inv_session.session_departments):
+        allowed_dept_ids = {sd.department_id for sd in inv_session.session_departments}
+        if current_user.department_id not in allowed_dept_ids:
+            flash('لا توجد جلسة جرد نشطة لقسمك حالياً', 'warning')
+            return redirect(url_for('inventory.session_list'))
 
     # Effective count date for display:
     #   Session's count_date is authoritative; cookie-lock is the legacy fallback.
@@ -227,6 +304,12 @@ def count_search():
                 search_session = resolve_session_for_branch(branch_id)
             except RuntimeError:
                 pass
+        # Drop session if the employee's dept is not assigned to it
+        if search_session and not current_user.is_manager and search_session.session_departments:
+            allowed_dept_ids = {sd.department_id for sd in search_session.session_departments}
+            if current_user.department_id and current_user.department_id not in allowed_dept_ids:
+                search_session = None
+
         if search_session:
             rows = (
                 db.session.query(InventoryCount.item_id)
@@ -302,6 +385,12 @@ def count_entry():
         inv_session = resolve_session_for_branch(item.department.branch_id)
     except RuntimeError as e:
         return jsonify({'ok': False, 'error': str(e)}), 409
+
+    # Verify employee's department is included in this session's scope
+    if not current_user.is_manager and inv_session.session_departments:
+        allowed_dept_ids = {sd.department_id for sd in inv_session.session_departments}
+        if current_user.department_id and current_user.department_id not in allowed_dept_ids:
+            return jsonify({'ok': False, 'error': 'قسمك غير مشمول في جلسة الجرد النشطة'}), 403
 
     # count_date is authoritative from the session; month/year kept for backward compat
     count_date_obj = inv_session.count_date

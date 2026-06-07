@@ -11,6 +11,7 @@ Cumulative changes applied:
   v7  InventorySession table, session_id on inventory_counts, baseline sessions,
       historical data backfill, partial unique index for active sessions
   v8  session_id NOT NULL at DB level (PostgreSQL); application-layer guard for SQLite
+  v9  session_departments join table; backfill baseline sessions with all branch departments
 
 Run after pulling a new version:
     python migrate.py
@@ -617,6 +618,73 @@ def run_v8(conn):
         print('  + session_id SET NOT NULL on PostgreSQL')
 
 
+def run_v9(conn):
+    """
+    v9: session_departments — department scope per InventorySession.
+
+    Steps (all idempotent):
+      1. Create session_departments table with unique(session_id, department_id).
+      2. Backfill baseline sessions with every department in their branch.
+    """
+    sqlite = _is_sqlite(conn)
+
+    # ── 1. Create table ───────────────────────────────────────────────────────
+    if not _table_exists(conn, 'session_departments'):
+        if sqlite:
+            conn.execute(db.text('''
+                CREATE TABLE session_departments (
+                    id            INTEGER  PRIMARY KEY AUTOINCREMENT,
+                    session_id    INTEGER  NOT NULL
+                                  REFERENCES inventory_sessions(id) ON DELETE CASCADE,
+                    department_id INTEGER  NOT NULL REFERENCES departments(id),
+                    created_at    DATETIME,
+                    UNIQUE(session_id, department_id)
+                )
+            '''))
+        else:
+            conn.execute(db.text('''
+                CREATE TABLE session_departments (
+                    id            SERIAL    PRIMARY KEY,
+                    session_id    INTEGER   NOT NULL
+                                  REFERENCES inventory_sessions(id) ON DELETE CASCADE,
+                    department_id INTEGER   NOT NULL REFERENCES departments(id),
+                    created_at    TIMESTAMP,
+                    UNIQUE(session_id, department_id)
+                )
+            '''))
+        print('  + session_departments table created')
+    else:
+        print('  = session_departments table already exists')
+
+    # ── 2. Backfill baseline sessions with all branch departments ─────────────
+    baselines = conn.execute(db.text(
+        "SELECT id, branch_id FROM inventory_sessions WHERE session_type = 'baseline'"
+    )).fetchall()
+
+    inserted_total = 0
+    for session_id, branch_id in baselines:
+        dept_rows = conn.execute(db.text(
+            'SELECT id FROM departments WHERE branch_id = :b ORDER BY id'
+        ), {'b': branch_id}).fetchall()
+        for (dept_id,) in dept_rows:
+            existing = conn.execute(db.text(
+                'SELECT 1 FROM session_departments '
+                'WHERE session_id = :s AND department_id = :d'
+            ), {'s': session_id, 'd': dept_id}).fetchone()
+            if not existing:
+                conn.execute(db.text(
+                    'INSERT INTO session_departments '
+                    '(session_id, department_id, created_at) '
+                    'VALUES (:s, :d, CURRENT_TIMESTAMP)'
+                ), {'s': session_id, 'd': dept_id})
+                inserted_total += 1
+
+    if inserted_total:
+        print(f'  + backfilled {inserted_total} department assignment(s) for baseline sessions')
+    else:
+        print('  = baseline session departments already assigned')
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def run():
@@ -647,6 +715,9 @@ def run():
 
             print('\n-- v8 (session_id NOT NULL constraint) --')
             run_v8(conn)
+
+            print('\n-- v9 (session_departments table + baseline backfill) --')
+            run_v9(conn)
 
             trans.commit()
             print('\nMigration complete.\n')

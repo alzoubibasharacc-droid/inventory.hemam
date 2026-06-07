@@ -1,0 +1,617 @@
+{% extends 'base.html' %}
+{% block title %}كانبان الجرد — همم{% endblock %}
+
+{% block content %}
+<style>
+/* ── Kanban board ────────────────────────────────────────────────── */
+
+.kb-page { padding-bottom: 40px; }
+
+/* Board: horizontal flex, scrollable on mobile */
+.kb-board {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    overflow-x: auto;
+    padding-bottom: 16px;
+    /* Give the board breathing room — 72px navbar + ~120px header area */
+    min-height: calc(100vh - 210px);
+}
+.kb-board::-webkit-scrollbar { height: 6px; }
+.kb-board::-webkit-scrollbar-track { background: #f0f2ef; border-radius: 3px; }
+.kb-board::-webkit-scrollbar-thumb { background: #c8d4c8; border-radius: 3px; }
+
+/* Columns */
+.kb-col {
+    min-width: 272px;
+    width: 272px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    border-radius: 14px;
+    overflow: hidden;
+}
+
+/* Column header */
+.kb-col-header {
+    padding: 12px 14px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.82rem;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+.kb-col-header.draft    { background: #e9ecef; color: #495057; }
+.kb-col-header.active   { background: #d1e7dd; color: #0a5c36; }
+.kb-col-header.paused   { background: #ffe5cc; color: #8c4a00; }
+.kb-col-header.completed { background: #cfe2ff; color: #084298; }
+
+.kb-col-dot {
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.kb-col-dot.draft     { background: #6c757d; }
+.kb-col-dot.active    { background: #198754; }
+.kb-col-dot.paused    { background: #fd7e14; }
+.kb-col-dot.completed { background: #0d6efd; }
+
+.kb-col-count {
+    margin-right: auto;
+    background: rgba(0,0,0,0.12);
+    color: inherit;
+    font-size: 0.7rem;
+    font-weight: 700;
+    border-radius: 20px;
+    padding: 1px 8px;
+}
+
+/* Column body — the droppable zone */
+.kb-col-body {
+    flex: 1;
+    padding: 10px 8px;
+    min-height: 200px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.kb-col-header.draft    + .kb-col-body { background: #f3f4f6; }
+.kb-col-header.active   + .kb-col-body { background: #f0faf4; }
+.kb-col-header.paused   + .kb-col-body { background: #fdf4ec; }
+.kb-col-header.completed + .kb-col-body { background: #eef4ff; }
+
+/* SortableJS states */
+.kb-ghost {
+    opacity: 0.35;
+    border: 2px dashed var(--brand-olive) !important;
+    background: #f0f4f0 !important;
+    box-shadow: none !important;
+}
+.kb-chosen {
+    box-shadow: 0 8px 28px rgba(0,0,0,0.18) !important;
+    transform: rotate(1.5deg) scale(1.02);
+    cursor: grabbing !important;
+}
+
+/* Session card */
+.kb-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 14px 14px 10px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    border-right: 4px solid transparent;
+    cursor: grab;
+    transition: box-shadow .15s, transform .1s;
+    user-select: none;
+    -webkit-user-select: none;
+    position: relative;
+}
+.kb-card:active { cursor: grabbing; }
+.kb-card:hover  { box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
+
+/* Status accent border */
+.kb-card[data-status="draft"]     { border-right-color: #6c757d; }
+.kb-card[data-status="active"]    { border-right-color: #198754; }
+.kb-card[data-status="paused"]    { border-right-color: #fd7e14; }
+.kb-card[data-status="completed"] { border-right-color: #0d6efd; }
+
+/* Completed / baseline cards are non-draggable */
+.kb-card.no-drag {
+    cursor: default;
+    opacity: 0.82;
+}
+.kb-card.no-drag:hover { box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+
+/* While API is in-flight */
+.kb-card.kb-loading {
+    opacity: 0.6;
+    pointer-events: none;
+}
+.kb-card.kb-loading::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.5)
+                url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='%23295831'%3E%3Ccircle cx='12' cy='12' r='10' stroke='%23295831' stroke-width='2' fill='none' stroke-dasharray='32' stroke-dashoffset='32'%3E%3CanimateTransform attributeName='transform' type='rotate' from='0 12 12' to='360 12 12' dur='.8s' repeatCount='indefinite'/%3E%3C/circle%3E%3C/svg%3E")
+                center / 24px no-repeat;
+}
+
+/* Card sections */
+.kb-card-top {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+.kb-card-type {
+    font-size: 0.65rem;
+    font-weight: 700;
+    border-radius: 20px;
+    padding: 2px 8px;
+    border: 1px solid transparent;
+}
+.kb-card-type.info    { background: #cff4fc; color: #055160; border-color: #a5d8e2; }
+.kb-card-type.success { background: #d1e7dd; color: #0a5c36; border-color: #a3cfbb; }
+.kb-card-type.warning { background: #fff3cd; color: #856404; border-color: #ffe08a; }
+
+.kb-baseline-lock {
+    color: #adb5bd;
+    font-size: 0.75rem;
+}
+.kb-card-date {
+    margin-right: auto;
+    font-size: 0.68rem;
+    color: #aaa;
+    font-family: monospace;
+}
+
+.kb-card-name {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #1a2e1a;
+    line-height: 1.3;
+    margin-bottom: 6px;
+    word-break: break-word;
+}
+
+.kb-card-branch {
+    font-size: 0.76rem;
+    color: #666;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+.kb-card-branch i { color: var(--brand-olive); }
+
+/* Department pills */
+.kb-depts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 10px;
+}
+.kb-dept-pill {
+    font-size: 0.65rem;
+    font-weight: 600;
+    background: #f0f2ef;
+    color: #444;
+    border-radius: 6px;
+    padding: 2px 7px;
+    border: 1px solid #e0e4de;
+}
+.kb-dept-pill.more {
+    background: #e9ecef;
+    color: #6c757d;
+}
+
+/* Progress */
+.kb-progress {
+    margin-bottom: 10px;
+}
+.kb-progress-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.72rem;
+    color: #888;
+    margin-bottom: 4px;
+}
+.kb-progress-meta .kb-pct {
+    font-weight: 700;
+    color: var(--brand-green);
+}
+.kb-progress-track {
+    height: 5px;
+    background: #edf0ea;
+    border-radius: 99px;
+    overflow: hidden;
+}
+.kb-progress-fill {
+    height: 100%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, var(--brand-green), #4CAF50);
+    transition: width .5s ease;
+}
+.kb-progress-fill.complete { background: linear-gradient(90deg, #0d6efd, #6ea8fe); }
+.kb-progress-fill.paused   { background: linear-gradient(90deg, #fd7e14, #ffc107); }
+
+/* Card footer */
+.kb-card-footer {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding-top: 8px;
+    border-top: 1px solid #f0f2f0;
+    margin-top: 2px;
+}
+.kb-card-footer .drag-hint {
+    font-size: 0.65rem;
+    color: #ccc;
+    margin-right: auto;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+}
+.kb-card-footer .drag-hint i { font-size: 0.7rem; }
+.kb-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px; height: 28px;
+    border-radius: 7px;
+    border: 1px solid #e2e6e2;
+    background: #fff;
+    color: #666;
+    text-decoration: none;
+    font-size: 0.8rem;
+    transition: background .12s, color .12s, border-color .12s;
+}
+.kb-action-btn:hover { background: #f0f4f0; color: var(--brand-olive); border-color: #c8d4c8; }
+
+/* Empty column state */
+.kb-col-empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 32px 16px;
+    color: #bbb;
+    font-size: 0.78rem;
+    border: 2px dashed #dde0da;
+    border-radius: 10px;
+    text-align: center;
+    pointer-events: none;
+}
+.kb-col-empty i { font-size: 1.6rem; opacity: .5; }
+
+/* Toast */
+#kbToastWrap {
+    position: fixed;
+    bottom: 28px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+    pointer-events: none;
+}
+.kb-toast {
+    background: #1a2e1a;
+    color: #fff;
+    border-radius: 12px;
+    padding: 11px 22px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.22);
+    border-right: 4px solid var(--brand-green);
+    white-space: nowrap;
+    animation: kbToastIn .22s ease-out;
+    max-width: 90vw;
+    text-align: center;
+}
+.kb-toast.danger  { border-right-color: #dc3545; }
+.kb-toast.warning { border-right-color: #fd7e14; }
+.kb-toast.out { animation: kbToastOut .22s ease-in forwards; }
+@keyframes kbToastIn  { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
+@keyframes kbToastOut { from{opacity:1} to{opacity:0;transform:translateY(8px)} }
+
+/* Drag-over highlight for columns */
+.kb-col-body.sortable-over { outline: 2px solid var(--brand-green); outline-offset: -2px; border-radius: 8px; }
+</style>
+
+<div class="container-fluid kb-page">
+
+  <!-- ── Page header ───────────────────────────────────────────────────────── -->
+  <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-3">
+    <div class="section-header mb-0">
+      <div class="section-icon"><i class="bi bi-kanban"></i></div>
+      <div>
+        <h4 class="mb-0">جلسات الجرد</h4>
+        <p class="text-muted mb-0 small">اسحب الجلسة إلى عمود آخر لتغيير حالتها</p>
+      </div>
+    </div>
+    <div class="d-flex gap-2 align-items-center flex-wrap">
+      <a href="{{ url_for('admin.inv_sessions_list') }}"
+         class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-list-ul me-1"></i>عرض قائمة
+      </a>
+      <a href="{{ url_for('admin.inv_session_create') }}"
+         class="btn btn-primary btn-sm">
+        <i class="bi bi-plus-lg me-1"></i>جلسة جديدة
+      </a>
+    </div>
+  </div>
+
+  <!-- ── Transition rules hint ─────────────────────────────────────────────── -->
+  <div class="d-flex flex-wrap gap-2 mb-4 align-items-center">
+    <span class="text-muted small"><i class="bi bi-info-circle me-1"></i>انتقالات مسموحة:</span>
+    {% for from_s, arrow, to_s in [
+        ('مسودة',  '→', 'نشط'),
+        ('نشط',   '→', 'موقوف'),
+        ('موقوف', '→', 'نشط'),
+        ('نشط',   '→', 'مكتمل'),
+    ] %}
+    <span class="badge bg-light text-secondary border small fw-normal">
+      {{ from_s }} {{ arrow }} {{ to_s }}
+    </span>
+    {% endfor %}
+  </div>
+
+  <!-- ── Kanban board ───────────────────────────────────────────────────────── -->
+  <div class="kb-board">
+
+    {% for col_status, col_label, col_css in [
+        ('draft',     'مسودة',   'draft'),
+        ('active',    'نشط',     'active'),
+        ('paused',    'موقوف',   'paused'),
+        ('completed', 'مكتمل',  'completed'),
+    ] %}
+    <div class="kb-col" data-status="{{ col_status }}">
+
+      <!-- Column header -->
+      <div class="kb-col-header {{ col_css }}">
+        <span class="kb-col-dot {{ col_css }}"></span>
+        <span>{{ col_label }}</span>
+        <span class="kb-col-count" id="cnt-{{ col_status }}">
+          {{ columns[col_status] | length }}
+        </span>
+      </div>
+
+      <!-- Droppable body -->
+      <div class="kb-col-body" id="col-{{ col_status }}">
+
+        {% if columns[col_status] %}
+          {% for card in columns[col_status] %}
+          {% set session = card.session %}
+          {% set is_done = session.status == 'completed' %}
+          {% set pct     = card.percent %}
+
+          <div class="kb-card {% if is_done %}no-drag{% endif %}"
+               data-session-id="{{ session.id }}"
+               data-status="{{ session.status }}">
+
+            <!-- Top row: type + lock + date -->
+            <div class="kb-card-top">
+              <span class="kb-card-type {{ type_colors[session.session_type] }}">
+                {{ type_labels[session.session_type] }}
+              </span>
+              {% if session.is_baseline %}
+              <span class="kb-baseline-lock" title="جلسة أساسية — محمية">
+                <i class="bi bi-shield-lock-fill"></i>
+              </span>
+              {% endif %}
+              <span class="kb-card-date">{{ session.count_date.strftime('%Y-%m-%d') }}</span>
+            </div>
+
+            <!-- Session name -->
+            <div class="kb-card-name">{{ session.name }}</div>
+
+            <!-- Branch -->
+            <div class="kb-card-branch">
+              <i class="bi bi-building"></i>
+              {{ session.branch.name_ar }}
+            </div>
+
+            <!-- Department pills -->
+            {% set depts = session.session_departments %}
+            {% if depts %}
+            <div class="kb-depts">
+              {% for sd in depts[:3] %}
+              <span class="kb-dept-pill">{{ sd.department.name_ar }}</span>
+              {% endfor %}
+              {% if depts | length > 3 %}
+              <span class="kb-dept-pill more">+{{ depts | length - 3 }}</span>
+              {% endif %}
+            </div>
+            {% endif %}
+
+            <!-- Progress -->
+            <div class="kb-progress">
+              <div class="kb-progress-meta">
+                <span>{{ card.counted }} / {{ card.total }} صنف</span>
+                <span class="kb-pct">{{ pct }}%</span>
+              </div>
+              <div class="kb-progress-track">
+                <div class="kb-progress-fill
+                            {% if pct == 100 %}complete
+                            {% elif session.status == 'paused' %}paused
+                            {% endif %}"
+                     style="width: {{ pct }}%;"></div>
+              </div>
+            </div>
+
+            <!-- Footer: drag hint + action buttons -->
+            <div class="kb-card-footer">
+              {% if not is_done %}
+              <span class="drag-hint">
+                <i class="bi bi-grip-vertical"></i>اسحب لتغيير الحالة
+              </span>
+              {% else %}
+              <span class="drag-hint">
+                <i class="bi bi-lock"></i>مكتملة
+              </span>
+              {% endif %}
+              <a href="{{ url_for('admin.inv_session_detail', session_id=session.id) }}"
+                 class="kb-action-btn" title="عرض التفاصيل">
+                <i class="bi bi-eye"></i>
+              </a>
+              <a href="{{ url_for('admin.inv_session_edit', session_id=session.id) }}"
+                 class="kb-action-btn" title="تعديل">
+                <i class="bi bi-pencil"></i>
+              </a>
+            </div>
+
+          </div>
+          {% endfor %}
+
+        {% else %}
+        <!-- Empty column placeholder -->
+        <div class="kb-col-empty">
+          <i class="bi bi-inbox"></i>
+          <span>لا توجد جلسات</span>
+        </div>
+        {% endif %}
+
+      </div><!-- /col-body -->
+    </div><!-- /kb-col -->
+    {% endfor %}
+
+  </div><!-- /kb-board -->
+</div><!-- /container -->
+
+<!-- Toast container -->
+<div id="kbToastWrap"></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script>
+/* ── Kanban drag-and-drop ──────────────────────────────────────────── */
+
+const ALLOWED = {
+    'draft':     ['active'],
+    'active':    ['paused', 'completed'],
+    'paused':    ['active'],
+    'completed': [],
+};
+
+// Track which column each card came from when a drag starts
+let dragFromStatus = null;
+let dragOldIndex   = null;
+let dragFromEl     = null;
+
+document.querySelectorAll('.kb-col-body').forEach(colBody => {
+    const colStatus = colBody.closest('.kb-col').dataset.status;
+
+    new Sortable(colBody, {
+        group: {
+            name: 'kb-sessions',
+            // Completed column: cards cannot be pulled OUT
+            pull: colStatus !== 'completed',
+            put:  true,
+        },
+        animation: 160,
+        ghostClass:  'kb-ghost',
+        chosenClass: 'kb-chosen',
+        // Prevent completed cards from being dragged
+        filter: '.no-drag',
+        preventOnFilter: true,
+
+        onStart(evt) {
+            dragFromStatus = evt.from.closest('.kb-col').dataset.status;
+            dragOldIndex   = evt.oldIndex;
+            dragFromEl     = evt.from;
+        },
+
+        onEnd(evt) {
+            if (evt.from === evt.to) return; // same column — nothing to do
+
+            const toStatus  = evt.to.closest('.kb-col').dataset.status;
+            const sessionId = evt.item.dataset.sessionId;
+            const allowed   = ALLOWED[dragFromStatus] || [];
+
+            if (!allowed.includes(toStatus)) {
+                revertCard(evt.item);
+                kbToast('هذا التنقل غير مسموح', 'warning');
+                updateCounts();
+                return;
+            }
+
+            // Optimistically keep card in new column; revert on failure
+            evt.item.classList.add('kb-loading');
+
+            fetch(`/admin/inv-sessions/${sessionId}/move`, {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({ status: toStatus }),
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.ok) {
+                    kbToast(data.message, 'success');
+                    // Reload after a beat to reflect any displaced sessions
+                    setTimeout(() => location.reload(), 1100);
+                } else {
+                    revertCard(evt.item);
+                    kbToast(data.error, 'danger');
+                    updateCounts();
+                }
+            })
+            .catch(() => {
+                revertCard(evt.item);
+                kbToast('خطأ في الاتصال بالخادم', 'danger');
+                updateCounts();
+            })
+            .finally(() => {
+                evt.item.classList.remove('kb-loading');
+            });
+
+            updateCounts();
+        },
+    });
+});
+
+function revertCard(card) {
+    if (!dragFromEl) return;
+    const ref = dragFromEl.children[dragOldIndex] || null;
+    dragFromEl.insertBefore(card, ref);
+}
+
+function updateCounts() {
+    document.querySelectorAll('.kb-col').forEach(col => {
+        const count = col.querySelectorAll('.kb-card').length;
+        col.querySelector('.kb-col-count').textContent = count;
+
+        // Show/hide empty placeholder
+        const isEmpty   = count === 0;
+        const bodyEl    = col.querySelector('.kb-col-body');
+        let emptyEl     = bodyEl.querySelector('.kb-col-empty');
+        if (isEmpty && !emptyEl) {
+            emptyEl = document.createElement('div');
+            emptyEl.className = 'kb-col-empty';
+            emptyEl.innerHTML = '<i class="bi bi-inbox"></i><span>لا توجد جلسات</span>';
+            bodyEl.appendChild(emptyEl);
+        } else if (!isEmpty && emptyEl) {
+            emptyEl.remove();
+        }
+    });
+}
+
+function kbToast(msg, type = 'success') {
+    const wrap = document.getElementById('kbToastWrap');
+    const el   = document.createElement('div');
+    el.className = `kb-toast ${type}`;
+    el.textContent = msg;
+    wrap.appendChild(el);
+    setTimeout(() => el.classList.add('out'), 2600);
+    setTimeout(() => el.remove(), 2850);
+}
+</script>
+{% endblock %}

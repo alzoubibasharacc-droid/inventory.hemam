@@ -94,10 +94,52 @@
             </div>
 
             <!-- Notes -->
-            <div class="mb-4">
+            <div class="mb-3">
               <label class="form-label fw-semibold" for="notes">ملاحظات</label>
               <textarea id="notes" name="notes" class="form-control" rows="3"
                         placeholder="ملاحظات اختيارية على هذه الجلسة…">{{ inv_session.notes or '' }}</textarea>
+            </div>
+
+            <!-- Departments -->
+            <div class="mb-4">
+              <label class="form-label fw-semibold">الأقسام المشمولة</label>
+
+              {% if inv_session.is_baseline %}
+              {# Baseline: read-only display #}
+              <div class="border rounded p-3 bg-light d-flex flex-wrap gap-2">
+                {% for sd in inv_session.session_departments %}
+                <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle rounded-pill px-3 py-2">
+                  {{ sd.department.name_ar }}
+                </span>
+                {% else %}
+                <span class="text-muted small">لا توجد أقسام مسجلة</span>
+                {% endfor %}
+              </div>
+              <div class="form-text">
+                <i class="bi bi-lock me-1"></i>الأقسام مثبتة للجلسات الأساسية
+              </div>
+
+              {% else %}
+              {# Non-baseline: editable checkboxes #}
+              <div class="border rounded p-3">
+                {% for dept in inv_session.branch.departments %}
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox"
+                         name="department_ids" value="{{ dept.id }}"
+                         id="edit_dept_{{ dept.id }}"
+                         {% if dept.id in current_dept_ids %}checked{% endif %}>
+                  <label class="form-check-label" for="edit_dept_{{ dept.id }}">
+                    {{ dept.name_ar }}
+                  </label>
+                </div>
+                {% else %}
+                <p class="text-muted small mb-0">لا توجد أقسام مسجلة لهذا الفرع</p>
+                {% endfor %}
+              </div>
+              <div class="form-text text-muted">
+                يجب اختيار قسم واحد على الأقل.
+              </div>
+              {% endif %}
             </div>
 
             <!-- Metadata (read-only) -->

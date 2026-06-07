@@ -196,9 +196,15 @@ class InventorySession(db.Model):
     opened_at    = db.Column(db.DateTime, nullable=True)
     closed_at    = db.Column(db.DateTime, nullable=True)
 
-    branch   = db.relationship('Branch', backref='inv_sessions')
-    creator  = db.relationship('User', foreign_keys=[created_by])
-    counts   = db.relationship('InventoryCount', backref='session', lazy='dynamic')
+    branch              = db.relationship('Branch', backref='inv_sessions')
+    creator             = db.relationship('User', foreign_keys=[created_by])
+    counts              = db.relationship('InventoryCount', backref='session', lazy='dynamic')
+    session_departments = db.relationship(
+        'SessionDepartment',
+        lazy=True,
+        cascade='all, delete-orphan',
+        foreign_keys='SessionDepartment.session_id',
+    )
 
     @property
     def is_baseline(self):
@@ -263,6 +269,35 @@ class InventorySession(db.Model):
             raise ValueError('يمكن إغلاق الجلسات النشطة أو الموقوفة فقط')
         self.status    = 'completed'
         self.closed_at = _now()
+
+
+class SessionDepartment(db.Model):
+    """
+    Maps an InventorySession to one of its assigned departments.
+    A session can cover multiple departments; one department can appear
+    in multiple sessions across time.
+    Department must belong to the same branch as the session — enforced in routes.
+    """
+    __tablename__ = 'session_departments'
+
+    id            = db.Column(db.Integer, primary_key=True)
+    session_id    = db.Column(
+        db.Integer,
+        db.ForeignKey('inventory_sessions.id', ondelete='CASCADE'),
+        nullable=False,
+    )
+    department_id = db.Column(
+        db.Integer,
+        db.ForeignKey('departments.id'),
+        nullable=False,
+    )
+    created_at = db.Column(db.DateTime, default=_now)
+
+    department = db.relationship('Department', lazy='joined')
+
+    __table_args__ = (
+        db.UniqueConstraint('session_id', 'department_id', name='uq_session_dept'),
+    )
 
 
 class InventoryCount(db.Model):

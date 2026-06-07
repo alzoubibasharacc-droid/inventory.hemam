@@ -33,8 +33,8 @@
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link {% if request.blueprint == 'inventory' and request.endpoint != 'inventory.dashboard' %}active{% endif %}"
-                       href="{{ url_for('inventory.count') }}">
+                    <a class="nav-link {% if request.blueprint == 'inventory' and request.endpoint not in ('inventory.dashboard', 'inventory.convert') %}active{% endif %}"
+                       href="{{ url_for('inventory.session_list' if not current_user.is_manager else 'inventory.count') }}">
                         <i class="bi bi-clipboard-check me-1"></i> الجرد الشهري
                     </a>
                 </li>
@@ -79,8 +79,9 @@
                         <li><a class="dropdown-item" href="{{ url_for('admin.sessions') }}">
                             <i class="bi bi-kanban me-2"></i> متابعة الجرد
                         </a></li>
-                        <li><a class="dropdown-item" href="{{ url_for('admin.inv_sessions_list') }}">
-                            <i class="bi bi-journal-text me-2"></i> جلسات الجرد
+                        <li><a class="dropdown-item {% if request.endpoint in ('admin.inv_sessions_kanban', 'admin.inv_sessions_list', 'admin.inv_session_detail', 'admin.inv_session_edit', 'admin.inv_session_create') %}active{% endif %}"
+                               href="{{ url_for('admin.inv_sessions_kanban') }}">
+                            <i class="bi bi-kanban me-2"></i> جلسات الجرد
                         </a></li>
                         <li><a class="dropdown-item" href="{{ url_for('admin.users') }}">
                             <i class="bi bi-people me-2"></i> إدارة المستخدمين

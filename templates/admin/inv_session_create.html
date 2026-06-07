@@ -1,0 +1,205 @@
+{% extends 'base.html' %}
+{% block title %}جلسة جرد جديدة — همم{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+  <!-- ── Breadcrumb ────────────────────────────────────────────────────────── -->
+  <nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb small">
+      <li class="breadcrumb-item">
+        <a href="{{ url_for('admin.inv_sessions_list') }}">جلسات الجرد</a>
+      </li>
+      <li class="breadcrumb-item active" aria-current="page">جلسة جديدة</li>
+    </ol>
+  </nav>
+
+  <!-- ── Page header ───────────────────────────────────────────────────────── -->
+  <div class="section-header mb-4">
+    <div class="section-icon"><i class="bi bi-journal-plus"></i></div>
+    <div>
+      <h4 class="mb-0">إنشاء جلسة جرد جديدة</h4>
+      <p class="text-muted mb-0 small">حدد الفرع والأقسام وتفاصيل الجلسة</p>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col-12 col-lg-7">
+      <div class="card">
+        <div class="card-body p-4">
+          <form method="POST" id="createForm" novalidate>
+
+            <!-- ── Session Name ──────────────────────────────────────────── -->
+            <div class="mb-3">
+              <label class="form-label fw-semibold" for="name">
+                اسم الجلسة <span class="text-danger">*</span>
+              </label>
+              <input type="text" id="name" name="name" class="form-control"
+                     value="{{ form_data.get('name', '') }}" required maxlength="200"
+                     placeholder="مثال: جرد يونيو 2026 — الفرع الرئيسي">
+            </div>
+
+            <!-- ── Branch ─────────────────────────────────────────────────── -->
+            <div class="mb-3">
+              <label class="form-label fw-semibold" for="branch_id">
+                الفرع <span class="text-danger">*</span>
+              </label>
+              <select id="branch_id" name="branch_id" class="form-select" required>
+                <option value="">— اختر الفرع —</option>
+                {% for branch in branches %}
+                <option value="{{ branch.id }}"
+                  {% if form_data.get('branch_id') == branch.id %}selected{% endif %}>
+                  {{ branch.name_ar }}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <!-- ── Count Date ─────────────────────────────────────────────── -->
+            <div class="mb-3">
+              <label class="form-label fw-semibold" for="count_date">
+                تاريخ الجرد <span class="text-danger">*</span>
+              </label>
+              <input type="date" id="count_date" name="count_date" class="form-control"
+                     value="{{ form_data.get('count_date', '') }}" required>
+              <div class="form-text text-muted">
+                جميع سجلات الجرد في هذه الجلسة ستُنسب إلى هذا التاريخ.
+              </div>
+            </div>
+
+            <!-- ── Session Type ───────────────────────────────────────────── -->
+            <div class="mb-3">
+              <label class="form-label fw-semibold">
+                نوع الجلسة <span class="text-danger">*</span>
+              </label>
+              <div class="d-flex gap-4">
+                {% set sel_type = form_data.get('session_type', 'official') %}
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="session_type"
+                         id="type_official" value="official"
+                         {% if sel_type == 'official' %}checked{% endif %}>
+                  <label class="form-check-label" for="type_official">
+                    <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2">
+                      رسمي
+                    </span>
+                  </label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="session_type"
+                         id="type_quick" value="quick"
+                         {% if sel_type == 'quick' %}checked{% endif %}>
+                  <label class="form-check-label" for="type_quick">
+                    <span class="badge bg-warning-subtle text-warning border border-warning-subtle rounded-pill px-2">
+                      سريع
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── Departments ────────────────────────────────────────────── -->
+            <div class="mb-4">
+              <label class="form-label fw-semibold">
+                الأقسام <span class="text-danger">*</span>
+              </label>
+
+              <!-- Shown before a branch is selected -->
+              <div id="dept-placeholder"
+                   class="text-muted small p-3 border rounded bg-light d-flex align-items-center gap-2">
+                <i class="bi bi-info-circle"></i>
+                اختر الفرع أولاً لعرض الأقسام المتاحة
+              </div>
+
+              <!-- Checkboxes injected by JS -->
+              <div id="dept-list" class="border rounded p-3 d-none">
+                <!-- populated by renderDepts() -->
+              </div>
+
+              <!-- No-departments fallback (shown by JS when branch has no depts) -->
+              <div id="dept-empty"
+                   class="text-danger small p-3 border border-danger-subtle rounded bg-danger-subtle d-none">
+                <i class="bi bi-exclamation-triangle me-1"></i>
+                لا توجد أقسام مسجلة لهذا الفرع
+              </div>
+
+              <div class="form-text text-muted mt-1">
+                يجب اختيار قسم واحد على الأقل. الأقسام المتاحة تنتمي للفرع المحدد فقط.
+              </div>
+            </div>
+
+            <!-- ── Notes ──────────────────────────────────────────────────── -->
+            <div class="mb-4">
+              <label class="form-label fw-semibold" for="notes">ملاحظات</label>
+              <textarea id="notes" name="notes" class="form-control" rows="2"
+                        placeholder="ملاحظات اختيارية…">{{ form_data.get('notes', '') }}</textarea>
+            </div>
+
+            <!-- ── Actions ────────────────────────────────────────────────── -->
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-primary px-4">
+                <i class="bi bi-plus-lg me-1"></i>إنشاء الجلسة
+              </button>
+              <a href="{{ url_for('admin.inv_sessions_list') }}"
+                 class="btn btn-outline-secondary">
+                إلغاء
+              </a>
+            </div>
+
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const DEPT_MAP       = {{ dept_map | tojson }};
+const SELECTED_DEPTS = {{ selected_dept_ids | tojson }};
+
+const branchSel  = document.getElementById('branch_id');
+const placeholder = document.getElementById('dept-placeholder');
+const deptList   = document.getElementById('dept-list');
+const deptEmpty  = document.getElementById('dept-empty');
+
+function renderDepts(branchId) {
+    const depts = DEPT_MAP[branchId];
+
+    // Hide all panels first
+    placeholder.classList.add('d-none');
+    deptList.classList.add('d-none');
+    deptEmpty.classList.add('d-none');
+
+    if (!branchId || depts === undefined) {
+        placeholder.classList.remove('d-none');
+        return;
+    }
+    if (depts.length === 0) {
+        deptEmpty.classList.remove('d-none');
+        return;
+    }
+
+    deptList.innerHTML = '';
+    depts.forEach(d => {
+        const isChecked = SELECTED_DEPTS.includes(d.id);
+        const div = document.createElement('div');
+        div.className = 'form-check';
+        div.innerHTML = `
+            <input class="form-check-input" type="checkbox"
+                   name="department_ids" value="${d.id}"
+                   id="dept_${d.id}" ${isChecked ? 'checked' : ''}>
+            <label class="form-check-label" for="dept_${d.id}">${d.name}</label>
+        `;
+        deptList.appendChild(div);
+    });
+    deptList.classList.remove('d-none');
+}
+
+branchSel.addEventListener('change', () => renderDepts(branchSel.value));
+
+// Restore state on validation re-render
+if (branchSel.value) {
+    renderDepts(branchSel.value);
+}
+</script>
+{% endblock %}

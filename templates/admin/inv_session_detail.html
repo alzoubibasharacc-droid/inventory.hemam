@@ -134,6 +134,31 @@
 
   </div>
 
+  <!-- ── Departments ──────────────────────────────────────────────────────── -->
+  <div class="card mb-4">
+    <div class="card-body">
+      <h6 class="card-title text-muted mb-3">
+        <i class="bi bi-diagram-3 me-1"></i>الأقسام المشمولة
+      </h6>
+      {% if inv_session.session_departments %}
+      <div class="d-flex flex-wrap gap-2">
+        {% for sd in inv_session.session_departments %}
+        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle
+                     rounded-pill px-3 py-2 fs-6">
+          {{ sd.department.name_ar }}
+        </span>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-muted small mb-0">
+        <i class="bi bi-exclamation-triangle me-1"></i>لم يتم تحديد أقسام لهذه الجلسة بعد.
+        <a href="{{ url_for('admin.inv_session_edit', session_id=inv_session.id) }}">تعديل الجلسة</a>
+        لإضافة أقسام.
+      </p>
+      {% endif %}
+    </div>
+  </div>
+
   <!-- ── Notes ─────────────────────────────────────────────────────────────── -->
   {% if inv_session.notes %}
   <div class="card mb-4">

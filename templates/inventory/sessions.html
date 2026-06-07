@@ -1,0 +1,366 @@
+{% extends 'base.html' %}
+{% block title %}مهام الجرد — همم{% endblock %}
+
+{% block content %}
+<style>
+/* ── Session task list — employee view ──────────────────────────── */
+
+.sessions-page {
+    background: #f5f6f5;
+    min-height: calc(100vh - 70px);
+    padding: 24px 0 60px;
+}
+
+/* Page header */
+.sessions-header {
+    margin-bottom: 28px;
+}
+.sessions-header h4 {
+    color: var(--brand-olive);
+    font-weight: 800;
+    font-size: 1.35rem;
+    margin-bottom: 4px;
+}
+.sessions-header p {
+    color: #888;
+    font-size: 0.9rem;
+    margin: 0;
+}
+
+/* Task card */
+.task-card {
+    background: #fff;
+    border-radius: 18px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+    overflow: hidden;
+    transition: box-shadow .2s, transform .15s;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+.task-card:hover {
+    box-shadow: 0 6px 24px rgba(0,0,0,0.11);
+    transform: translateY(-2px);
+}
+
+/* Card top bar — colored by status */
+.task-card-bar {
+    height: 5px;
+    width: 100%;
+}
+.task-card-bar.active  { background: linear-gradient(90deg, var(--brand-green), #4CAF50); }
+.task-card-bar.paused  { background: linear-gradient(90deg, #fd7e14, #ffc107); }
+
+/* Card body */
+.task-card-body {
+    padding: 20px 20px 16px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Status badge */
+.session-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    border-radius: 20px;
+    padding: 3px 10px;
+    margin-bottom: 12px;
+}
+.session-status-badge.active {
+    background: rgba(25,135,84,0.10);
+    color: #198754;
+    border: 1px solid rgba(25,135,84,0.25);
+}
+.session-status-badge.paused {
+    background: rgba(253,126,20,0.10);
+    color: #fd7e14;
+    border: 1px solid rgba(253,126,20,0.25);
+}
+.status-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    display: inline-block;
+}
+.status-dot.active { background: #198754; }
+.status-dot.paused { background: #fd7e14; }
+
+/* Session name */
+.task-session-name {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: #1a2e1a;
+    line-height: 1.3;
+    margin-bottom: 10px;
+}
+
+/* Meta row */
+.task-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 18px;
+}
+.task-meta-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.78rem;
+    color: #666;
+    background: #f4f6f0;
+    border-radius: 8px;
+    padding: 3px 10px;
+}
+.task-meta-chip i { color: var(--brand-olive); font-size: 0.78rem; }
+
+/* Progress section */
+.task-progress {
+    margin-top: auto;
+    padding-top: 14px;
+    border-top: 1px solid #f0f2f0;
+}
+.task-progress-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 7px;
+}
+.task-progress-label .counted-text {
+    font-size: 0.82rem;
+    color: #555;
+}
+.task-progress-label .counted-text strong { color: var(--brand-olive); }
+.task-progress-label .pct-text {
+    font-size: 0.9rem;
+    font-weight: 800;
+    color: var(--brand-green);
+}
+.task-progress-bar-track {
+    height: 8px;
+    background: #edf0ea;
+    border-radius: 99px;
+    overflow: hidden;
+    margin-bottom: 14px;
+}
+.task-progress-bar-fill {
+    height: 100%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, var(--brand-green), #4CAF50);
+    transition: width .6s ease;
+}
+.task-progress-bar-fill.complete {
+    background: linear-gradient(90deg, #198754, #2ca861);
+}
+
+/* Action button */
+.btn-task-action {
+    width: 100%;
+    height: 50px;
+    font-size: 1rem;
+    font-weight: 700;
+    border-radius: 12px;
+    background: var(--brand-green);
+    border: none;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    text-decoration: none;
+    transition: background .15s, box-shadow .15s;
+    box-shadow: 0 3px 12px rgba(41,88,49,0.22);
+}
+.btn-task-action:hover {
+    background: #1e6626;
+    color: #fff;
+    box-shadow: 0 5px 18px rgba(41,88,49,0.32);
+}
+.btn-task-action.paused-btn {
+    background: #f8f9fa;
+    color: #999;
+    border: 2px solid #e9ecef;
+    box-shadow: none;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+/* Empty / no-assignment states */
+.sessions-empty {
+    background: #fff;
+    border-radius: 18px;
+    padding: 56px 24px;
+    text-align: center;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    max-width: 460px;
+    margin: 0 auto;
+}
+.sessions-empty .empty-icon {
+    font-size: 3.5rem;
+    color: var(--brand-olive);
+    opacity: .25;
+    margin-bottom: 16px;
+}
+.sessions-empty h5 {
+    font-weight: 800;
+    color: #2c3e2c;
+    margin-bottom: 8px;
+}
+.sessions-empty p {
+    color: #888;
+    font-size: 0.9rem;
+    margin: 0;
+}
+
+/* Completed overlay chip */
+.task-complete-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #198754;
+    background: rgba(25,135,84,0.08);
+    border: 1px solid rgba(25,135,84,0.2);
+    border-radius: 20px;
+    padding: 4px 12px;
+    width: 100%;
+    justify-content: center;
+}
+
+/* Date chip */
+.task-date-chip {
+    font-size: 0.72rem;
+    color: #aaa;
+    font-family: monospace;
+    margin-bottom: 10px;
+}
+</style>
+
+<div class="sessions-page">
+  <div class="container px-3 px-md-4">
+
+    <!-- ── Page header ────────────────────────────────────────── -->
+    <div class="sessions-header">
+      <div class="d-flex align-items-center gap-3">
+        <div class="section-icon"><i class="bi bi-clipboard2-check"></i></div>
+        <div>
+          <h4>مهام الجرد</h4>
+          <p>جلسات الجرد المتاحة لقسمك</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── No branch/dept assignment ─────────────────────────── -->
+    {% if no_assignment %}
+    <div class="sessions-empty">
+      <div class="empty-icon"><i class="bi bi-person-exclamation"></i></div>
+      <h5>لا يوجد قسم مرتبط بحسابك</h5>
+      <p>تواصل مع المدير لإضافة الفرع والقسم لحسابك</p>
+    </div>
+
+    <!-- ── No matching sessions ───────────────────────────────── -->
+    {% elif not task_cards %}
+    <div class="sessions-empty">
+      <div class="empty-icon"><i class="bi bi-journal-x"></i></div>
+      <h5>لا يوجد جرد متاح حالياً</h5>
+      <p>لا توجد جلسة جرد نشطة لقسمك في الوقت الحالي.<br>
+         سيُعلمك المدير عند بدء جلسة جرد جديدة.</p>
+    </div>
+
+    <!-- ── Task cards grid ────────────────────────────────────── -->
+    {% else %}
+    <div class="row g-3">
+      {% for card in task_cards %}
+      {% set session = card.session %}
+      {% set dept    = card.dept %}
+      {% set is_active = session.status == 'active' %}
+      {% set pct = card.percent %}
+      {% set is_complete = card.counted >= card.total and card.total > 0 %}
+
+      <div class="col-12 col-md-6 col-lg-4">
+        <div class="task-card">
+
+          <!-- Colored top bar -->
+          <div class="task-card-bar {{ session.status }}"></div>
+
+          <div class="task-card-body">
+
+            <!-- Status badge -->
+            <div>
+              <span class="session-status-badge {{ session.status }}">
+                <span class="status-dot {{ session.status }}"></span>
+                {% if is_active %}نشطة{% else %}موقوفة مؤقتاً{% endif %}
+              </span>
+            </div>
+
+            <!-- Date -->
+            <div class="task-date-chip">
+              <i class="bi bi-calendar3 me-1"></i>
+              {{ session.count_date.strftime('%Y-%m-%d') }}
+            </div>
+
+            <!-- Session name -->
+            <div class="task-session-name">{{ session.name }}</div>
+
+            <!-- Meta chips: branch + dept -->
+            <div class="task-meta">
+              <span class="task-meta-chip">
+                <i class="bi bi-building"></i>
+                {{ session.branch.name_ar }}
+              </span>
+              <span class="task-meta-chip">
+                <i class="bi bi-diagram-3"></i>
+                {{ dept.name_ar }}
+              </span>
+            </div>
+
+            <!-- Progress -->
+            <div class="task-progress">
+              <div class="task-progress-label">
+                <span class="counted-text">
+                  تم جرد <strong>{{ card.counted }}</strong> من
+                  <strong>{{ card.total }}</strong> صنف
+                </span>
+                <span class="pct-text">{{ pct }}%</span>
+              </div>
+              <div class="task-progress-bar-track">
+                <div class="task-progress-bar-fill {% if is_complete %}complete{% endif %}"
+                     style="width: {{ pct }}%;"></div>
+              </div>
+
+              <!-- Action button -->
+              {% if is_complete and is_active %}
+              {# All items counted — offer to continue adding entries #}
+              <a href="{{ url_for('inventory.count', branch_id=session.branch_id) }}"
+                 class="btn-task-action">
+                <i class="bi bi-check2-all"></i>
+                مكتمل — إضافة المزيد
+              </a>
+              {% elif is_active %}
+              <a href="{{ url_for('inventory.count', branch_id=session.branch_id) }}"
+                 class="btn-task-action">
+                <i class="bi bi-arrow-left"></i>
+                {% if card.counted > 0 %}تابع الجرد{% else %}ابدأ الجرد{% endif %}
+              </a>
+              {% else %}
+              {# Paused — no counting allowed until re-activated #}
+              <span class="btn-task-action paused-btn">
+                <i class="bi bi-pause-circle"></i>
+                الجلسة موقوفة مؤقتاً
+              </span>
+              {% endif %}
+            </div>
+
+          </div><!-- /card-body -->
+        </div><!-- /task-card -->
+      </div><!-- /col -->
+      {% endfor %}
+    </div><!-- /row -->
+    {% endif %}
+
+  </div><!-- /container -->
+</div><!-- /sessions-page -->
+{% endblock %}
