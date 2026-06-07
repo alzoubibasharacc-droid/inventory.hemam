@@ -86,7 +86,20 @@ KANBAN_TRANSITIONS = {
 @admin_bp.route('/inv-sessions/kanban')
 @admin_required
 def inv_sessions_kanban():
-    sessions = (
+    date_from_str = request.args.get('date_from', '').strip()
+    date_to_str   = request.args.get('date_to',   '').strip()
+
+    date_from = date_to = None
+    try:
+        date_from = date.fromisoformat(date_from_str) if date_from_str else None
+    except ValueError:
+        date_from_str = ''
+    try:
+        date_to = date.fromisoformat(date_to_str) if date_to_str else None
+    except ValueError:
+        date_to_str = ''
+
+    q = (
         InventorySession.query
         .options(
             joinedload(InventorySession.session_departments)
@@ -94,9 +107,12 @@ def inv_sessions_kanban():
             joinedload(InventorySession.branch),
         )
         .filter(InventorySession.status.in_(['draft', 'active', 'paused', 'completed']))
-        .order_by(InventorySession.count_date.desc())
-        .all()
     )
+    if date_from:
+        q = q.filter(InventorySession.count_date >= date_from)
+    if date_to:
+        q = q.filter(InventorySession.count_date <= date_to)
+    sessions = q.order_by(InventorySession.count_date.desc()).all()
 
     session_ids = [s.id for s in sessions]
 
@@ -151,6 +167,8 @@ def inv_sessions_kanban():
     return render_template(
         'admin/inv_sessions_kanban.html',
         columns=columns,
+        date_from=date_from_str,
+        date_to=date_to_str,
         **_session_context(),
     )
 
