@@ -4,7 +4,7 @@ from models import db, Branch, Department, Item, InventoryCount, Unit, UnitConve
 from sqlalchemy import func, distinct
 from datetime import date
 from utils.decorators import get_scope
-from utils.constants import now_jordan, resolve_session_for_branch
+from utils.constants import now_jordan, resolve_session_for_branch, get_active_session
 
 inventory_bp = Blueprint('inventory', __name__, url_prefix='/inventory')
 
@@ -214,13 +214,34 @@ def count():
             Item.query.join(Department)
             .filter(Department.branch_id == branch_id, Item.is_active == True)
         )
+
+        # Departments assigned to this session — used to align total and counted
+        # denominators. Both queries must use the same scope so progress is
+        # consistent between the count page and the Kanban card.
+        sd_dept_ids = (
+            [sd.department_id for sd in inv_session.session_departments]
+            if inv_session and inv_session.session_departments
+            else None
+        )
+
+        # When a session covers only a subset of branch departments, restrict
+        # items_q to those departments so the denominator matches the numerator.
+        if sd_dept_ids and not scope_dept:
+            items_q = items_q.filter(Item.department_id.in_(sd_dept_ids))
+
+        if scope_dept:
+            items_q = items_q.filter(Item.department_id == scope_dept)
+
         if inv_session:
             counts_q = (
                 db.session.query(func.count(distinct(InventoryCount.item_id)))
+                .join(Item, Item.id == InventoryCount.item_id)
                 .filter(InventoryCount.session_id == inv_session.id)
             )
+            if sd_dept_ids and not scope_dept:
+                counts_q = counts_q.filter(Item.department_id.in_(sd_dept_ids))
             if scope_dept:
-                counts_q = counts_q.join(Item).filter(Item.department_id == scope_dept)
+                counts_q = counts_q.filter(Item.department_id == scope_dept)
         else:
             counts_q = (
                 db.session.query(func.count(distinct(InventoryCount.item_id)))
@@ -232,8 +253,7 @@ def count():
             )
             if scope_dept:
                 counts_q = counts_q.filter(Item.department_id == scope_dept)
-        if scope_dept:
-            items_q = items_q.filter(Item.department_id == scope_dept)
+
         total_items   = items_q.count()
         counted_items = counts_q.scalar() or 0
 
@@ -298,12 +318,13 @@ def count_search():
     counted_ids = set()
     if items:
         item_ids = [i.id for i in items]
-        search_session = None
-        if branch_id:
-            try:
-                search_session = resolve_session_for_branch(branch_id)
-            except RuntimeError:
-                pass
+        # Use get_active_session (status='active' only) rather than
+        # resolve_session_for_branch, which falls back to the baseline session.
+        # The baseline session holds all historical migrated counts; using it
+        # here would mark every historically counted item as already_counted=True
+        # in a brand-new official session, making progress appear complete
+        # before any real counting has occurred.
+        search_session = get_active_session(branch_id) if branch_id else None
         # Drop session if the employee's dept is not assigned to it
         if search_session and not current_user.is_manager and search_session.session_departments:
             allowed_dept_ids = {sd.department_id for sd in search_session.session_departments}
@@ -385,6 +406,16 @@ def count_entry():
         inv_session = resolve_session_for_branch(item.department.branch_id)
     except RuntimeError as e:
         return jsonify({'ok': False, 'error': str(e)}), 409
+
+    # Baseline sessions are read-only historical archives — new counts must only
+    # go into an active official session. resolve_session_for_branch falls back
+    # to the baseline if no active session exists; block that path here so that
+    # baseline data is never polluted with current-period counts.
+    if inv_session.is_baseline:
+        return jsonify({
+            'ok':   False,
+            'error': 'لا توجد جلسة جرد نشطة حالياً. تواصل مع المدير لتفعيل جلسة جرد.',
+        }), 409
 
     # Verify employee's department is included in this session's scope
     if not current_user.is_manager and inv_session.session_departments:

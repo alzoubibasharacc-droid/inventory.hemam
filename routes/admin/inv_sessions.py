@@ -4,7 +4,6 @@ from sqlalchemy import func, distinct
 from sqlalchemy.orm import joinedload
 from models import db, InventorySession, Branch, Department, Item, InventoryCount, SessionDepartment
 from utils.decorators import admin_required
-from utils.constants import get_active_session
 from routes.admin import admin_bp
 from datetime import date
 
@@ -101,12 +100,21 @@ def inv_sessions_kanban():
 
     session_ids = [s.id for s in sessions]
 
-    # Bulk-fetch counted distinct items per session — one query
+    # Bulk-fetch counted distinct items per session — restricted to the
+    # session's assigned departments via session_departments join.
+    # Without this join, items from non-assigned departments (possible when
+    # an admin counts without dept restriction) would inflate `counted`
+    # beyond `total`, producing progress > 100% or false positives.
     counted_rows = (
         db.session.query(
             InventoryCount.session_id,
             func.count(distinct(InventoryCount.item_id)),
         )
+        .join(Item, Item.id == InventoryCount.item_id)
+        .join(SessionDepartment, db.and_(
+            SessionDepartment.session_id   == InventoryCount.session_id,
+            SessionDepartment.department_id == Item.department_id,
+        ))
         .filter(InventoryCount.session_id.in_(session_ids))
         .group_by(InventoryCount.session_id)
         .all()

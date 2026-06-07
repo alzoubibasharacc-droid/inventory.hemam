@@ -357,9 +357,21 @@
       </div>
       {% endif %}
 
+      {% if inv_session %}
+      {# InventorySession exists — workflow status is the authority.
+         count_date is a fixed business date set at session creation;
+         comparing it to today would always flag sessions as "old" after day 1.
+         Show it as informational only. #}
+      <div class="session-chip" title="تاريخ جلسة الجرد: {{ inv_session.name }}">
+        <i class="bi bi-calendar-check"></i>
+        <strong>{{ count_date }}</strong>
+      </div>
+      {% else %}
+      {# Legacy cookie-based path (no InventorySession resolved).
+         Here count_date IS the ephemeral "last counted on" date from the
+         browser cookie — comparing to today is correct in this context only. #}
       {% set today = now.strftime('%Y-%m-%d') %}
       {% if count_date != today %}
-      {# Session is from a previous day — show a prominent stale-session warning #}
       <form method="POST" action="{{ url_for('inventory.new_count_session') }}"
             id="newSessionForm" class="d-inline">
         {% if selected_branch %}
@@ -368,15 +380,15 @@
         <button type="button" class="btn btn-warning btn-sm fw-bold"
                 onclick="document.getElementById('newSessionForm').submit();">
           <i class="bi bi-calendar-exclamation me-1"></i>
-          <span>جلسة قديمة: {{ count_date }} — ابدأ جديدة</span>
+          <span>تاريخ الجرد: {{ count_date }} — ابدأ جديدة</span>
         </button>
       </form>
       {% else %}
-      {# Session is today — just show a clean locked-date chip, no button needed #}
       <div class="session-chip" title="تاريخ جلسة الجرد مؤمَّن">
         <i class="bi bi-calendar-check"></i>
         <strong>{{ count_date }}</strong>
       </div>
+      {% endif %}
       {% endif %}
 
       <a href="{{ url_for('inventory.dashboard') }}"
