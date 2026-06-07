@@ -412,6 +412,7 @@ def export_page():
 
     inv_sessions = (
         InventorySession.query
+        .options(joinedload(InventorySession.branch))
         .order_by(InventorySession.branch_id, InventorySession.count_date.desc())
         .all()
     )

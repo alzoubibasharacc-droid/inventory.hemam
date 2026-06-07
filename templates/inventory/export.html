@@ -86,6 +86,22 @@
                             </select>
                         </div>
 
+                        <!-- Session -->
+                        <div class="mb-3">
+                            <label class="form-label">الجلسة</label>
+                            <select name="session_id" id="session-select" class="form-select">
+                                <option value="">جميع الجلسات</option>
+                                {% for s in inv_sessions %}
+                                {% set slabel = {'active':'نشط','completed':'مكتمل','paused':'موقوف','draft':'مسودة'}.get(s.status, s.status) %}
+                                <option value="{{ s.id }}"
+                                        data-branch-id="{{ s.branch_id }}"
+                                        {% if s.id == selected_session %}selected{% endif %}>
+                                    {{ s.name }} — {{ s.branch.name_ar if s.branch else '' }} | {{ s.count_date }} [{{ slabel }}]
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
                         <!-- Preview button -->
                         <button type="submit" class="btn btn-outline-primary w-100 mb-2">
                             <i class="bi bi-eye me-2"></i>معاينة عدد السجلات
@@ -113,6 +129,7 @@
                                         branch_id=selected_branch or '',
                                         dept_id=selected_dept or '',
                                         user_id=selected_user or '',
+                                        session_id=selected_session or '',
                                         date_from=date_from or '',
                                         date_to=date_to or '') }}"
                        class="btn btn-success w-100 btn-lg fw-bold mt-1">
@@ -192,18 +209,45 @@
 {% block scripts %}
 <script>
 function filterDepts(branchId) {
-    var sel = document.getElementById ? document.querySelector('select[name="dept_id"]') : null;
-    if (!sel) return;
-    Array.from(sel.options).forEach(function (opt) {
-        if (!opt.value) return;
-        opt.style.display = (!branchId || opt.dataset.branch === branchId) ? '' : 'none';
-    });
-    sel.value = '';
+    var sel = document.querySelector('select[name="dept_id"]');
+    if (sel) {
+        Array.from(sel.options).forEach(function(opt) {
+            if (!opt.value) return;
+            opt.style.display = (!branchId || opt.dataset.branch === branchId) ? '' : 'none';
+        });
+        sel.value = '';
+    }
+    filterSessions(branchId);
 }
-// Apply filter on load if branch already selected
-(function () {
+
+function filterSessions(branchId) {
+    var sel = document.getElementById('session-select');
+    if (!sel) return;
+    Array.from(sel.options).forEach(function(opt) {
+        if (!opt.value) return;
+        opt.style.display = (!branchId || opt.dataset.branchId === branchId) ? '' : 'none';
+    });
+}
+
+// On page load: hide options that don't match the pre-selected branch
+(function() {
     var branchSel = document.querySelector('select[name="branch_id"]');
-    if (branchSel && branchSel.value) filterDepts(branchSel.value);
+    if (!branchSel || !branchSel.value) return;
+    var bv = branchSel.value;
+    var deptSel = document.querySelector('select[name="dept_id"]');
+    if (deptSel) {
+        Array.from(deptSel.options).forEach(function(opt) {
+            if (!opt.value) return;
+            opt.style.display = (opt.dataset.branch === bv) ? '' : 'none';
+        });
+    }
+    var sessionSel = document.getElementById('session-select');
+    if (sessionSel) {
+        Array.from(sessionSel.options).forEach(function(opt) {
+            if (!opt.value) return;
+            opt.style.display = (opt.dataset.branchId === bv) ? '' : 'none';
+        });
+    }
 })();
 </script>
 {% endblock %}
