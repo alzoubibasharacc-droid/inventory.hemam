@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session as flask_session
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session as flask_session, abort, Response
 from flask_login import login_required, current_user
 from models import db, Branch, Department, Item, InventoryCount, Unit, UnitConversion, InventorySession, SessionDepartment
 from sqlalchemy import func, distinct
@@ -635,3 +635,133 @@ def convert():
         return jsonify({'result': value * conversion.factor, 'to_unit': to_unit.name_ar if to_unit else ''})
 
     return jsonify({'result': None, 'to_unit': ''})
+
+
+# ── Inventory report ──────────────────────────────────────────────────────────
+
+def _build_report_data(session_id, scope_branch, scope_dept):
+    """Load items + counts for a session, scoped to get_scope(). Returns dict."""
+    inv_session = (
+        InventorySession.query
+        .options(
+            joinedload(InventorySession.session_departments),
+            joinedload(InventorySession.branch),
+        )
+        .filter_by(id=session_id)
+        .first_or_404()
+    )
+
+    if scope_branch and inv_session.branch_id != scope_branch:
+        abort(403)
+
+    branch   = inv_session.branch
+    dept_ids = [sd.department_id for sd in inv_session.session_departments]
+
+    if scope_dept:
+        dept_ids = [d for d in dept_ids if d == scope_dept]
+
+    if not dept_ids:
+        abort(403)
+
+    items_and_depts = (
+        db.session.query(Item, Department)
+        .join(Department, Item.department_id == Department.id)
+        .filter(Item.department_id.in_(dept_ids), Item.is_active == True)
+        .order_by(Department.name_ar, Item.name_ar)
+        .all()
+    )
+
+    all_entries = (
+        db.session.query(InventoryCount)
+        .join(Item, InventoryCount.item_id == Item.id)
+        .filter(
+            InventoryCount.session_id == session_id,
+            Item.department_id.in_(dept_ids),
+        )
+        .order_by(InventoryCount.created_at.desc())
+        .all()
+    )
+
+    item_latest = {}
+    for entry in all_entries:
+        if entry.item_id not in item_latest:
+            item_latest[entry.item_id] = entry
+
+    dept_map   = {}
+    dept_order = []
+    total_items = counted_items = 0
+
+    for item, dept in items_and_depts:
+        total_items += 1
+        latest     = item_latest.get(item.id)
+        is_counted = latest is not None
+        if is_counted:
+            counted_items += 1
+
+        if dept.id not in dept_map:
+            dept_map[dept.id] = {
+                'dept':        dept,
+                'counted':     [],
+                'uncounted':   [],
+                'total':       0,
+                'count_count': 0,
+            }
+            dept_order.append(dept.id)
+
+        dept_map[dept.id]['total'] += 1
+        if is_counted:
+            dept_map[dept.id]['count_count'] += 1
+            dept_map[dept.id]['counted'].append({'item': item, 'latest': latest})
+        else:
+            dept_map[dept.id]['uncounted'].append({'item': item})
+
+    pct = int(counted_items / total_items * 100) if total_items else 0
+
+    return {
+        'inv_session':   inv_session,
+        'branch':        branch,
+        'departments':   [dept_map[k] for k in dept_order],
+        'total_items':   total_items,
+        'counted_items': counted_items,
+        'remaining':     total_items - counted_items,
+        'pct':           pct,
+    }
+
+
+@inventory_bp.route('/report')
+@login_required
+def inventory_report():
+    session_id = request.args.get('session_id', type=int)
+    if not session_id:
+        flash('معرّف الجلسة مطلوب', 'danger')
+        return redirect(url_for('inventory.dashboard'))
+
+    scope_branch, scope_dept = get_scope()
+    data = _build_report_data(session_id, scope_branch, scope_dept)
+    return render_template('inventory/report.html', **data)
+
+
+@inventory_bp.route('/report/pdf')
+@login_required
+def inventory_report_pdf():
+    session_id = request.args.get('session_id', type=int)
+    if not session_id:
+        abort(400)
+
+    scope_branch, scope_dept = get_scope()
+    data = _build_report_data(session_id, scope_branch, scope_dept)
+
+    html_content = render_template('inventory/report_pdf.html', **data)
+
+    try:
+        import weasyprint  # type: ignore[import]
+        pdf = weasyprint.HTML(string=html_content, base_url=request.host_url).write_pdf()
+        filename = f"inventory-{data['inv_session'].id}-{data['branch'].id}.pdf"
+        return Response(
+            pdf,
+            mimetype='application/pdf',
+            headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+        )
+    except ImportError:
+        flash('مكتبة WeasyPrint غير متوفرة على هذا الخادم.', 'warning')
+        return redirect(url_for('inventory.inventory_report', session_id=session_id))

@@ -1,106 +1,106 @@
 from flask import render_template, request
 from sqlalchemy import func, distinct
-from models import db, Branch, Department, Item, InventoryCount
+from sqlalchemy.orm import joinedload
+from models import db, Department, Item, InventoryCount, InventorySession, SessionDepartment
 from utils.decorators import admin_required
 from routes.admin import admin_bp
-from datetime import datetime, date
-import calendar
-from utils.constants import now_jordan
+from datetime import date
 
-
-def _parse_period():
-    now = now_jordan()
-    date_from_str = request.args.get('date_from', '')
-    date_to_str   = request.args.get('date_to',   '')
-
-    date_from = date_to = None
-    try:
-        date_from = datetime.strptime(date_from_str, '%Y-%m-%d').date() if date_from_str else None
-    except ValueError:
-        pass
-    try:
-        date_to = datetime.strptime(date_to_str, '%Y-%m-%d').date() if date_to_str else None
-    except ValueError:
-        pass
-
-    if not date_from and not date_to:
-        date_from = date(now.year, now.month, 1)
-        date_to   = date(now.year, now.month, calendar.monthrange(now.year, now.month)[1])
-        date_from_str = date_from.isoformat()
-        date_to_str   = date_to.isoformat()
-
-    return date_from, date_to, date_from_str, date_to_str
-
-
-# ── Kanban overview ────────────────────────────────────────────────────────────
 
 @admin_bp.route('/sessions')
 @admin_required
 def sessions():
-    date_from, date_to, date_from_str, date_to_str = _parse_period()
-
-    # Subquery: total active items per branch
-    total_sq = (
-        db.session.query(
-            Department.branch_id.label('branch_id'),
-            func.count(Item.id).label('total_items'),
-        )
-        .join(Item, Item.department_id == Department.id)
-        .filter(Item.is_active == True)
-        .group_by(Department.branch_id)
-        .subquery('total')
-    )
-
-    # Subquery: distinct counted items + last activity per branch in period
-    counted_sq = (
-        db.session.query(
-            Department.branch_id.label('branch_id'),
-            func.count(distinct(InventoryCount.item_id)).label('counted_items'),
-            func.max(InventoryCount.count_date).label('last_activity'),
-        )
-        .join(Item,       InventoryCount.item_id    == Item.id)
-        .join(Department, Item.department_id         == Department.id)
-        .filter(
-            InventoryCount.count_date >= date_from,
-            InventoryCount.count_date <= date_to,
-        )
-        .group_by(Department.branch_id)
-        .subquery('counted')
-    )
-
-    rows = (
-        db.session.query(
-            Branch,
-            func.coalesce(total_sq.c.total_items,   0).label('total_items'),
-            func.coalesce(counted_sq.c.counted_items, 0).label('counted_items'),
-            counted_sq.c.last_activity,
-        )
-        .outerjoin(total_sq,  Branch.id == total_sq.c.branch_id)
-        .outerjoin(counted_sq, Branch.id == counted_sq.c.branch_id)
-        .order_by(Branch.name_ar)
+    # Distinct inventory dates across non-baseline sessions, newest first
+    all_dates = (
+        db.session.query(InventorySession.count_date)
+        .distinct()
+        .filter(InventorySession.session_type != 'baseline')
+        .order_by(InventorySession.count_date.desc())
         .all()
     )
+    available_dates = [r[0] for r in all_dates if r[0]]
+
+    default_date = available_dates[0] if available_dates else date.today()
+
+    count_date_str = request.args.get('count_date', '')
+    filter_date = None
+    try:
+        filter_date = date.fromisoformat(count_date_str) if count_date_str else None
+    except ValueError:
+        pass
+    if not filter_date:
+        filter_date = default_date
+
+    # Sessions matching this inventory date
+    inv_sessions = (
+        InventorySession.query
+        .options(
+            joinedload(InventorySession.session_departments),
+            joinedload(InventorySession.branch),
+        )
+        .filter(
+            InventorySession.count_date == filter_date,
+            InventorySession.session_type != 'baseline',
+        )
+        .order_by(InventorySession.branch_id)
+        .all()
+    )
+
+    session_ids = [s.id for s in inv_sessions]
+
+    # Bulk: counted distinct items per session, scoped to session's departments
+    counted_rows = (
+        db.session.query(
+            InventoryCount.session_id,
+            func.count(distinct(InventoryCount.item_id)),
+        )
+        .join(Item, Item.id == InventoryCount.item_id)
+        .join(SessionDepartment, db.and_(
+            SessionDepartment.session_id    == InventoryCount.session_id,
+            SessionDepartment.department_id == Item.department_id,
+        ))
+        .filter(InventoryCount.session_id.in_(session_ids))
+        .group_by(InventoryCount.session_id)
+        .all()
+    ) if session_ids else []
+    counted_map = {r[0]: r[1] for r in counted_rows}
+
+    # Bulk: total active items per session via session_departments
+    total_rows = (
+        db.session.query(
+            SessionDepartment.session_id,
+            func.count(distinct(Item.id)),
+        )
+        .join(Item, Item.department_id == SessionDepartment.department_id)
+        .filter(
+            SessionDepartment.session_id.in_(session_ids),
+            Item.is_active == True,
+        )
+        .group_by(SessionDepartment.session_id)
+        .all()
+    ) if session_ids else []
+    total_map = {r[0]: r[1] for r in total_rows}
 
     not_started = []
     in_progress = []
     completed   = []
 
-    for branch, total_items, counted_items, last_activity in rows:
-        if total_items == 0:
-            continue  # branch has no active items — nothing to track
-
-        pct = int(counted_items / total_items * 100)
+    for s in inv_sessions:
+        total = total_map.get(s.id, 0)
+        if total == 0:
+            continue
+        counted = counted_map.get(s.id, 0)
+        pct = int(counted / total * 100)
         card = {
-            'branch':        branch,
-            'total_items':   total_items,
-            'counted_items': counted_items,
-            'last_activity': last_activity,
-            'pct':           pct,
+            'session': s,
+            'branch':  s.branch,
+            'total':   total,
+            'counted': counted,
+            'pct':     pct,
         }
-
-        if counted_items == 0:
+        if counted == 0:
             not_started.append(card)
-        elif counted_items >= total_items:
+        elif counted >= total:
             completed.append(card)
         else:
             in_progress.append(card)
@@ -110,57 +110,56 @@ def sessions():
         not_started=not_started,
         in_progress=in_progress,
         completed=completed,
-        date_from=date_from_str,
-        date_to=date_to_str,
-        total_branches=len(not_started) + len(in_progress) + len(completed),
+        filter_date=filter_date.isoformat() if filter_date else '',
+        available_dates=available_dates,
+        total_sessions=len(not_started) + len(in_progress) + len(completed),
     )
 
 
-# ── Drill-down: single branch ──────────────────────────────────────────────────
-
-@admin_bp.route('/sessions/<int:branch_id>')
+@admin_bp.route('/sessions/<int:session_id>')
 @admin_required
-def session_detail(branch_id):
-    date_from, date_to, date_from_str, date_to_str = _parse_period()
+def session_detail(session_id):
+    inv_session = (
+        InventorySession.query
+        .options(
+            joinedload(InventorySession.session_departments),
+            joinedload(InventorySession.branch),
+        )
+        .filter_by(id=session_id)
+        .first_or_404()
+    )
+    branch   = inv_session.branch
+    dept_ids = [sd.department_id for sd in inv_session.session_departments]
 
-    branch = Branch.query.get_or_404(branch_id)
-
-    # All active items in this branch, ordered by department then item name
     items_and_depts = (
         db.session.query(Item, Department)
         .join(Department, Item.department_id == Department.id)
         .filter(
-            Department.branch_id == branch_id,
+            Item.department_id.in_(dept_ids),
             Item.is_active == True,
         )
         .order_by(Department.name_ar, Item.name_ar)
         .all()
-    )
+    ) if dept_ids else []
 
-    # All count entries for this branch+period — loaded once, grouped in Python
     all_entries = (
         db.session.query(InventoryCount)
-        .join(Item,       InventoryCount.item_id    == Item.id)
-        .join(Department, Item.department_id         == Department.id)
+        .join(Item, InventoryCount.item_id == Item.id)
         .filter(
-            Department.branch_id == branch_id,
-            InventoryCount.count_date >= date_from,
-            InventoryCount.count_date <= date_to,
+            InventoryCount.session_id == session_id,
+            Item.department_id.in_(dept_ids),
         )
         .order_by(InventoryCount.created_at.desc())
         .all()
-    )
+    ) if dept_ids else []
 
-    # Per-item: latest entry + entry count (entries are ordered newest-first)
-    item_latest = {}     # item_id → most-recent InventoryCount row
-    item_count  = {}     # item_id → total entry count in period
-
+    item_latest = {}
+    item_count  = {}
     for entry in all_entries:
         item_count[entry.item_id] = item_count.get(entry.item_id, 0) + 1
         if entry.item_id not in item_latest:
             item_latest[entry.item_id] = entry
 
-    # Organise into per-department groups
     dept_map   = {}
     dept_order = []
     total_items = counted_items = 0
@@ -173,18 +172,12 @@ def session_detail(branch_id):
             counted_items += 1
 
         if dept.id not in dept_map:
-            dept_map[dept.id] = {
-                'dept':    dept,
-                'rows':    [],
-                'counted': 0,
-                'total':   0,
-            }
+            dept_map[dept.id] = {'dept': dept, 'rows': [], 'counted': 0, 'total': 0}
             dept_order.append(dept.id)
 
         dept_map[dept.id]['total'] += 1
         if is_counted:
             dept_map[dept.id]['counted'] += 1
-
         dept_map[dept.id]['rows'].append({
             'item':        item,
             'is_counted':  is_counted,
@@ -193,7 +186,6 @@ def session_detail(branch_id):
         })
 
     pct = int(counted_items / total_items * 100) if total_items else 0
-
     if counted_items == 0:
         status = 'not_started'
     elif counted_items >= total_items:
@@ -203,12 +195,11 @@ def session_detail(branch_id):
 
     return render_template(
         'admin/session_detail.html',
+        inv_session=inv_session,
         branch=branch,
         departments=[dept_map[k] for k in dept_order],
         total_items=total_items,
         counted_items=counted_items,
         pct=pct,
         status=status,
-        date_from=date_from_str,
-        date_to=date_to_str,
     )

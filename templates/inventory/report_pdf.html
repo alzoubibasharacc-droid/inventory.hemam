@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>تقرير جرد {{ inv_session.name }}</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: 'Cairo', 'Arial', sans-serif;
+    font-size: 10pt;
+    color: #1a1a1a;
+    direction: rtl;
+    background: #fff;
+}
+
+/* ── Page layout ── */
+@page {
+    size: A4;
+    margin: 18mm 16mm 18mm 16mm;
+    @top-right {
+        content: "{{ inv_session.name }} — {{ branch.name_ar }}";
+        font-size: 7pt;
+        color: #888;
+        font-family: 'Cairo', 'Arial', sans-serif;
+    }
+    @bottom-center {
+        content: "صفحة " counter(page) " من " counter(pages);
+        font-size: 7pt;
+        color: #888;
+        font-family: 'Cairo', 'Arial', sans-serif;
+    }
+}
+
+/* ── Report header block ── */
+.report-header {
+    background: #2a4a2a;
+    color: #fff;
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 18px;
+}
+.rh-title {
+    font-size: 16pt;
+    font-weight: 800;
+    margin-bottom: 6px;
+}
+.rh-meta {
+    font-size: 9pt;
+    opacity: .88;
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+/* ── Summary bar ── */
+.summary-bar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+.stat-box {
+    flex: 1;
+    border: 1.5px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 10px 12px;
+    text-align: center;
+}
+.stat-box .label { font-size: 7.5pt; color: #777; margin-bottom: 3px; font-weight: 600; }
+.stat-box .value { font-size: 16pt; font-weight: 800; }
+.stat-total     .value { color: #1a2e1a; }
+.stat-counted   .value { color: #198754; }
+.stat-remaining .value { color: #c47d00; }
+.stat-pct       .value { color: #2a4a2a; }
+
+/* ── Progress bar ── */
+.progress-row { margin-bottom: 18px; }
+.pbar-track { height: 10px; background: #e9ecef; border-radius: 10px; overflow: hidden; margin-bottom: 4px; }
+.pbar-fill  { height: 100%; background: #2a4a2a; border-radius: 10px; }
+.pbar-fill.complete { background: #198754; }
+.pbar-labels { font-size: 8pt; color: #666; display: flex; justify-content: space-between; }
+
+/* ── Department section ── */
+.dept-section { margin-bottom: 20px; page-break-inside: avoid; }
+.dept-title {
+    background: #2a4a2a;
+    color: #fff;
+    padding: 8px 14px;
+    border-radius: 6px 6px 0 0;
+    font-size: 10pt;
+    font-weight: 700;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.dept-pct { background: rgba(255,255,255,.2); border-radius: 20px; padding: 1px 10px; font-size: 8pt; }
+
+.subsection-label {
+    padding: 5px 14px;
+    font-size: 8pt;
+    font-weight: 700;
+}
+.lbl-counted   { background: #d4edda; color: #198754; }
+.lbl-uncounted { background: #f8d7da; color: #dc3545; }
+
+/* ── Item table ── */
+.items-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8.5pt;
+}
+.items-table th {
+    background: #f5f7f2;
+    padding: 6px 12px;
+    text-align: right;
+    font-weight: 700;
+    font-size: 7.5pt;
+    color: #444;
+    border-bottom: 1.5px solid #d0d8c8;
+}
+.items-table td {
+    padding: 6px 12px;
+    border-bottom: 1px solid #f0f2ec;
+    vertical-align: middle;
+}
+.items-table tr:last-child td { border-bottom: none; }
+
+.item-code {
+    font-family: monospace;
+    font-size: 7pt;
+    background: #2a4a2a;
+    color: #fff;
+    border-radius: 3px;
+    padding: 1px 4px;
+    margin-left: 4px;
+}
+.qty-val  { font-weight: 700; }
+.who-val  { color: #2a4a2a; }
+.when-val { color: #aaa; font-size: 7.5pt; }
+.dash-val { color: #dc3545; font-size: 8pt; }
+
+.dept-wrapper {
+    border: 1px solid #d0d8c8;
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+}
+
+/* ── Page break control ── */
+.dept-section { page-break-inside: avoid; }
+</style>
+</head>
+<body>
+
+<!-- Report header -->
+<div class="report-header">
+  <div class="rh-title">تقرير جرد المخزون</div>
+  <div class="rh-meta">
+    <span>الجلسة: {{ inv_session.name }}</span>
+    <span>الفرع: {{ branch.name_ar }}</span>
+    <span>تاريخ الجرد: {{ inv_session.count_date.strftime('%Y-%m-%d') }}</span>
+    <span>النوع: {{ {'official':'رسمي','quick':'سريع','baseline':'أساسي'}.get(inv_session.session_type, inv_session.session_type) }}</span>
+  </div>
+</div>
+
+<!-- Summary -->
+<div class="summary-bar">
+  <div class="stat-box stat-total">
+    <div class="label">إجمالي الأصناف</div>
+    <div class="value">{{ total_items }}</div>
+  </div>
+  <div class="stat-box stat-counted">
+    <div class="label">تم جرده</div>
+    <div class="value">{{ counted_items }}</div>
+  </div>
+  <div class="stat-box stat-remaining">
+    <div class="label">المتبقي</div>
+    <div class="value">{{ remaining }}</div>
+  </div>
+  <div class="stat-box stat-pct">
+    <div class="label">نسبة الإنجاز</div>
+    <div class="value">{{ pct }}%</div>
+  </div>
+</div>
+
+<!-- Progress -->
+<div class="progress-row">
+  <div class="pbar-track">
+    <div class="pbar-fill {% if pct == 100 %}complete{% endif %}"
+         style="width:{{ pct }}%;"></div>
+  </div>
+  <div class="pbar-labels">
+    <span>{{ counted_items }} من {{ total_items }} صنف</span>
+    <span>{{ pct }}%</span>
+  </div>
+</div>
+
+<!-- Departments -->
+{% for g in departments %}
+{% set dept_pct = ((g.count_count / g.total * 100) | int) if g.total else 0 %}
+<div class="dept-section">
+  <div class="dept-title">
+    <span>{{ g.dept.name_ar }}</span>
+    <span class="dept-pct">{{ g.count_count }} / {{ g.total }} — {{ dept_pct }}%</span>
+  </div>
+
+  <div class="dept-wrapper">
+    {% if g.counted %}
+    <div class="subsection-label lbl-counted">تم جرده ({{ g.counted | length }})</div>
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th>الصنف</th>
+          <th>الكمية</th>
+          <th>بواسطة</th>
+          <th>التاريخ</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in g.counted %}
+        <tr>
+          <td>
+            {% if row.item.item_code %}<span class="item-code">{{ row.item.item_code }}</span>{% endif %}
+            {{ row.item.name_ar }}
+          </td>
+          <td class="qty-val">{{ row.latest.quantity }}</td>
+          <td class="who-val">{{ row.latest.user.full_name }}</td>
+          <td class="when-val">{{ row.latest.count_date.strftime('%Y-%m-%d') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    {% if g.uncounted %}
+    <div class="subsection-label lbl-uncounted">لم يُجرَّد ({{ g.uncounted | length }})</div>
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th>الصنف</th>
+          <th colspan="3">الحالة</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in g.uncounted %}
+        <tr>
+          <td>
+            {% if row.item.item_code %}<span class="item-code">{{ row.item.item_code }}</span>{% endif %}
+            {{ row.item.name_ar }}
+          </td>
+          <td colspan="3" class="dash-val">— لم يُجرَّد بعد</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+
+</body>
+</html>

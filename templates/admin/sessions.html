@@ -3,16 +3,13 @@
 
 {% block content %}
 <style>
-/* ── Kanban layout ─────────────────────────────────────────────────────────── */
 .kanban-board {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 20px;
     align-items: start;
 }
-@media (max-width: 900px) {
-    .kanban-board { grid-template-columns: 1fr; }
-}
+@media (max-width: 900px) { .kanban-board { grid-template-columns: 1fr; } }
 
 .kanban-col {
     background: #f4f6f0;
@@ -42,8 +39,6 @@
     padding: 2px 10px;
     font-weight: 700;
 }
-
-/* Column color themes */
 .col-not-started { border-top: 4px solid #dc3545; }
 .col-not-started .col-title { color: #dc3545; }
 .col-in-progress { border-top: 4px solid #e8a000; }
@@ -51,7 +46,6 @@
 .col-completed   { border-top: 4px solid #198754; }
 .col-completed   .col-title { color: #198754; }
 
-/* ── Session card ──────────────────────────────────────────────────────────── */
 .session-card {
     background: #fff;
     border-radius: 12px;
@@ -59,7 +53,6 @@
     margin-bottom: 12px;
     box-shadow: 0 1px 5px rgba(0,0,0,0.07);
     transition: box-shadow .15s, transform .15s;
-    cursor: pointer;
     text-decoration: none;
     color: inherit;
     display: block;
@@ -70,25 +63,26 @@
     text-decoration: none;
     color: inherit;
 }
-
 .card-branch {
     font-size: 1rem;
     font-weight: 800;
     color: #1a2e1a;
-    margin-bottom: 6px;
+    margin-bottom: 2px;
     display: flex;
     align-items: center;
     gap: 6px;
 }
 .card-branch i { color: var(--brand-olive); }
-
+.card-session-name { font-size: 0.78rem; color: #555; margin-bottom: 6px; }
 .card-meta {
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     color: #888;
     margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
 }
-
-/* Progress bar */
 .card-progress-bar {
     height: 7px;
     background: #e9ecef;
@@ -96,23 +90,24 @@
     overflow: hidden;
     margin-bottom: 6px;
 }
-.card-progress-fill {
-    height: 100%;
-    border-radius: 10px;
-    transition: width .4s ease;
-}
+.card-progress-fill { height: 100%; border-radius: 10px; transition: width .4s ease; }
 .fill-not-started { background: #dc3545; }
 .fill-in-progress { background: #e8a000; }
 .fill-completed   { background: #198754; }
-
 .card-progress-label {
     font-size: 0.72rem;
     color: #666;
     display: flex;
     justify-content: space-between;
+    margin-bottom: 10px;
 }
-
-/* Empty state per column */
+.card-actions {
+    display: flex;
+    gap: 6px;
+    padding-top: 8px;
+    border-top: 1px solid #f0f2ec;
+}
+.card-actions .btn { font-size: 0.72rem; padding: 3px 10px; }
 .kanban-empty {
     text-align: center;
     padding: 24px 12px;
@@ -120,8 +115,6 @@
     font-size: 0.8rem;
 }
 .kanban-empty i { font-size: 2rem; display: block; margin-bottom: 6px; }
-
-/* Filter card */
 .filter-header {
     font-size: 0.75rem;
     font-weight: 700;
@@ -130,14 +123,7 @@
     color: var(--brand-olive);
     margin-bottom: 10px;
 }
-
-/* Summary stats strip */
-.summary-strip {
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
-    margin-bottom: 24px;
-}
+.summary-strip { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
 .ss-chip {
     background: #fff;
     border-radius: 10px;
@@ -149,39 +135,98 @@
     gap: 8px;
     font-weight: 600;
 }
-
-@media print {
-    .no-print { display: none !important; }
-}
+@media print { .no-print { display: none !important; } }
 </style>
+
+{% macro status_badge(status) %}
+{% if status == 'active' %}
+<span class="badge bg-success" style="font-size:.65rem;">نشط</span>
+{% elif status == 'paused' %}
+<span class="badge bg-warning text-dark" style="font-size:.65rem;">موقوف</span>
+{% elif status == 'completed' %}
+<span class="badge bg-primary" style="font-size:.65rem;">مكتمل</span>
+{% else %}
+<span class="badge bg-secondary" style="font-size:.65rem;">مسودة</span>
+{% endif %}
+{% endmacro %}
+
+{% macro tracking_card(card) %}
+{% set s = card.session %}
+<div class="session-card">
+  <div class="card-branch">
+    <i class="bi bi-building"></i>{{ card.branch.name_ar }}
+  </div>
+  <div class="card-session-name">{{ s.name }}</div>
+  <div class="card-meta">
+    <span><i class="bi bi-calendar3 me-1"></i>{{ s.count_date.strftime('%Y-%m-%d') }}</span>
+    {{ status_badge(s.status) }}
+  </div>
+  <div class="card-progress-bar">
+    <div class="card-progress-fill
+      {% if card.pct == 100 %}fill-completed
+      {% elif card.counted == 0 %}fill-not-started
+      {% else %}fill-in-progress{% endif %}"
+      style="width:{{ card.pct }}%"></div>
+  </div>
+  <div class="card-progress-label">
+    <span>{{ card.counted }} / {{ card.total }} صنف</span>
+    <span class="fw-bold">{{ card.pct }}%</span>
+  </div>
+  <div class="card-actions">
+    <a href="{{ url_for('admin.session_detail', session_id=s.id) }}"
+       class="btn btn-sm btn-outline-primary flex-fill">
+      <i class="bi bi-list-check me-1"></i>التفاصيل
+    </a>
+    <a href="{{ url_for('admin.inv_session_detail', session_id=s.id) }}"
+       class="btn btn-sm btn-outline-secondary flex-fill">
+      <i class="bi bi-kanban me-1"></i>الجلسة
+    </a>
+    <a href="{{ url_for('inventory.inventory_report', session_id=s.id) }}"
+       class="btn btn-sm btn-outline-secondary" title="تقرير مفصل">
+      <i class="bi bi-file-text"></i>
+    </a>
+  </div>
+</div>
+{% endmacro %}
 
 <div class="container-fluid">
 
-  <!-- ── Page header ───────────────────────────────────────────────────────── -->
+  <!-- Page header -->
   <div class="section-header mb-4">
     <div class="section-icon"><i class="bi bi-kanban"></i></div>
     <div>
       <h4 class="mb-0">متابعة الجرد</h4>
-      <p class="text-muted mb-0 small">{{ date_from }} — {{ date_to }}</p>
+      <p class="text-muted mb-0 small">تاريخ الجرد: <strong>{{ filter_date }}</strong></p>
+    </div>
+    <div class="ms-auto no-print">
+      <a href="{{ url_for('admin.inv_sessions_kanban') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-kanban me-1"></i>إدارة الجلسات
+      </a>
     </div>
   </div>
 
-  <!-- ── Period filter ─────────────────────────────────────────────────────── -->
+  <!-- Filter -->
   <div class="card mb-4 no-print">
     <div class="card-body py-3">
-      <div class="filter-header"><i class="bi bi-funnel me-1"></i>الفترة الزمنية</div>
+      <div class="filter-header"><i class="bi bi-funnel me-1"></i>تاريخ الجرد</div>
       <form method="GET" class="row g-2 align-items-end">
-        <div class="col-6 col-sm-3 col-md-2">
-          <label class="form-label small mb-1">من تاريخ</label>
-          <input type="date" name="date_from" class="form-control form-control-sm"
-                 value="{{ date_from }}">
+        <div class="col-8 col-sm-5 col-md-3">
+          <label class="form-label small mb-1">اختر تاريخ الجرد</label>
+          {% if available_dates %}
+          <select name="count_date" class="form-select form-select-sm">
+            {% for d in available_dates %}
+            <option value="{{ d.isoformat() }}"
+                    {% if d.isoformat() == filter_date %}selected{% endif %}>
+              {{ d.strftime('%Y-%m-%d') }}
+            </option>
+            {% endfor %}
+          </select>
+          {% else %}
+          <input type="date" name="count_date" class="form-control form-control-sm"
+                 value="{{ filter_date }}">
+          {% endif %}
         </div>
-        <div class="col-6 col-sm-3 col-md-2">
-          <label class="form-label small mb-1">إلى تاريخ</label>
-          <input type="date" name="date_to" class="form-control form-control-sm"
-                 value="{{ date_to }}">
-        </div>
-        <div class="col-6 col-sm-2 col-md-2">
+        <div class="col-4 col-sm-2">
           <button type="submit" class="btn btn-primary btn-sm w-100">
             <i class="bi bi-search me-1"></i>عرض
           </button>
@@ -190,141 +235,81 @@
     </div>
   </div>
 
-  <!-- ── Summary strip ────────────────────────────────────────────────────── -->
+  <!-- Summary strip -->
   <div class="summary-strip no-print">
     <div class="ss-chip">
       <i class="bi bi-diagram-3" style="color:var(--brand-olive);"></i>
-      {{ total_branches }} فرع
+      {{ total_sessions }} جلسة
     </div>
     <div class="ss-chip">
       <i class="bi bi-circle-fill" style="color:#dc3545; font-size:.6rem;"></i>
-      {{ not_started | length }} لم يبدأ
+      {{ not_started | length }} لم تبدأ
     </div>
     <div class="ss-chip">
       <i class="bi bi-circle-fill" style="color:#e8a000; font-size:.6rem;"></i>
-      {{ in_progress | length }} جارٍ
+      {{ in_progress | length }} جارية
     </div>
     <div class="ss-chip">
       <i class="bi bi-circle-fill" style="color:#198754; font-size:.6rem;"></i>
-      {{ completed | length }} مكتمل
+      {{ completed | length }} مكتملة
     </div>
   </div>
 
-  {% if total_branches == 0 %}
+  {% if total_sessions == 0 %}
   <div class="alert alert-info text-center py-5">
     <i class="bi bi-inbox fs-1 d-block mb-3" style="color:var(--brand-orange);"></i>
-    <h5 class="fw-bold">لا توجد فروع بها أصناف نشطة</h5>
-    <p class="text-muted mb-0">تأكد من إضافة الأصناف وتفعيلها أولاً</p>
+    <h5 class="fw-bold">لا توجد جلسات لهذا التاريخ</h5>
+    <p class="text-muted mb-0">أنشئ جلسة جرد بهذا التاريخ أو اختر تاريخاً مختلفاً</p>
+    <a href="{{ url_for('admin.inv_session_create') }}" class="btn btn-primary mt-3">
+      <i class="bi bi-plus-circle me-1"></i>إنشاء جلسة
+    </a>
   </div>
   {% else %}
 
-  <!-- ── Kanban board ──────────────────────────────────────────────────────── -->
+  <!-- Kanban board -->
   <div class="kanban-board">
 
-    <!-- Column: Not Started -->
     <div class="kanban-col col-not-started">
       <div class="kanban-col-header">
         <i class="bi bi-x-circle-fill" style="color:#dc3545;"></i>
-        <span class="col-title">لم يبدأ</span>
+        <span class="col-title">لم تبدأ</span>
         <span class="col-count">{{ not_started | length }}</span>
       </div>
-
       {% for card in not_started %}
-      <a href="{{ url_for('admin.session_detail', branch_id=card.branch.id,
-                          date_from=date_from, date_to=date_to) }}"
-         class="session-card">
-        <div class="card-branch">
-          <i class="bi bi-building"></i>{{ card.branch.name_ar }}
-        </div>
-        <div class="card-meta">
-          <i class="bi bi-box-seam me-1"></i>{{ card.total_items }} صنف نشط
-        </div>
-        <div class="card-progress-bar">
-          <div class="card-progress-fill fill-not-started" style="width:0%"></div>
-        </div>
-        <div class="card-progress-label">
-          <span>0 / {{ card.total_items }}</span>
-          <span>0%</span>
-        </div>
-      </a>
+        {{ tracking_card(card) }}
       {% else %}
       <div class="kanban-empty">
-        <i class="bi bi-check2-all"></i>
-        لا توجد فروع في هذه الحالة
+        <i class="bi bi-check2-all"></i>لا توجد جلسات هنا
       </div>
       {% endfor %}
     </div>
 
-    <!-- Column: In Progress -->
     <div class="kanban-col col-in-progress">
       <div class="kanban-col-header">
         <i class="bi bi-hourglass-split" style="color:#e8a000;"></i>
-        <span class="col-title">جارٍ</span>
+        <span class="col-title">جارية</span>
         <span class="col-count">{{ in_progress | length }}</span>
       </div>
-
       {% for card in in_progress %}
-      <a href="{{ url_for('admin.session_detail', branch_id=card.branch.id,
-                          date_from=date_from, date_to=date_to) }}"
-         class="session-card">
-        <div class="card-branch">
-          <i class="bi bi-building"></i>{{ card.branch.name_ar }}
-        </div>
-        <div class="card-meta">
-          {% if card.last_activity %}
-          <i class="bi bi-clock me-1"></i>آخر نشاط: {{ card.last_activity.strftime('%Y-%m-%d') }}
-          {% endif %}
-        </div>
-        <div class="card-progress-bar">
-          <div class="card-progress-fill fill-in-progress"
-               style="width:{{ card.pct }}%"></div>
-        </div>
-        <div class="card-progress-label">
-          <span>{{ card.counted_items }} / {{ card.total_items }} صنف</span>
-          <span>{{ card.pct }}%</span>
-        </div>
-      </a>
+        {{ tracking_card(card) }}
       {% else %}
       <div class="kanban-empty">
-        <i class="bi bi-inbox"></i>
-        لا توجد فروع في هذه الحالة
+        <i class="bi bi-inbox"></i>لا توجد جلسات هنا
       </div>
       {% endfor %}
     </div>
 
-    <!-- Column: Completed -->
     <div class="kanban-col col-completed">
       <div class="kanban-col-header">
         <i class="bi bi-check-circle-fill" style="color:#198754;"></i>
-        <span class="col-title">مكتمل</span>
+        <span class="col-title">مكتملة</span>
         <span class="col-count">{{ completed | length }}</span>
       </div>
-
       {% for card in completed %}
-      <a href="{{ url_for('admin.session_detail', branch_id=card.branch.id,
-                          date_from=date_from, date_to=date_to) }}"
-         class="session-card">
-        <div class="card-branch">
-          <i class="bi bi-building"></i>{{ card.branch.name_ar }}
-        </div>
-        <div class="card-meta">
-          {% if card.last_activity %}
-          <i class="bi bi-calendar-check me-1"></i>
-          اكتمل: {{ card.last_activity.strftime('%Y-%m-%d') }}
-          {% endif %}
-        </div>
-        <div class="card-progress-bar">
-          <div class="card-progress-fill fill-completed" style="width:100%"></div>
-        </div>
-        <div class="card-progress-label">
-          <span>{{ card.counted_items }} / {{ card.total_items }} صنف</span>
-          <span class="fw-bold" style="color:#198754;">مكتمل ✓</span>
-        </div>
-      </a>
+        {{ tracking_card(card) }}
       {% else %}
       <div class="kanban-empty">
-        <i class="bi bi-inbox"></i>
-        لا توجد فروع مكتملة
+        <i class="bi bi-inbox"></i>لا توجد جلسات مكتملة
       </div>
       {% endfor %}
     </div>

@@ -9,3 +9,4 @@ SQLAlchemy>=2.0.36
 openpyxl>=3.1.5
 gunicorn>=21.2.0
 psycopg2-binary>=2.9.9
+weasyprint>=60.0
