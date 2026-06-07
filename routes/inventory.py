@@ -2,6 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user
 from models import db, Branch, Department, Item, InventoryCount, Unit, UnitConversion, InventorySession, SessionDepartment
 from sqlalchemy import func, distinct
+from sqlalchemy.orm import joinedload
 from datetime import date
 from utils.decorators import get_scope
 from utils.constants import now_jordan, resolve_session_for_branch, get_active_session
@@ -15,67 +16,88 @@ inventory_bp = Blueprint('inventory', __name__, url_prefix='/inventory')
 @login_required
 def dashboard():
     now = now_jordan()
-    month, year = now.month, now.year
 
     if current_user.is_admin:
-        branches = Branch.query.all()
+        branches = Branch.query.order_by(Branch.name_ar).all()
     elif current_user.branch_id:
         branches = [current_user.branch]
     else:
-        branches = Branch.query.all()
+        branches = Branch.query.order_by(Branch.name_ar).all()
 
-    scope_branch, scope_dept = get_scope()
+    _, scope_dept = get_scope()
+
+    # Single query for all active sessions covering the relevant branches,
+    # with session_departments and creator pre-loaded to avoid N+1 queries.
+    branch_ids = [b.id for b in branches]
+    active_sessions = (
+        InventorySession.query
+        .options(
+            joinedload(InventorySession.session_departments),
+            joinedload(InventorySession.creator),
+        )
+        .filter(
+            InventorySession.branch_id.in_(branch_ids),
+            InventorySession.status == 'active',
+        )
+        .all()
+    ) if branch_ids else []
+    sessions_by_branch = {s.branch_id: s for s in active_sessions}
 
     branch_stats = []
     for branch in branches:
-        items_q = (
-            Item.query.join(Department)
-            .filter(Department.branch_id == branch.id, Item.is_active == True)
-        )
-        counts_q = (
-            db.session.query(func.count(distinct(InventoryCount.item_id)))
-            .join(Item).join(Department)
-            .filter(
-                Department.branch_id == branch.id,
-                InventoryCount.month == month,
-                InventoryCount.year == year,
+        active_session    = sessions_by_branch.get(branch.id)
+        session_dept_ids  = None
+
+        if active_session and active_session.session_departments:
+            session_dept_ids = {sd.department_id for sd in active_session.session_departments}
+
+        if active_session:
+            # Total: active items in the session's assigned departments
+            items_q = (
+                Item.query.join(Department)
+                .filter(Department.branch_id == branch.id, Item.is_active == True)
             )
-        )
-        if scope_dept:
-            items_q  = items_q.filter(Item.department_id == scope_dept)
-            counts_q = counts_q.filter(Item.department_id == scope_dept)
-        total_items   = items_q.count()
-        counted_items = counts_q.scalar() or 0
+            if session_dept_ids:
+                items_q = items_q.filter(Item.department_id.in_(session_dept_ids))
+            if scope_dept:
+                items_q = items_q.filter(Item.department_id == scope_dept)
+
+            # Counted: distinct items in this session (same department scope)
+            counts_q = (
+                db.session.query(func.count(distinct(InventoryCount.item_id)))
+                .join(Item, Item.id == InventoryCount.item_id)
+                .filter(InventoryCount.session_id == active_session.id)
+            )
+            if session_dept_ids:
+                counts_q = counts_q.filter(Item.department_id.in_(session_dept_ids))
+            if scope_dept:
+                counts_q = counts_q.filter(Item.department_id == scope_dept)
+
+            total_items   = items_q.count()
+            counted_items = counts_q.scalar() or 0
+        else:
+            total_items   = 0
+            counted_items = 0
+
         branch_stats.append({
-            'branch':  branch,
-            'total':   total_items,
-            'counted': counted_items,
-            'percent': int(counted_items / total_items * 100) if total_items else 0,
+            'branch':           branch,
+            'session':          active_session,
+            'session_dept_ids': session_dept_ids,
+            'total':            total_items,
+            'counted':          counted_items,
+            'percent':          int(counted_items / total_items * 100) if total_items else 0,
         })
 
-    total_q   = Item.query.filter_by(is_active=True)
-    counted_q = (
-        db.session.query(func.count(distinct(InventoryCount.item_id)))
-        .filter(InventoryCount.month == month, InventoryCount.year == year)
-    )
-    if scope_branch or scope_dept:
-        total_q   = total_q.join(Department)
-        counted_q = counted_q.join(Item).join(Department)
-        if scope_branch:
-            total_q   = total_q.filter(Department.branch_id == scope_branch)
-            counted_q = counted_q.filter(Department.branch_id == scope_branch)
-        if scope_dept:
-            total_q   = total_q.filter(Item.department_id == scope_dept)
-            counted_q = counted_q.filter(Item.department_id == scope_dept)
-    total_items   = total_q.count()
-    total_counted = counted_q.scalar() or 0
+    # Overall totals derive from session-scoped per-branch data — no separate query.
+    total_items   = sum(s['total']   for s in branch_stats)
+    total_counted = sum(s['counted'] for s in branch_stats)
 
     return render_template(
         'dashboard.html',
         branch_stats=branch_stats,
         total_items=total_items,
         total_counted=total_counted,
-        month=month, year=year, now=now,
+        now=now,
     )
 
 

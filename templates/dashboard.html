@@ -1,126 +1,244 @@
 {% extends 'base.html' %}
-{% block title %}لوحة التحكم - همم{% endblock %}
+{% block title %}لوحة التحكم — همم{% endblock %}
 
 {% block content %}
+{% set any_active = branch_stats | selectattr('session') | list | length > 0 %}
+{% set emp_session = branch_stats[0].session if branch_stats else none %}
+
 <div class="container-fluid">
 
-    <!-- Dashboard Header -->
-    <div class="dashboard-header d-flex justify-content-between align-items-center">
-        <div class="d-flex align-items-center gap-3">
-            <img src="{{ url_for('static', filename='images/logo-icon.svg') }}"
-                 alt="همم" style="height:52px; width:auto; filter:brightness(0) invert(1);">
-            <div>
-                <h4 class="mb-0">لوحة التحكم</h4>
-                <p class="mb-0">
-                    جرد شهر
-                    {{ ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'][month-1] }}
-                    {{ year }}
-                </p>
-            </div>
-        </div>
-        <a href="{{ url_for('inventory.count') }}" class="btn btn-light fw-bold">
-            <i class="bi bi-plus-circle me-2"></i>بدء الجرد
-        </a>
-    </div>
-
-    <!-- Summary Stat Cards -->
-    <div class="row g-3 mb-4">
-        <div class="col-6 col-md-3">
-            <div class="card stat-card primary p-3">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="text-muted small fw-semibold">إجمالي الأصناف</div>
-                        <div class="fw-bold fs-2 mt-1">{{ total_items }}</div>
-                    </div>
-                    <div class="stat-icon"><i class="bi bi-box"></i></div>
-                </div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3">
-            <div class="card stat-card success p-3">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="text-muted small fw-semibold">تم جرده</div>
-                        <div class="fw-bold fs-2 mt-1 text-success">{{ total_counted }}</div>
-                    </div>
-                    <div class="stat-icon"><i class="bi bi-check-circle"></i></div>
-                </div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3">
-            <div class="card stat-card warning p-3">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="text-muted small fw-semibold">المتبقي</div>
-                        <div class="fw-bold fs-2 mt-1" style="color:#e6a817;">{{ total_items - total_counted }}</div>
-                    </div>
-                    <div class="stat-icon"><i class="bi bi-hourglass-split"></i></div>
-                </div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3">
-            <div class="card stat-card info p-3">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="text-muted small fw-semibold">نسبة الإنجاز</div>
-                        <div class="fw-bold fs-2 mt-1" style="color:var(--brand-olive);">
-                            {{ ((total_counted / total_items * 100) | int) if total_items else 0 }}%
-                        </div>
-                    </div>
-                    <div class="stat-icon"><i class="bi bi-pie-chart"></i></div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Branch Cards -->
-    <div class="section-header">
-        <div class="section-icon"><i class="bi bi-building"></i></div>
-        <h5>تقدم الجرد بالفروع</h5>
-    </div>
-
-    <div class="row g-3">
-        {% for stat in branch_stats %}
-        <div class="col-12 col-md-6 col-lg-4">
-            <div class="card h-100">
-                <div class="card-header bg-white d-flex justify-content-between align-items-center"
-                     style="border-bottom:2px solid var(--brand-light);">
-                    <span class="fw-bold" style="color:var(--brand-olive);">
-                        <i class="bi bi-building me-2" style="color:var(--brand-orange);"></i>
-                        {{ stat.branch.name_ar }}
-                    </span>
-                    <span class="badge" style="background:{% if stat.percent == 100 %}var(--brand-green){% else %}var(--brand-orange){% endif %};">
-                        {{ stat.percent }}%
-                    </span>
-                </div>
-                <div class="card-body">
-                    <div class="progress mb-2">
-                        <div class="progress-bar {% if stat.percent == 100 %}bg-success{% endif %}"
-                             style="width:{{ stat.percent }}%;{% if stat.percent < 100 %}background:var(--brand-orange);{% endif %}"></div>
-                    </div>
-                    <div class="d-flex justify-content-between text-muted small mb-3">
-                        <span>تم: <strong>{{ stat.counted }}</strong></span>
-                        <span>الإجمالي: <strong>{{ stat.total }}</strong></span>
-                    </div>
-                    <div>
-                        {% for dept in stat.branch.departments %}
-                        <div class="dept-link">
-                            <span><i class="bi bi-tag me-1" style="color:var(--brand-orange);"></i>{{ dept.name_ar }}</span>
-                            <a href="{{ url_for('inventory.count', branch_id=stat.branch.id, dept_id=dept.id) }}"
-                               class="btn btn-sm btn-primary py-0 px-2">
-                                <i class="bi bi-pencil-fill"></i>
-                            </a>
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
-        </div>
+  <!-- ── Dashboard Header ──────────────────────────────────────────────── -->
+  <div class="dashboard-header d-flex justify-content-between align-items-center">
+    <div class="d-flex align-items-center gap-3">
+      <img src="{{ url_for('static', filename='images/logo-icon.svg') }}"
+           alt="همم" style="height:52px; width:auto; filter:brightness(0) invert(1);">
+      <div>
+        <h4 class="mb-0">لوحة التحكم</h4>
+        {% if current_user.is_manager %}
+          <p class="mb-0 opacity-75">مراقبة تقدم جلسات الجرد</p>
+        {% elif emp_session %}
+          <p class="mb-0 opacity-75">
+            <span class="badge bg-success me-1">نشطة</span>
+            {{ emp_session.name }}
+          </p>
         {% else %}
-        <div class="col-12">
-            <div class="alert alert-info">لا توجد فروع مسجلة بعد.</div>
-        </div>
-        {% endfor %}
+          <p class="mb-0" style="color:#ffd06b;">
+            <i class="bi bi-exclamation-circle me-1"></i>لا توجد جلسة جرد نشطة
+          </p>
+        {% endif %}
+      </div>
     </div>
-</div>
+
+    <!-- Action button — context-aware -->
+    {% if current_user.is_manager %}
+      <div class="d-flex gap-2">
+        <a href="{{ url_for('admin.inv_sessions_kanban') }}" class="btn btn-light fw-bold">
+          <i class="bi bi-kanban me-2"></i>إدارة الجلسات
+        </a>
+        <a href="{{ url_for('inventory.count') }}" class="btn btn-light fw-bold">
+          <i class="bi bi-plus-circle me-2"></i>بدء الجرد
+        </a>
+      </div>
+    {% elif any_active %}
+      <a href="{{ url_for('inventory.session_list') }}" class="btn btn-light fw-bold">
+        <i class="bi bi-clipboard2-check me-2"></i>مهام الجرد
+      </a>
+    {% endif %}
+  </div>
+
+  <!-- ── Employee empty state (no active session) ──────────────────────── -->
+  {% if not current_user.is_manager and not any_active %}
+  <div class="d-flex justify-content-center align-items-center" style="min-height:55vh;">
+    <div class="text-center px-4" style="max-width:420px;">
+      <div style="font-size:4rem; color:var(--brand-olive); opacity:.18; margin-bottom:20px;">
+        <i class="bi bi-journal-x"></i>
+      </div>
+      <h5 class="fw-bold mb-2" style="color:#2c3e2c;">لا توجد جلسة جرد نشطة</h5>
+      <p class="text-muted mb-0">
+        لم يتم تفعيل أي جلسة جرد لفرعك حالياً.<br>
+        سيُعلمك المدير عند بدء جلسة جرد جديدة.
+      </p>
+    </div>
+  </div>
+
+  {% else %}
+
+  <!-- ── Summary stat cards ─────────────────────────────────────────────── -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="card stat-card primary p-3">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <div class="text-muted small fw-semibold">إجمالي الأصناف</div>
+            <div class="fw-bold fs-2 mt-1">{{ total_items }}</div>
+          </div>
+          <div class="stat-icon"><i class="bi bi-box"></i></div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card stat-card success p-3">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <div class="text-muted small fw-semibold">تم جرده</div>
+            <div class="fw-bold fs-2 mt-1 text-success">{{ total_counted }}</div>
+          </div>
+          <div class="stat-icon"><i class="bi bi-check-circle"></i></div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card stat-card warning p-3">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <div class="text-muted small fw-semibold">المتبقي</div>
+            <div class="fw-bold fs-2 mt-1" style="color:#e6a817;">
+              {{ total_items - total_counted }}
+            </div>
+          </div>
+          <div class="stat-icon"><i class="bi bi-hourglass-split"></i></div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card stat-card info p-3">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <div class="text-muted small fw-semibold">نسبة الإنجاز</div>
+            <div class="fw-bold fs-2 mt-1" style="color:var(--brand-olive);">
+              {{ ((total_counted / total_items * 100) | int) if total_items else 0 }}%
+            </div>
+          </div>
+          <div class="stat-icon"><i class="bi bi-pie-chart"></i></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Branch progress cards ──────────────────────────────────────────── -->
+  <div class="section-header">
+    <div class="section-icon"><i class="bi bi-building"></i></div>
+    <h5>تقدم الجرد بالفروع</h5>
+  </div>
+
+  <div class="row g-3">
+    {% for stat in branch_stats %}
+    <div class="col-12 col-md-6 col-lg-4">
+      <div class="card h-100">
+
+        <!-- Card header: branch name + session status badge -->
+        <div class="card-header bg-white d-flex justify-content-between align-items-center"
+             style="border-bottom:2px solid var(--brand-light);">
+          <span class="fw-bold" style="color:var(--brand-olive);">
+            <i class="bi bi-building me-2" style="color:var(--brand-orange);"></i>
+            {{ stat.branch.name_ar }}
+          </span>
+          {% if stat.session %}
+            <span class="badge"
+                  style="background:{% if stat.percent == 100 %}var(--brand-green){% else %}var(--brand-orange){% endif %};">
+              {{ stat.percent }}%
+            </span>
+          {% else %}
+            <span class="badge bg-secondary">لا توجد جلسة</span>
+          {% endif %}
+        </div>
+
+        <div class="card-body">
+
+          {% if stat.session %}
+            <!-- Session identity row -->
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <span class="badge bg-success" style="font-size:.72rem;">نشطة</span>
+              <span class="text-muted small text-truncate" title="{{ stat.session.name }}">
+                {{ stat.session.name }}
+              </span>
+            </div>
+
+            <!-- Progress bar -->
+            <div class="progress mb-1" style="height:8px;">
+              <div class="progress-bar {% if stat.percent == 100 %}bg-success{% endif %}"
+                   style="width:{{ stat.percent }}%;{% if stat.percent < 100 %}background:var(--brand-orange);{% endif %}">
+              </div>
+            </div>
+            <div class="d-flex justify-content-between text-muted small mb-3">
+              <span>تم: <strong>{{ stat.counted }}</strong></span>
+              <span>الإجمالي: <strong>{{ stat.total }}</strong></span>
+            </div>
+
+            <!-- Session metadata (admin only) -->
+            {% if current_user.is_manager %}
+            <div class="d-flex gap-3 text-muted small mb-3">
+              <span>
+                <i class="bi bi-calendar3 me-1" style="color:var(--brand-olive);"></i>
+                {{ stat.session.count_date.strftime('%Y-%m-%d') }}
+              </span>
+              <span>
+                <i class="bi bi-person me-1" style="color:var(--brand-olive);"></i>
+                {{ stat.session.creator.full_name }}
+              </span>
+            </div>
+            {% endif %}
+
+            <!-- Department links — scoped to session's assigned departments -->
+            <div>
+              {% for dept in stat.branch.departments %}
+                {# Employees: only show their own dept; Admins: only depts in session scope #}
+                {% if current_user.is_manager %}
+                  {% if not stat.session_dept_ids or dept.id in stat.session_dept_ids %}
+                  <div class="dept-link">
+                    <span>
+                      <i class="bi bi-tag me-1" style="color:var(--brand-orange);"></i>
+                      {{ dept.name_ar }}
+                    </span>
+                    <a href="{{ url_for('inventory.count', branch_id=stat.branch.id, dept_id=dept.id) }}"
+                       class="btn btn-sm btn-primary py-0 px-2">
+                      <i class="bi bi-pencil-fill"></i>
+                    </a>
+                  </div>
+                  {% endif %}
+                {% else %}
+                  {# Employee: only their assigned department #}
+                  {% if not current_user.department_id or dept.id == current_user.department_id %}
+                  <div class="dept-link">
+                    <span>
+                      <i class="bi bi-tag me-1" style="color:var(--brand-orange);"></i>
+                      {{ dept.name_ar }}
+                    </span>
+                    <a href="{{ url_for('inventory.count', branch_id=stat.branch.id, dept_id=dept.id) }}"
+                       class="btn btn-sm btn-primary py-0 px-2">
+                      <i class="bi bi-pencil-fill"></i>
+                    </a>
+                  </div>
+                  {% endif %}
+                {% endif %}
+              {% endfor %}
+            </div>
+
+          {% else %}
+            <!-- No active session for this branch (admin view) -->
+            <div class="text-center py-4">
+              <i class="bi bi-journal-x text-muted" style="font-size:2rem; opacity:.35;"></i>
+              <p class="text-muted small mt-2 mb-3">لا توجد جلسة جرد نشطة لهذا الفرع</p>
+              {% if current_user.is_admin %}
+              <a href="{{ url_for('admin.inv_sessions_kanban') }}"
+                 class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-kanban me-1"></i>إدارة الجلسات
+              </a>
+              {% endif %}
+            </div>
+          {% endif %}
+
+        </div><!-- /card-body -->
+      </div>
+    </div><!-- /col -->
+    {% else %}
+    <div class="col-12">
+      <div class="alert alert-info">لا توجد فروع مسجلة بعد.</div>
+    </div>
+    {% endfor %}
+  </div><!-- /row -->
+
+  {% endif %}{# end active/empty split #}
+
+</div><!-- /container-fluid -->
 {% endblock %}
