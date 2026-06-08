@@ -1,921 +1,657 @@
 {% extends 'base.html' %}
-{% block title %}الجرد الموجّه{% endblock %}
-
-{% block extra_css %}
-<style>
-/* ── Reset main padding ──────────────────────────────────── */
-main.container-fluid {
-    padding: 0 !important;
-}
-
-/* ── App shell ───────────────────────────────────────────── */
-#gc-app {
-    display: flex;
-    flex-direction: column;
-    background: #f0f2f0;
-    overflow: hidden;
-}
-
-/* ── Progress header ─────────────────────────────────────── */
-#gc-header {
-    background: #fff;
-    border-bottom: 1px solid #e5e7eb;
-    padding: 10px 14px 11px;
-    flex-shrink: 0;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-    position: sticky;
-    top: 0;
-    z-index: 20;
-}
-
-.gc-header-top {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
-}
-
-.gc-back-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--brand-olive);
-    text-decoration: none;
-    padding: 5px 8px;
-    border-radius: 8px;
-    transition: background 0.15s;
-    white-space: nowrap;
-    flex-shrink: 0;
-}
-.gc-back-link:hover { background: var(--brand-light); color: var(--brand-green); }
-
-.gc-session-label {
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--brand-olive);
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    text-align: center;
-}
-
-/* Fast mode toggle */
-.gc-fast-btn {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    border: 1.5px solid #e2e8f0;
-    background: #f8fafc;
-    color: #94a3b8;
-    font-size: 13px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.15s;
-    flex-shrink: 0;
-    -webkit-tap-highlight-color: transparent;
-}
-.gc-fast-btn.gc-fast-on {
-    background: rgba(242,135,5,0.12);
-    border-color: var(--brand-orange);
-    color: var(--brand-orange-dark);
-    box-shadow: 0 0 0 3px rgba(242,135,5,0.12);
-}
-
-.gc-item-counter-badge {
-    font-size: 12px;
-    font-weight: 700;
-    color: #fff;
-    background: var(--brand-olive);
-    padding: 3px 9px;
-    border-radius: 20px;
-    white-space: nowrap;
-    flex-shrink: 0;
-}
-
-.gc-progress-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 6px;
-    gap: 8px;
-}
-
-.gc-progress-label {
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--text-dark);
-}
-
-.gc-pct-badge {
-    font-size: 12px;
-    font-weight: 800;
-    color: var(--brand-green);
-    background: rgba(41,88,49,0.1);
-    padding: 2px 9px;
-    border-radius: 20px;
-    white-space: nowrap;
-}
-
-/* ── Scrollable content ──────────────────────────────────── */
-#gc-scroll {
-    flex: 1;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding: 12px 12px 6px;
-    -webkit-overflow-scrolling: touch;
-}
-#gc-scroll::-webkit-scrollbar { width: 3px; }
-#gc-scroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 2px; }
-
-/* ── Content wrapper (animated on navigate) ──────────────── */
-#gc-content-wrapper {
-    will-change: transform, opacity;
-}
-@keyframes gc-slide-in-right {
-    from { transform: translateX(48px);  opacity: 0; }
-    to   { transform: translateX(0);     opacity: 1; }
-}
-@keyframes gc-slide-in-left {
-    from { transform: translateX(-48px); opacity: 0; }
-    to   { transform: translateX(0);     opacity: 1; }
-}
-.gc-anim-right { animation: gc-slide-in-right 0.2s ease-out; }
-.gc-anim-left  { animation: gc-slide-in-left  0.2s ease-out; }
-
-/* ── Product card ────────────────────────────────────────── */
-#gc-product-card {
-    background: #fff;
-    border-radius: var(--radius);
-    padding: 13px 15px 10px;
-    margin-bottom: 10px;
-    box-shadow: var(--shadow-sm);
-    border: 1px solid rgba(0,0,0,0.04);
-}
-
-.gc-product-top {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 10px;
-    margin-bottom: 7px;
-}
-
-#gc-product-name {
-    font-size: 19px;
-    font-weight: 800;
-    color: #0f172a;
-    line-height: 1.25;
-    flex: 1;
-    margin: 0;
-}
-
-/* ── Status badge ────────────────────────────────────────── */
-.gc-status-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 3px 10px;
-    border-radius: 20px;
-    font-size: 11px;
-    font-weight: 700;
-    white-space: nowrap;
-    flex-shrink: 0;
-}
-.gc-status-badge::before {
-    content: '';
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    flex-shrink: 0;
-}
-.gc-badge-gray   { background: #f1f5f9; color: #64748b; }
-.gc-badge-gray::before   { background: #94a3b8; }
-.gc-badge-green  { background: rgba(41,88,49,0.1);  color: var(--brand-green); }
-.gc-badge-green::before  { background: var(--brand-green); }
-.gc-badge-orange { background: rgba(242,135,5,0.12); color: var(--brand-orange-dark); }
-.gc-badge-orange::before { background: var(--brand-orange); }
-
-/* ── Meta chips ──────────────────────────────────────────── */
-.gc-meta-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-    margin-bottom: 7px;
-}
-.gc-meta-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    padding: 2px 8px;
-    border-radius: 7px;
-    font-size: 12px;
-    color: #334155;
-    font-weight: 500;
-}
-.gc-meta-label {
-    font-size: 10px;
-    font-weight: 700;
-    color: #94a3b8;
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
-}
-
-.gc-packaging-note {
-    font-size: 12px;
-    color: var(--brand-orange-dark);
-    background: rgba(242,135,5,0.07);
-    border-right: 3px solid var(--brand-orange);
-    padding: 4px 10px;
-    border-radius: 0 6px 6px 0;
-    font-weight: 600;
-    margin-bottom: 6px;
-}
-
-.gc-item-pos {
-    font-size: 11px;
-    color: #94a3b8;
-    text-align: center;
-    font-weight: 600;
-    padding-top: 7px;
-    border-top: 1px solid #f1f5f9;
-}
-
-/* ── Product map ─────────────────────────────────────────── */
-.gc-map-wrap {
-    margin-top: 8px;
-    padding-top: 7px;
-    border-top: 1px solid #f1f5f9;
-}
-.gc-map-label {
-    font-size: 9px;
-    font-weight: 700;
-    color: #cbd5e1;
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
-    margin-bottom: 5px;
-}
-.gc-map {
-    display: flex;
-    gap: 3px;
-    overflow-x: auto;
-    scrollbar-width: none;
-    padding: 3px 1px 2px;
-    cursor: default;
-}
-.gc-map::-webkit-scrollbar { display: none; }
-.gc-map-dot {
-    width: 8px;
-    height: 8px;
-    min-width: 8px;
-    border-radius: 50%;
-    border: none;
-    cursor: pointer;
-    padding: 0;
-    background: #cbd5e1;
-    -webkit-tap-highlight-color: transparent;
-    transition: transform 0.1s;
-    touch-action: manipulation;
-}
-.gc-map-dot:active { transform: scale(0.75); }
-.gc-dot-counted     { background: var(--brand-green); }
-.gc-dot-modified    { background: var(--brand-orange); }
-.gc-dot-current {
-    outline: 2px solid var(--brand-orange);
-    outline-offset: 2px;
-    transform: scale(1.25);
-    z-index: 1;
-}
-.gc-dot-current.gc-dot-counted   { outline-color: var(--brand-green); }
-.gc-dot-current.gc-dot-modified  { outline-color: var(--brand-orange); }
-
-/* ── Section label ───────────────────────────────────────── */
-.gc-section-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 9px;
-    padding: 0 2px;
-}
-.gc-section-title {
-    font-size: 10px;
-    font-weight: 700;
-    color: #94a3b8;
-    text-transform: uppercase;
-    letter-spacing: 0.7px;
-    white-space: nowrap;
-}
-.gc-section-line { flex: 1; height: 1px; background: #e2e8f0; }
-
-/* ── Unit cards ──────────────────────────────────────────── */
-.gc-unit-card {
-    background: #fff;
-    border-radius: var(--radius);
-    padding: 11px 13px;
-    margin-bottom: 9px;
-    box-shadow: var(--shadow-sm);
-    border: 1.5px solid transparent;
-    transition: border-color 0.15s;
-}
-.gc-unit-card.gc-unit-focus { border-color: var(--brand-orange); }
-
-.gc-unit-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-}
-
-.gc-unit-info { flex: 1; min-width: 0; }
-.gc-unit-name {
-    font-size: 15px;
-    font-weight: 700;
-    color: var(--text-dark);
-    display: block;
-}
-.gc-unit-last {
-    font-size: 11px;
-    color: #94a3b8;
-    margin-top: 1px;
-    display: block;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.gc-unit-last strong { color: #64748b; }
-.gc-unit-last-empty { font-style: italic; }
-
-/* ── Stepper ─────────────────────────────────────────────── */
-.gc-stepper {
-    display: flex;
-    align-items: center;
-    border: 1.5px solid #e2e8f0;
-    border-radius: 10px;
-    overflow: hidden;
-    background: #f8fafc;
-    flex-shrink: 0;
-}
-.gc-step-btn {
-    width: 48px;
-    height: 52px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 24px;
-    font-weight: 300;
-    line-height: 1;
-    color: var(--brand-green);
-    background: #fff;
-    border: none;
-    cursor: pointer;
-    user-select: none;
-    -webkit-tap-highlight-color: transparent;
-    transition: background 0.1s, color 0.1s;
-    touch-action: manipulation;
-}
-.gc-step-btn:active,
-.gc-step-btn.gc-held { background: var(--brand-light); color: var(--brand-orange); }
-.gc-step-btn:disabled { color: #cbd5e1; cursor: default; }
-
-.gc-step-divider { width: 1px; height: 30px; background: #e2e8f0; flex-shrink: 0; }
-
-/* Tappable value display — opens numpad */
-.gc-step-val {
-    min-width: 54px;
-    text-align: center;
-    font-size: 22px;
-    font-weight: 800;
-    color: var(--text-dark);
-    padding: 4px 4px;
-    font-feature-settings: "tnum";
-    cursor: pointer;
-    border-radius: 6px;
-    transition: color 0.15s, background 0.15s;
-    user-select: none;
-    -webkit-tap-highlight-color: transparent;
-    position: relative;
-}
-.gc-step-val:active { background: #f1f5f9; }
-.gc-val-changed { color: var(--brand-orange) !important; }
-
-/* Subtle "edit" hint on the value */
-.gc-step-val::after {
-    content: '✎';
-    position: absolute;
-    top: -2px;
-    font-size: 8px;
-    color: #cbd5e1;
-    line-height: 1;
-}
-/* RTL: hint appears on left */
-[dir="rtl"] .gc-step-val::after { left: 2px; }
-
-/* ── Sticky bottom bar ───────────────────────────────────── */
-#gc-bottom {
-    background: #fff;
-    border-top: 1px solid #e5e7eb;
-    padding: 10px 12px 14px;
-    box-shadow: 0 -2px 12px rgba(0,0,0,0.07);
-    flex-shrink: 0;
-    display: grid;
-    grid-template-columns: 1fr 1.5fr 1fr;
-    gap: 8px;
-    position: sticky;
-    bottom: 0;
-    z-index: 20;
-}
-@supports (padding-bottom: env(safe-area-inset-bottom)) {
-    #gc-bottom { padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
-}
-
-.gc-nav-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    padding: 13px 8px;
-    border-radius: 10px;
-    font-size: 14px;
-    font-weight: 700;
-    font-family: 'Cairo', sans-serif;
-    background: #f1f5f9;
-    color: #475569;
-    border: none;
-    cursor: pointer;
-    transition: background 0.15s;
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-}
-.gc-nav-btn:active  { background: #e2e8f0; }
-.gc-nav-btn:disabled { opacity: 0.35; cursor: default; }
-
-.gc-save-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 13px 10px;
-    border-radius: 10px;
-    font-size: 15px;
-    font-weight: 700;
-    font-family: 'Cairo', sans-serif;
-    background: linear-gradient(135deg, var(--brand-green), #3a7d4c);
-    color: #fff;
-    border: none;
-    cursor: pointer;
-    box-shadow: 0 4px 12px rgba(41,88,49,0.28);
-    transition: transform 0.1s, box-shadow 0.1s, background 0.2s;
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-}
-.gc-save-btn:active  { transform: scale(0.97); }
-.gc-save-btn:disabled { opacity: 0.55; }
-.gc-save-btn.gc-saved { background: linear-gradient(135deg, #16a34a, #15803d); }
-
-/* Fast mode: orange save button tint */
-.gc-save-btn.gc-fast-active {
-    background: linear-gradient(135deg, var(--brand-orange), var(--brand-orange-dark));
-    box-shadow: 0 4px 12px rgba(242,135,5,0.3);
-}
-
-/* ── Numpad overlay & bottom sheet ───────────────────────── */
-#gc-numpad-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(15,23,42,0.5);
-    z-index: 100;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.22s ease;
-}
-#gc-numpad-overlay.gc-open { opacity: 1; pointer-events: all; }
-
-#gc-numpad-sheet {
-    position: fixed;
-    bottom: 0;
-    left: 50%;
-    transform: translateX(-50%) translateY(110%);
-    width: 100%;
-    max-width: 480px;
-    background: #fff;
-    border-radius: 22px 22px 0 0;
-    padding: 0 16px;
-    padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
-    z-index: 101;
-    transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
-    box-shadow: 0 -8px 40px rgba(0,0,0,0.18);
-}
-#gc-numpad-sheet.gc-open {
-    transform: translateX(-50%) translateY(0);
-}
-
-.gc-drag-handle {
-    width: 36px;
-    height: 4px;
-    background: #e2e8f0;
-    border-radius: 2px;
-    margin: 10px auto 4px;
-}
-
-.gc-np-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 0 4px;
-}
-.gc-np-unit-name {
-    font-size: 15px;
-    font-weight: 800;
-    color: var(--text-dark);
-}
-.gc-np-close-btn {
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    border: none;
-    background: #f1f5f9;
-    color: #64748b;
-    font-size: 14px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    -webkit-tap-highlight-color: transparent;
-}
-.gc-np-close-btn:active { background: #e2e8f0; }
-
-/* Display area */
-.gc-np-display-area {
-    text-align: center;
-    padding: 10px 0 6px;
-    border-bottom: 1px solid #f1f5f9;
-    margin-bottom: 4px;
-}
-#gc-np-display {
-    font-size: 56px;
-    font-weight: 800;
-    color: var(--text-dark);
-    line-height: 1;
-    display: block;
-    font-feature-settings: "tnum";
-    letter-spacing: -1px;
-}
-#gc-np-display.gc-np-changed { color: var(--brand-orange); }
-.gc-np-unit-label {
-    font-size: 14px;
-    color: #94a3b8;
-    font-weight: 600;
-    display: block;
-    margin-top: 2px;
-}
-.gc-np-last {
-    font-size: 12px;
-    color: #94a3b8;
-    text-align: center;
-    padding: 5px 0 2px;
-    font-weight: 600;
-    min-height: 22px;
-}
-
-/* Numpad grid */
-.gc-numpad-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 7px;
-    margin: 8px 0 10px;
-    direction: ltr; /* numpad digits always LTR */
-}
-.gc-np-key {
-    height: 62px;
-    border-radius: 12px;
-    border: none;
-    font-size: 26px;
-    font-weight: 600;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    background: #f1f5f9;
-    color: var(--text-dark);
-    cursor: pointer;
-    transition: background 0.1s, transform 0.08s;
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-.gc-np-key:active { background: #dde3ea; transform: scale(0.95); }
-.gc-np-key-back   { font-size: 20px; color: #475569; }
-.gc-np-key-dec    { font-size: 28px; color: #475569; font-weight: 700; }
-
-.gc-np-confirm-btn {
-    width: 100%;
-    padding: 15px;
-    border-radius: 12px;
-    background: linear-gradient(135deg, var(--brand-green), #3a7d4c);
-    color: #fff;
-    font-size: 17px;
-    font-weight: 700;
-    font-family: 'Cairo', sans-serif;
-    border: none;
-    cursor: pointer;
-    box-shadow: 0 4px 14px rgba(41,88,49,0.28);
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    transition: transform 0.1s;
-}
-.gc-np-confirm-btn:active { transform: scale(0.98); }
-
-/* ── Toast ───────────────────────────────────────────────── */
-#gc-toast {
-    position: fixed;
-    bottom: 90px;
-    left: 50%;
-    transform: translateX(-50%) translateY(16px);
-    background: #1e2420;
-    color: #fff;
-    padding: 9px 20px;
-    border-radius: 24px;
-    font-size: 13px;
-    font-weight: 700;
-    font-family: 'Cairo', sans-serif;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.2s, transform 0.2s;
-    z-index: 99;
-    white-space: nowrap;
-    max-width: calc(100vw - 40px);
-    text-align: center;
-}
-#gc-toast.gc-toast-show { opacity: 1; transform: translateX(-50%) translateY(0); }
-#gc-toast.gc-toast-success { background: var(--brand-green); }
-#gc-toast.gc-toast-error   { background: #dc2626; }
-#gc-toast.gc-toast-info    { background: var(--brand-olive); }
-
-/* ── Loading / error ─────────────────────────────────────── */
-#gc-loading, #gc-error {
-    min-height: 60vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 32px 24px;
-    text-align: center;
-}
-
-/* ── Branch selector (managers) ──────────────────────────── */
-.gc-branch-select-wrap {
-    max-width: 480px;
-    margin: 60px auto;
-    padding: 32px 24px;
-    background: #fff;
-    border-radius: var(--radius);
-    box-shadow: var(--shadow-md);
-    text-align: center;
-}
-
-/* ── Completion banner ───────────────────────────────────── */
-.gc-complete-banner {
-    background: linear-gradient(135deg, var(--brand-green), #2d6b38);
-    color: #fff;
-    border-radius: var(--radius);
-    padding: 16px;
-    text-align: center;
-    margin-bottom: 10px;
-    box-shadow: 0 4px 16px rgba(41,88,49,0.25);
-}
-.gc-complete-banner h6 { font-weight: 800; font-size: 15px; margin: 0 0 4px; }
-.gc-complete-banner p  { font-size: 12px; margin: 0; opacity: 0.85; }
-
-/* ── Responsive ──────────────────────────────────────────── */
-@media (max-width: 767px) {
-    #gc-app   { min-height: calc(100svh - 56px); }
-    #gc-scroll { padding-bottom: 80px; }
-}
-@media (min-width: 768px) {
-    #gc-app {
-        max-width: 600px;
-        margin: 0 auto;
-        border-radius: 0 0 var(--radius) var(--radius);
-        box-shadow: var(--shadow-md);
-    }
-    #gc-scroll { padding-bottom: 16px; }
-    #gc-numpad-sheet { border-radius: 22px; bottom: 40px; }
-}
-</style>
-{% endblock %}
+{% block title %}الجرد الموجّه — همم{% endblock %}
 
 {% block content %}
+<style>
+/* ── Reset / shell ──────────────────────────────────────────────────────── */
+main.container-fluid { padding: 0 !important; }
 
-{# ── No branch selected ── #}
-{% if current_user.is_manager and not selected_branch %}
-<div class="gc-branch-select-wrap">
-    <i class="bi bi-building" style="font-size:2.5rem;color:var(--brand-olive);"></i>
-    <h5 class="mt-3 fw-bold" style="color:var(--brand-olive);">اختر الفرع</h5>
-    <p class="text-muted small mb-4">حدد الفرع الذي تريد إجراء الجرد الموجّه له</p>
-    <div class="d-flex flex-column gap-2">
-        {% for branch in branches %}
-        <a href="{{ url_for('inventory.guided_count', branch_id=branch.id) }}"
-           class="btn btn-outline-success btn-lg">
-            <i class="bi bi-building me-2"></i>{{ branch.name_ar }}
-        </a>
-        {% endfor %}
-    </div>
+#gc-app {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #f5f6f5;
+  /* height set by JS: calc(100dvh - navbarH) */
+}
+
+/* ── Progress header ────────────────────────────────────────────────────── */
+#gc-header {
+  background: #fff;
+  border-bottom: 1px solid #e8ece8;
+  padding: 10px 14px 12px;
+  flex-shrink: 0;
+  z-index: 10;
+}
+.gc-hrow { display: flex; align-items: center; gap: 10px; }
+.gc-hrow + .gc-hrow { margin-top: 8px; }
+
+#gc-back-link {
+  color: var(--brand-olive);
+  text-decoration: none;
+  font-size: 1.05rem;
+  padding: 5px 7px;
+  border-radius: 8px;
+  transition: background .15s;
+  flex-shrink: 0;
+  line-height: 1;
+}
+#gc-back-link:hover { background: rgba(41,88,49,0.08); }
+
+#gc-session-name {
+  flex: 1;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #888;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gc-fast-btn {
+  background: none;
+  border: 2px solid #dee2e6;
+  border-radius: 10px;
+  padding: 4px 9px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #aaa;
+  cursor: pointer;
+  transition: all .15s;
+  flex-shrink: 0;
+  line-height: 1.4;
+  -webkit-tap-highlight-color: transparent;
+}
+.gc-fast-btn.gc-fast-on {
+  background: var(--brand-orange);
+  border-color: var(--brand-orange);
+  color: #fff;
+}
+
+#gc-counter-badge {
+  background: var(--brand-green);
+  color: #fff;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.gc-progress-wrap {
+  flex: 1;
+  height: 8px;
+  background: #e8ece8;
+  border-radius: 99px;
+  overflow: hidden;
+}
+#gc-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--brand-green), #4caf50);
+  border-radius: 99px;
+  width: 0%;
+  transition: width .55s ease;
+  will-change: width;
+}
+#gc-pct {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--brand-green);
+  min-width: 34px;
+  text-align: left;
+  flex-shrink: 0;
+}
+
+/* ── Scroll area ────────────────────────────────────────────────────────── */
+#gc-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+#gc-content-wrapper {
+  padding: 12px 12px 4px;
+  will-change: transform;
+}
+
+/* Slide animations — GPU-only (transform + opacity) */
+@keyframes gc-slide-in-right {
+  from { transform: translateX(52px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+@keyframes gc-slide-in-left {
+  from { transform: translateX(-52px); opacity: 0; }
+  to   { transform: translateX(0);     opacity: 1; }
+}
+.gc-anim-right { animation: gc-slide-in-right .2s ease-out; }
+.gc-anim-left  { animation: gc-slide-in-left  .2s ease-out; }
+
+/* ── Product card ───────────────────────────────────────────────────────── */
+#gc-product-card {
+  background: linear-gradient(135deg, var(--brand-olive) 0%, var(--brand-green) 100%);
+  border-radius: 16px;
+  padding: 14px 16px 12px;
+  color: #fff;
+  margin-bottom: 10px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Status badge */
+#gc-status-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  transition: background .2s, color .2s;
+}
+.gc-badge-not_counted { background: rgba(255,255,255,0.2);  color: rgba(255,255,255,0.9); }
+.gc-badge-counted     { background: #4caf50;                color: #fff; }
+.gc-badge-modified    { background: #f59e0b;                color: #fff; }
+
+#gc-item-name {
+  font-size: 1.3rem;
+  font-weight: 700;
+  line-height: 1.3;
+  padding-left: 72px;
+  margin-bottom: 6px;
+}
+#gc-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 6px;
+}
+.gc-chip {
+  background: rgba(255,255,255,0.18);
+  border-radius: 6px;
+  font-size: 0.7rem;
+  padding: 2px 7px;
+}
+#gc-packaging-note {
+  font-size: 0.82rem;
+  opacity: 0.88;
+  margin-bottom: 6px;
+  display: none;
+  align-items: center;
+  gap: 5px;
+}
+#gc-item-position {
+  font-size: 0.7rem;
+  opacity: 0.65;
+  margin-bottom: 10px;
+}
+
+/* Product map strip */
+#gc-map-wrap {
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  margin: 0 -2px;
+}
+#gc-map-wrap::-webkit-scrollbar { display: none; }
+#gc-map-track {
+  display: flex;
+  gap: 5px;
+  padding: 4px 2px;
+  width: max-content;
+}
+.gc-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  cursor: pointer;
+  background: rgba(255,255,255,0.28);
+  transition: background .15s, transform .15s, box-shadow .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.gc-dot-counted  { background: #81c784; }
+.gc-dot-modified { background: #f59e0b; }
+.gc-dot-current  {
+  transform: scale(1.65);
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.85);
+  background: #fff !important;
+}
+
+/* ── Section label ──────────────────────────────────────────────────────── */
+.gc-section-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: #9aaa9a;
+  margin: 2px 2px 8px;
+}
+
+/* ── Unit stepper cards ─────────────────────────────────────────────────── */
+.gc-unit-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 13px 14px;
+  margin-bottom: 9px;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.06);
+  transition: box-shadow .15s;
+}
+.gc-unit-card.gc-unit-modified {
+  box-shadow: 0 0 0 2px #f59e0b, 0 2px 10px rgba(245,158,11,0.14);
+}
+.gc-unit-name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--brand-olive);
+  margin-bottom: 9px;
+}
+.gc-stepper {
+  display: flex;
+  align-items: stretch;
+  border: 2px solid #dee2e6;
+  border-radius: 12px;
+  overflow: hidden;
+  height: 60px;
+  transition: border-color .15s;
+}
+.gc-unit-modified .gc-stepper { border-color: #f59e0b; }
+.gc-step-btn {
+  background: #f4f7f4;
+  border: none;
+  width: 60px;
+  font-size: 1.65rem;
+  font-weight: 300;
+  color: var(--brand-olive);
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .1s;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.gc-step-btn:active { background: #dce8dc; }
+.gc-step-val {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--brand-green);
+  cursor: pointer;
+  background: #fff;
+  position: relative;
+  letter-spacing: 1px;
+  min-width: 0;
+  transition: color .15s;
+}
+.gc-step-val.gc-val-amber { color: #d97706; }
+.gc-step-val::after {
+  content: '✎';
+  position: absolute;
+  top: 5px; right: 7px;
+  font-size: 0.68rem;
+  color: #ccc;
+  pointer-events: none;
+}
+.gc-last-info {
+  font-size: 0.74rem;
+  color: #9aaa9a;
+  margin-top: 7px;
+  padding: 0 1px;
+}
+
+/* ── Completion banner ──────────────────────────────────────────────────── */
+#gc-complete-banner {
+  background: linear-gradient(135deg, #2e7d32, #4caf50);
+  color: #fff;
+  border-radius: 14px;
+  padding: 18px 20px;
+  text-align: center;
+  margin-bottom: 10px;
+}
+#gc-complete-banner h5 { font-size: 1.05rem; font-weight: 700; margin: 0 0 4px; }
+#gc-complete-banner p  { font-size: 0.85rem; margin: 0; opacity: 0.85; }
+
+/* ── Bottom navigation ──────────────────────────────────────────────────── */
+#gc-bottom {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr 1fr;
+  gap: 8px;
+  padding: 9px 12px calc(9px + env(safe-area-inset-bottom));
+  background: #fff;
+  border-top: 1px solid #e8ece8;
+  flex-shrink: 0;
+}
+.gc-nav-btn {
+  height: 50px;
+  border-radius: 12px;
+  border: 2px solid #dee2e6;
+  background: #fff;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--brand-olive);
+  cursor: pointer;
+  transition: all .12s;
+  -webkit-tap-highlight-color: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.gc-nav-btn:active:not(:disabled) { transform: scale(0.97); background: #f4f7f4; }
+.gc-nav-btn:disabled { opacity: 0.35; cursor: default; }
+#gc-btn-save {
+  height: 50px;
+  border-radius: 12px;
+  border: none;
+  background: var(--brand-green);
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 3px 12px rgba(41,88,49,0.28);
+  transition: background .15s, transform .12s, box-shadow .15s;
+  -webkit-tap-highlight-color: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+#gc-btn-save:active:not(:disabled) { transform: scale(0.97); }
+#gc-btn-save:disabled { opacity: 0.6; transform: none; cursor: default; }
+#gc-btn-save.gc-save-fast {
+  background: var(--brand-orange);
+  box-shadow: 0 3px 12px rgba(234,88,12,0.28);
+}
+#gc-btn-save.gc-save-ok { background: #388e3c; }
+
+/* ── Numpad overlay ─────────────────────────────────────────────────────── */
+#gc-numpad-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.38);
+  z-index: 1050;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .28s;
+}
+#gc-numpad-overlay.gc-open { opacity: 1; pointer-events: auto; }
+
+/* ── Numpad sheet ───────────────────────────────────────────────────────── */
+#gc-numpad-sheet {
+  position: fixed;
+  bottom: 0; left: 50%;
+  transform: translateX(-50%) translateY(110%);
+  transition: transform .28s cubic-bezier(0.32,0.72,0,1);
+  width: min(480px, 100vw);
+  background: #fff;
+  border-radius: 24px 24px 0 0;
+  padding: 0 0 calc(14px + env(safe-area-inset-bottom));
+  z-index: 1051;
+  box-shadow: 0 -8px 40px rgba(0,0,0,0.18);
+}
+#gc-numpad-sheet.gc-open { transform: translateX(-50%) translateY(0); }
+.gc-np-drag {
+  width: 40px; height: 4px;
+  background: #ddd; border-radius: 2px;
+  margin: 12px auto 8px;
+}
+.gc-np-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px 11px;
+  border-bottom: 1px solid #f0f0f0;
+}
+#gc-np-unit {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1a2e1a;
+}
+.gc-np-close {
+  background: none; border: none;
+  font-size: 1.1rem; color: #aaa;
+  padding: 5px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+#gc-np-display {
+  font-size: 3rem;
+  font-weight: 700;
+  text-align: center;
+  padding: 14px 20px 2px;
+  color: var(--brand-green);
+  letter-spacing: 3px;
+  min-height: 74px;
+}
+#gc-np-last {
+  font-size: 0.76rem;
+  text-align: center;
+  color: #9aaa9a;
+  padding: 0 20px 8px;
+  min-height: 22px;
+}
+.gc-np-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: #eee;
+  margin-bottom: 12px;
+}
+.gc-np-btn {
+  background: #fff;
+  border: none;
+  font-size: 1.5rem;
+  font-weight: 500;
+  padding: 20px 0;
+  cursor: pointer;
+  transition: background .08s;
+  -webkit-tap-highlight-color: transparent;
+}
+.gc-np-btn:active,
+.gc-np-btn:focus { background: #f0f5f0; outline: none; }
+.gc-np-del { font-size: 1.1rem; color: #777; }
+.gc-np-confirm {
+  display: block;
+  width: calc(100% - 28px);
+  margin: 0 14px;
+  background: var(--brand-green);
+  color: #fff;
+  border: none;
+  border-radius: 14px;
+  height: 54px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .12s;
+  -webkit-tap-highlight-color: transparent;
+}
+.gc-np-confirm:active { background: #1e6626; }
+
+/* ── Toast ──────────────────────────────────────────────────────────────── */
+#gc-toast {
+  position: fixed;
+  bottom: calc(76px + env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2000;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+.gc-toast-item {
+  background: #1a2e1a;
+  color: #fff;
+  border-radius: 10px;
+  padding: 10px 20px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.2);
+  border-right: 4px solid var(--brand-green);
+  white-space: nowrap;
+  max-width: 90vw;
+  text-align: center;
+  animation: gc-toast-in .22s ease-out;
+}
+.gc-toast-item.danger { border-right-color: #dc3545; }
+.gc-toast-item.info   { border-right-color: var(--brand-orange); }
+.gc-toast-item.gc-toast-out { animation: gc-toast-out .22s ease-in forwards; }
+@keyframes gc-toast-in  { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
+@keyframes gc-toast-out { from{opacity:1;transform:none} to{opacity:0;transform:translateY(8px)} }
+
+/* ── Prompts (no-branch, no-session) ────────────────────────────────────── */
+.gc-prompt {
+  background: #fff;
+  border-radius: 16px;
+  padding: 48px 24px;
+  text-align: center;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  margin: 24px 16px;
+}
+</style>
+
+{# ── Branch selector (admin/manager only) ── #}
+{% if (current_user.is_admin or current_user.is_manager) and not selected_branch %}
+<div class="gc-prompt">
+  <i class="bi bi-building fs-1 mb-3 d-block" style="color:var(--brand-olive);opacity:.4;"></i>
+  <h5 class="fw-bold mb-2">اختر الفرع لبدء الجرد</h5>
+  <form method="GET" class="mt-3" style="max-width:260px;margin:0 auto;">
+    <select name="branch_id" class="form-select" onchange="this.form.submit()">
+      <option value="">-- اختر الفرع --</option>
+      {% for b in branches %}
+      <option value="{{ b.id }}">{{ b.name_ar }}</option>
+      {% endfor %}
+    </select>
+  </form>
 </div>
 
-{# ── No active session ── #}
 {% elif not inv_session %}
-<div class="gc-branch-select-wrap">
-    <i class="bi bi-calendar-x" style="font-size:2.5rem;color:#94a3b8;"></i>
-    <h5 class="mt-3 fw-bold text-muted">لا توجد جلسة جرد نشطة</h5>
-    <p class="text-muted small mb-4">تواصل مع المدير لتفعيل جلسة جرد لهذا الفرع.</p>
-    <a href="{{ url_for('inventory.session_list') }}" class="btn btn-success">
-        <i class="bi bi-arrow-right me-1"></i> العودة
-    </a>
+{# ── No active session ── #}
+<div class="gc-prompt">
+  <i class="bi bi-journal-x fs-1 mb-3 d-block" style="color:var(--brand-olive);opacity:.3;"></i>
+  <h5 class="fw-bold mb-2">لا توجد جلسة جرد نشطة</h5>
+  <p class="text-muted mb-0">لم يتم تفعيل أي جلسة جرد
+    {% if selected_branch %}لهذا الفرع{% endif %} حالياً.</p>
+  {% if current_user.is_manager %}
+  <a href="{{ url_for('admin.inv_sessions_kanban') }}"
+     class="btn btn-outline-primary btn-sm mt-3">
+    <i class="bi bi-kanban me-1"></i>إدارة الجلسات
+  </a>
+  {% endif %}
 </div>
 
-{# ── Main app ── #}
 {% else %}
+{# ══ MAIN APP ════════════════════════════════════════════════════════════ #}
+<div id="gc-app">
 
-<div id="gc-loading">
-    <div class="spinner-border text-success mb-3" role="status" style="width:2.5rem;height:2.5rem;">
-        <span class="visually-hidden">جارٍ التحميل…</span>
+  {# Progress header #}
+  <div id="gc-header">
+    <div class="gc-hrow">
+      <a href="{{ url_for('inventory.dashboard') }}" id="gc-back-link">
+        <i class="bi bi-arrow-right"></i>
+      </a>
+      <div id="gc-session-name">{{ inv_session.name }}</div>
+      <button class="gc-fast-btn" id="gc-fast-btn" title="الوضع السريع (F)">⚡</button>
     </div>
-    <p class="fw-bold text-muted mb-0">جارٍ تحميل قائمة الأصناف…</p>
-</div>
+    <div class="gc-hrow">
+      <div id="gc-counter-badge">— / —</div>
+      <div class="gc-progress-wrap">
+        <div id="gc-progress-bar"></div>
+      </div>
+      <div id="gc-pct">—%</div>
+    </div>
+  </div>
 
-<div id="gc-error" class="d-none">
-    <i class="bi bi-exclamation-triangle-fill text-warning mb-3" style="font-size:2.8rem;"></i>
-    <p id="gc-error-msg" class="fw-bold fs-6 mb-3"></p>
-    <a href="{{ url_for('inventory.session_list') }}" class="btn btn-success">
-        <i class="bi bi-arrow-right me-1"></i> العودة
-    </a>
-</div>
+  {# Scrollable content #}
+  <div id="gc-scroll">
+    <div id="gc-content-wrapper">
 
-<div id="gc-app" class="d-none">
+      {# Completion banner #}
+      <div id="gc-complete-banner" class="d-none">
+        <h5><i class="bi bi-check-circle-fill me-2"></i>اكتمل الجرد!</h5>
+        <p>تم جرد جميع الأصناف في هذه الجلسة بنجاح.</p>
+      </div>
 
-    <!-- ── Progress Header ─────────────────────── -->
-    <div id="gc-header">
-        <div class="gc-header-top">
-            <a href="{{ url_for('inventory.session_list') }}" class="gc-back-link">
-                <i class="bi bi-arrow-right"></i> رجوع
-            </a>
-            <span id="gc-session-name" class="gc-session-label">{{ inv_session.name }}</span>
-            <button id="gc-fast-toggle" class="gc-fast-btn" title="الوضع السريع — يحفظ وينتقل تلقائياً">
-                <i class="bi bi-lightning-fill"></i>
-            </button>
-            <span id="gc-item-counter-header" class="gc-item-counter-badge">0/0</span>
+      {# Product card #}
+      <div id="gc-product-card">
+        <div id="gc-status-badge" class="gc-badge-not_counted">لم يُجرد</div>
+        <div id="gc-item-name">يتم التحميل…</div>
+        <div id="gc-item-meta"></div>
+        <div id="gc-packaging-note"></div>
+        <div id="gc-item-position"></div>
+        {# Product map strip #}
+        <div id="gc-map-wrap">
+          <div id="gc-map-track"></div>
         </div>
-        <div class="gc-progress-row">
-            <span id="gc-progress-text" class="gc-progress-label">جارٍ التحميل…</span>
-            <span id="gc-progress-pct" class="gc-pct-badge">0%</span>
+      </div>
+
+      <div class="gc-section-label">الكميات</div>
+      <div id="gc-units">
+        <div style="background:#fff;border-radius:14px;padding:20px;text-align:center;color:#ccc;">
+          <span class="spinner-border spinner-border-sm me-2"></span>يتم التحميل…
         </div>
-        <div class="progress" style="height:7px;" role="progressbar"
-             aria-valuemin="0" aria-valuemax="100">
-            <div id="gc-progress-bar" class="progress-bar bg-success" style="width:0%"
-                 aria-valuenow="0"></div>
-        </div>
+      </div>
+
     </div>
+  </div>
 
-    <!-- ── Scrollable Content ──────────────────── -->
-    <div id="gc-scroll">
-        <div id="gc-content-wrapper">
-
-            <!-- Completion banner (hidden until all counted) -->
-            <div id="gc-complete-banner" class="gc-complete-banner d-none" role="status">
-                <h6><i class="bi bi-check-circle-fill me-2"></i>تم جرد جميع الأصناف!</h6>
-                <p>يمكنك مراجعة الأصناف أو الانتهاء من الجلسة</p>
-            </div>
-
-            <!-- Product card -->
-            <div id="gc-product-card">
-                <div class="gc-product-top">
-                    <h5 id="gc-product-name" class="mb-0">…</h5>
-                    <span id="gc-status-badge" class="gc-status-badge gc-badge-gray">لم يُجرد</span>
-                </div>
-
-                <div class="gc-meta-row">
-                    <span id="gc-sku-row" class="gc-meta-chip d-none">
-                        <span class="gc-meta-label">SKU</span>
-                        <span id="gc-sku">—</span>
-                    </span>
-                    <span id="gc-cat-row" class="gc-meta-chip d-none">
-                        <span class="gc-meta-label">تصنيف</span>
-                        <span id="gc-category">—</span>
-                    </span>
-                    <span class="gc-meta-chip">
-                        <span class="gc-meta-label">قسم</span>
-                        <span id="gc-dept">—</span>
-                    </span>
-                </div>
-
-                <div id="gc-packaging-note" class="gc-packaging-note d-none"></div>
-
-                <div class="gc-item-pos" id="gc-item-counter">— / —</div>
-
-                <!-- Status map — one dot per product -->
-                <div class="gc-map-wrap">
-                    <div class="gc-map-label">خريطة الأصناف — اضغط للانتقال</div>
-                    <div id="gc-map" class="gc-map" role="navigation"
-                         aria-label="خريطة تقدم الجرد"></div>
-                </div>
-            </div><!-- /product-card -->
-
-            <!-- Section label -->
-            <div class="gc-section-header">
-                <span class="gc-section-title">الكميات</span>
-                <div class="gc-section-line"></div>
-                <span class="gc-section-title" style="font-size:9px;color:#cbd5e1;">
-                    اضغط الرقم لإدخال مباشر
-                </span>
-            </div>
-
-            <!-- Unit cards (JS-rendered) -->
-            <div id="gc-units"></div>
-
-        </div><!-- /gc-content-wrapper -->
-    </div><!-- /gc-scroll -->
-
-    <!-- ── Bottom Action Bar ────────────────────── -->
-    <div id="gc-bottom">
-        <button id="gc-btn-prev" class="gc-nav-btn" aria-label="الصنف السابق">
-            <i class="bi bi-chevron-right"></i>
-            <span>السابق</span>
-        </button>
-        <button id="gc-btn-save" class="gc-save-btn" aria-label="حفظ الكميات">
-            <i class="bi bi-check-lg"></i>
-            <span id="gc-save-label">حفظ</span>
-        </button>
-        <button id="gc-btn-next" class="gc-nav-btn" aria-label="الصنف التالي">
-            <span>التالي</span>
-            <i class="bi bi-chevron-left"></i>
-        </button>
-    </div>
-
-</div><!-- /gc-app -->
-
-<!-- ── Numpad overlay ──────────────────────────── -->
-<div id="gc-numpad-overlay" aria-hidden="true"></div>
-
-<!-- ── Numpad bottom sheet ────────────────────── -->
-<div id="gc-numpad-sheet" role="dialog" aria-modal="true"
-     aria-labelledby="gc-np-unit-name">
-    <div class="gc-drag-handle"></div>
-
-    <div class="gc-np-header">
-        <span id="gc-np-unit-name" class="gc-np-unit-name"></span>
-        <button id="gc-np-close" class="gc-np-close-btn" aria-label="إغلاق">✕</button>
-    </div>
-
-    <div class="gc-np-display-area">
-        <span id="gc-np-display" class="gc-np-display">0</span>
-        <span id="gc-np-unit-label" class="gc-np-unit-label"></span>
-    </div>
-
-    <div id="gc-np-last" class="gc-np-last"></div>
-
-    <div class="gc-numpad-grid">
-        <button class="gc-np-key" data-key="7">7</button>
-        <button class="gc-np-key" data-key="8">8</button>
-        <button class="gc-np-key" data-key="9">9</button>
-        <button class="gc-np-key" data-key="4">4</button>
-        <button class="gc-np-key" data-key="5">5</button>
-        <button class="gc-np-key" data-key="6">6</button>
-        <button class="gc-np-key" data-key="1">1</button>
-        <button class="gc-np-key" data-key="2">2</button>
-        <button class="gc-np-key" data-key="3">3</button>
-        <button class="gc-np-key gc-np-key-dec" data-key=".">.</button>
-        <button class="gc-np-key" data-key="0">0</button>
-        <button class="gc-np-key gc-np-key-back" data-key="⌫"
-                aria-label="حذف">
-            <i class="bi bi-backspace"></i>
-        </button>
-    </div>
-
-    <button id="gc-np-confirm" class="gc-np-confirm-btn">
-        <i class="bi bi-check-lg"></i> تأكيد
+  {# Bottom nav — RTL: column 1 = rightmost = السابق, column 3 = leftmost = التالي #}
+  <div id="gc-bottom">
+    <button class="gc-nav-btn" id="gc-btn-prev">
+      <i class="bi bi-chevron-right"></i>السابق
     </button>
+    <button id="gc-btn-save">
+      <i class="bi bi-check-lg"></i>حفظ
+    </button>
+    <button class="gc-nav-btn" id="gc-btn-next">
+      التالي<i class="bi bi-chevron-left"></i>
+    </button>
+  </div>
+
+</div>{# /gc-app #}
+{% endif %}
+
+{# Numpad — always in DOM #}
+<div id="gc-numpad-overlay"></div>
+<div id="gc-numpad-sheet">
+  <div class="gc-np-drag"></div>
+  <div class="gc-np-header">
+    <span id="gc-np-unit">—</span>
+    <button class="gc-np-close" id="gc-np-close"><i class="bi bi-x-lg"></i></button>
+  </div>
+  <div id="gc-np-display">0</div>
+  <div id="gc-np-last"></div>
+  <div class="gc-np-grid">
+    <button class="gc-np-btn" data-k="7">7</button>
+    <button class="gc-np-btn" data-k="8">8</button>
+    <button class="gc-np-btn" data-k="9">9</button>
+    <button class="gc-np-btn" data-k="4">4</button>
+    <button class="gc-np-btn" data-k="5">5</button>
+    <button class="gc-np-btn" data-k="6">6</button>
+    <button class="gc-np-btn" data-k="1">1</button>
+    <button class="gc-np-btn" data-k="2">2</button>
+    <button class="gc-np-btn" data-k="3">3</button>
+    <button class="gc-np-btn" data-k=".">.</button>
+    <button class="gc-np-btn" data-k="0">0</button>
+    <button class="gc-np-btn gc-np-del" data-k="del">⌫</button>
+  </div>
+  <button class="gc-np-confirm" id="gc-np-confirm">تأكيد</button>
 </div>
 
-<!-- Toast -->
-<div id="gc-toast" role="status" aria-live="polite"></div>
+<div id="gc-toast"></div>
 
-{% endif %}
 {% endblock %}
 
 {% block scripts %}
-{% if inv_session %}
-<script src="{{ url_for('static', filename='js/guided_count.js') }}"></script>
 <script>
-    GC.init({{ inv_session.id | tojson }}, {{ selected_branch | tojson }});
+  window.GC_CONFIG = { branchId: {{ selected_branch | tojson }} };
 </script>
-{% endif %}
+<script src="{{ url_for('static', filename='js/guided_count.js') }}"></script>
 {% endblock %}
