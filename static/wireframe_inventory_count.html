@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inventory Count – Mobile Wireframe</title>
+  <style>
+    /* ── Reset & Base ───────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #E2E8F0;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+      padding: 24px 16px;
+      gap: 32px;
+      flex-wrap: wrap;
+    }
+
+    /* ── Phone Frame ────────────────────────────────────────── */
+    .phone-frame {
+      width: 390px;
+      min-height: 844px;
+      background: #fff;
+      border-radius: 48px;
+      box-shadow:
+        0 0 0 10px #1a1a2e,
+        0 0 0 12px #2d2d44,
+        0 32px 64px rgba(0,0,0,0.35);
+      overflow: hidden;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Notch */
+    .phone-frame::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 50%; transform: translateX(-50%);
+      width: 126px; height: 34px;
+      background: #1a1a2e;
+      border-radius: 0 0 20px 20px;
+      z-index: 100;
+    }
+
+    /* ── Screen ─────────────────────────────────────────────── */
+    .screen {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #F8FAFC;
+      overflow: hidden;
+      margin-top: 34px; /* notch */
+      border-radius: 0 0 38px 38px;
+    }
+
+    /* ── Status Bar ─────────────────────────────────────────── */
+    .status-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 20px 4px;
+      background: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      color: #1E293B;
+      letter-spacing: 0.3px;
+    }
+    .status-bar .time { font-size: 14px; font-weight: 700; }
+    .status-bar .icons { display: flex; gap: 6px; align-items: center; }
+    .battery-icon {
+      width: 22px; height: 11px;
+      border: 1.5px solid #1E293B; border-radius: 2px;
+      position: relative;
+    }
+    .battery-icon::after {
+      content: '';
+      position: absolute;
+      top: 50%; right: -5px; transform: translateY(-50%);
+      width: 3px; height: 5px;
+      background: #1E293B; border-radius: 0 1px 1px 0;
+    }
+    .battery-fill {
+      position: absolute;
+      top: 1.5px; left: 1.5px; bottom: 1.5px;
+      width: 65%;
+      background: #1E293B; border-radius: 1px;
+    }
+
+    /* ── Top Bar ─────────────────────────────────────────────── */
+    .top-bar {
+      background: #fff;
+      padding: 8px 20px 12px;
+      border-bottom: 1px solid #E2E8F0;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    .session-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: #64748B;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .progress-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .progress-text {
+      font-size: 15px;
+      font-weight: 700;
+      color: #1E293B;
+    }
+
+    .progress-pct {
+      font-size: 13px;
+      font-weight: 700;
+      color: #2563EB;
+      background: #EFF6FF;
+      padding: 2px 8px;
+      border-radius: 20px;
+    }
+
+    .progress-track {
+      height: 8px;
+      background: #E2E8F0;
+      border-radius: 99px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #2563EB, #3B82F6);
+      border-radius: 99px;
+      transition: width 0.4s ease;
+    }
+
+    /* ── Scroll Area ─────────────────────────────────────────── */
+    .scroll-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 16px 100px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      -webkit-overflow-scrolling: touch;
+    }
+    .scroll-area::-webkit-scrollbar { display: none; }
+
+    /* ── Product Card ────────────────────────────────────────── */
+    .product-card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 14px 16px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.04);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .product-top-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .product-name {
+      font-size: 20px;
+      font-weight: 800;
+      color: #0F172A;
+      line-height: 1.2;
+      flex: 1;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .status-badge .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+    }
+    .status--not-counted  { background: #F1F5F9; color: #64748B; }
+    .status--not-counted .dot { background: #94A3B8; }
+    .status--counted      { background: #F0FDF4; color: #16A34A; }
+    .status--counted .dot { background: #16A34A; }
+    .status--modified     { background: #FFFBEB; color: #D97706; }
+    .status--modified .dot { background: #F59E0B; }
+
+    .product-meta {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .meta-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      color: #475569;
+      background: #F1F5F9;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-weight: 500;
+    }
+    .meta-chip .label {
+      font-size: 10px;
+      font-weight: 700;
+      color: #94A3B8;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .divider {
+      height: 1px;
+      background: #E2E8F0;
+    }
+
+    .item-nav-hint {
+      font-size: 11px;
+      color: #94A3B8;
+      text-align: center;
+      font-weight: 500;
+    }
+
+    /* ── Section Header ──────────────────────────────────────── */
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 2px;
+    }
+    .section-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #64748B;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+    .section-line {
+      flex: 1;
+      height: 1px;
+      background: #E2E8F0;
+    }
+
+    /* ── Unit Cards ──────────────────────────────────────────── */
+    .unit-card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 14px 16px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.04);
+      transition: box-shadow 0.15s;
+    }
+    .unit-card.active {
+      box-shadow: 0 0 0 2px #2563EB, 0 4px 16px rgba(37,99,235,0.1);
+    }
+
+    .unit-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .unit-label-col {
+      flex: 1;
+      min-width: 0;
+    }
+    .unit-name {
+      font-size: 16px;
+      font-weight: 700;
+      color: #1E293B;
+    }
+    .unit-last {
+      font-size: 11px;
+      color: #94A3B8;
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .unit-last .last-qty {
+      font-weight: 700;
+      color: #64748B;
+    }
+
+    .stepper {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      background: #F8FAFC;
+      border: 1.5px solid #E2E8F0;
+      border-radius: 12px;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .stepper-btn {
+      width: 48px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      font-weight: 700;
+      color: #2563EB;
+      background: #fff;
+      border: none;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.1s;
+      -webkit-tap-highlight-color: transparent;
+      line-height: 1;
+    }
+    .stepper-btn:active { background: #EFF6FF; }
+
+    .stepper-divider {
+      width: 1px;
+      height: 28px;
+      background: #E2E8F0;
+      flex-shrink: 0;
+    }
+
+    .stepper-value {
+      min-width: 52px;
+      text-align: center;
+      font-size: 22px;
+      font-weight: 800;
+      color: #0F172A;
+      padding: 0 4px;
+    }
+    .stepper-value.changed { color: #D97706; }
+
+    /* ── Sticky Bottom Bar ───────────────────────────────────── */
+    .bottom-bar {
+      position: sticky;
+      bottom: 0;
+      background: #fff;
+      border-top: 1px solid #E2E8F0;
+      padding: 10px 16px 20px;
+      display: grid;
+      grid-template-columns: 1fr 1.4fr 1fr;
+      gap: 8px;
+      box-shadow: 0 -4px 20px rgba(0,0,0,0.08);
+      z-index: 50;
+    }
+
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 14px 10px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+      transition: all 0.15s;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    .btn-ghost {
+      background: #F1F5F9;
+      color: #475569;
+    }
+    .btn-ghost:active { background: #E2E8F0; }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #2563EB, #3B82F6);
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(37,99,235,0.3);
+    }
+    .btn-primary:active { transform: scale(0.97); }
+
+    .btn-icon {
+      font-size: 16px;
+      line-height: 1;
+    }
+
+    /* ── Legend Panel (outside phone) ───────────────────────── */
+    .legend-panel {
+      width: 260px;
+      background: #fff;
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      align-self: flex-start;
+      margin-top: 60px;
+    }
+    .legend-title {
+      font-size: 13px;
+      font-weight: 800;
+      color: #64748B;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 16px;
+    }
+    .legend-section { margin-bottom: 20px; }
+    .legend-section-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: #94A3B8;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 8px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .legend-indicator {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-top: 3px;
+      flex-shrink: 0;
+    }
+    .legend-item-text { font-size: 12px; color: #475569; line-height: 1.5; }
+    .legend-item-label { font-weight: 700; color: #1E293B; display: block; }
+
+    .design-note {
+      font-size: 11px;
+      color: #94A3B8;
+      line-height: 1.6;
+      border-top: 1px solid #F1F5F9;
+      padding-top: 12px;
+      margin-top: 4px;
+    }
+
+    /* ── Annotations ─────────────────────────────────────────── */
+    .annotation {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 10px 12px;
+      background: #FFFBEB;
+      border-left: 3px solid #F59E0B;
+      border-radius: 0 8px 8px 0;
+      margin-top: 4px;
+    }
+    .annotation-icon { font-size: 13px; flex-shrink: 0; margin-top: 1px; }
+    .annotation-text { font-size: 11px; color: #78350F; line-height: 1.5; }
+
+    /* ── Page title ──────────────────────────────────────────── */
+    .page-title-block {
+      width: 100%;
+      text-align: center;
+      padding-bottom: 8px;
+    }
+    .page-title {
+      font-size: 22px;
+      font-weight: 800;
+      color: #1E293B;
+    }
+    .page-subtitle {
+      font-size: 13px;
+      color: #64748B;
+      margin-top: 4px;
+    }
+
+    @media (max-width: 700px) {
+      body { padding: 12px 8px; gap: 16px; }
+      .phone-frame { border-radius: 36px; box-shadow: 0 0 0 8px #1a1a2e, 0 16px 40px rgba(0,0,0,0.3); }
+      .legend-panel { width: 100%; margin-top: 0; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="page-title-block">
+    <div class="page-title">Inventory Count — Mobile UI Wireframe</div>
+    <div class="page-subtitle">Interactive prototype · Mobile-first warehouse UX</div>
+  </div>
+
+  <!-- ═══ PHONE ═══════════════════════════════════════════════ -->
+  <div class="phone-frame">
+    <div class="screen">
+
+      <!-- Status Bar -->
+      <div class="status-bar">
+        <span class="time">9:41</span>
+        <div class="icons">
+          <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
+            <rect x="0" y="3" width="3" height="9" rx="1" fill="#1E293B"/>
+            <rect x="4.5" y="2" width="3" height="10" rx="1" fill="#1E293B"/>
+            <rect x="9" y="0" width="3" height="12" rx="1" fill="#1E293B"/>
+            <rect x="13.5" y="0" width="2.5" height="12" rx="1" fill="#CBD5E1"/>
+          </svg>
+          <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
+            <path d="M8 2C10.7 2 13.1 3.1 14.8 4.9L16 3.6C13.9 1.4 11.1 0 8 0C4.9 0 2.1 1.4 0 3.6L1.2 4.9C2.9 3.1 5.3 2 8 2Z" fill="#1E293B"/>
+            <path d="M8 5.5C9.8 5.5 11.4 6.3 12.5 7.5L13.7 6.3C12.2 4.8 10.2 3.9 8 3.9C5.8 3.9 3.8 4.8 2.3 6.3L3.5 7.5C4.6 6.3 6.2 5.5 8 5.5Z" fill="#1E293B"/>
+            <circle cx="8" cy="10.5" r="1.5" fill="#1E293B"/>
+          </svg>
+          <div class="battery-icon"><div class="battery-fill"></div></div>
+        </div>
+      </div>
+
+      <!-- Top Bar: Progress -->
+      <div class="top-bar">
+        <div class="session-label">Morning Stock Count · 08 Jun 2026</div>
+        <div class="progress-row">
+          <div class="progress-text">Items counted <strong id="counted-num">47</strong> of <strong>184</strong></div>
+          <div class="progress-pct" id="pct-label">26%</div>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="progress-fill" style="width: 26%;"></div>
+        </div>
+      </div>
+
+      <!-- Scroll Area -->
+      <div class="scroll-area">
+
+        <!-- Product Card -->
+        <div class="product-card">
+          <div class="product-top-row">
+            <div class="product-name" id="product-name">Basmati Rice Premium</div>
+            <div class="status-badge status--modified" id="status-badge">
+              <div class="dot"></div>
+              <span id="status-text">Modified</span>
+            </div>
+          </div>
+          <div class="product-meta">
+            <div class="meta-chip">
+              <span class="label">SKU</span>
+              <span id="sku-val">RIC-BAS-001</span>
+            </div>
+            <div class="meta-chip">
+              <span class="label">Cat</span>
+              <span id="cat-val">Dry Goods</span>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div class="item-nav-hint">Item 48 of 184</div>
+        </div>
+
+        <!-- Section Header -->
+        <div class="section-header">
+          <span class="section-title">Quantity per Unit</span>
+          <div class="section-line"></div>
+        </div>
+
+        <!-- Unit Card 1 -->
+        <div class="unit-card active" id="unit-card-0">
+          <div class="unit-row">
+            <div class="unit-label-col">
+              <div class="unit-name">Box</div>
+              <div class="unit-last">Last: <span class="last-qty">12</span> · Jun 6, 08:14</div>
+            </div>
+            <div class="stepper">
+              <button class="stepper-btn" onclick="step(0,-1)" aria-label="Decrease">−</button>
+              <div class="stepper-divider"></div>
+              <div class="stepper-value changed" id="val-0">14</div>
+              <div class="stepper-divider"></div>
+              <button class="stepper-btn" onclick="step(0,1)" aria-label="Increase">+</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Unit Card 2 -->
+        <div class="unit-card" id="unit-card-1">
+          <div class="unit-row">
+            <div class="unit-label-col">
+              <div class="unit-name">Gram</div>
+              <div class="unit-last">Last: <span class="last-qty">500</span> · Jun 6, 08:14</div>
+            </div>
+            <div class="stepper">
+              <button class="stepper-btn" onclick="step(1,-1)" aria-label="Decrease">−</button>
+              <div class="stepper-divider"></div>
+              <div class="stepper-value" id="val-1">500</div>
+              <div class="stepper-divider"></div>
+              <button class="stepper-btn" onclick="step(1,1)" aria-label="Increase">+</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Unit Card 3 -->
+        <div class="unit-card" id="unit-card-2">
+          <div class="unit-row">
+            <div class="unit-label-col">
+              <div class="unit-name">Piece</div>
+              <div class="unit-last">Last: <span class="last-qty">—</span> · Not recorded</div>
+            </div>
+            <div class="stepper">
+              <button class="stepper-btn" onclick="step(2,-1)" aria-label="Decrease">−</button>
+              <div class="stepper-divider"></div>
+              <div class="stepper-value" id="val-2">0</div>
+              <div class="stepper-divider"></div>
+              <button class="stepper-btn" onclick="step(2,1)" aria-label="Increase">+</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Sticky Bottom Bar -->
+      <div class="bottom-bar">
+        <button class="btn btn-ghost" onclick="navigate(-1)" aria-label="Previous item">
+          <span class="btn-icon">←</span>
+          <span>Prev</span>
+        </button>
+        <button class="btn btn-primary" onclick="saveItem()" aria-label="Save and continue">
+          <span class="btn-icon">✓</span>
+          <span>Save</span>
+        </button>
+        <button class="btn btn-ghost" onclick="navigate(1)" aria-label="Next item">
+          <span>Next</span>
+          <span class="btn-icon">→</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══ LEGEND PANEL ════════════════════════════════════════ -->
+  <div class="legend-panel">
+    <div class="legend-title">Design Spec</div>
+
+    <div class="legend-section">
+      <div class="legend-section-label">Status States</div>
+      <div class="legend-item">
+        <div class="legend-indicator" style="background:#94A3B8"></div>
+        <div class="legend-item-text">
+          <span class="legend-item-label">Not Counted</span>
+          Item has not yet been touched this session
+        </div>
+      </div>
+      <div class="legend-item">
+        <div class="legend-indicator" style="background:#16A34A"></div>
+        <div class="legend-item-text">
+          <span class="legend-item-label">Counted</span>
+          Saved with matching or new values
+        </div>
+      </div>
+      <div class="legend-item">
+        <div class="legend-indicator" style="background:#F59E0B"></div>
+        <div class="legend-item-text">
+          <span class="legend-item-label">Modified</span>
+          Values changed but not yet saved
+        </div>
+      </div>
+    </div>
+
+    <div class="legend-section">
+      <div class="legend-section-label">UX Decisions</div>
+      <div class="legend-item">
+        <div class="legend-indicator" style="background:#2563EB; border-radius:2px;"></div>
+        <div class="legend-item-text">
+          <span class="legend-item-label">48px touch targets</span>
+          Stepper buttons sized for gloved hands and fast tapping
+        </div>
+      </div>
+      <div class="legend-item">
+        <div class="legend-indicator" style="background:#2563EB; border-radius:2px;"></div>
+        <div class="legend-item-text">
+          <span class="legend-item-label">Changed values amber</span>
+          Stepper value turns orange when different from last record
+        </div>
+      </div>
+      <div class="legend-item">
+        <div class="legend-indicator" style="background:#2563EB; border-radius:2px;"></div>
+        <div class="legend-item-text">
+          <span class="legend-item-label">Sticky progress + nav</span>
+          Always visible — no scroll required to advance or save
+        </div>
+      </div>
+      <div class="legend-item">
+        <div class="legend-indicator" style="background:#2563EB; border-radius:2px;"></div>
+        <div class="legend-item-text">
+          <span class="legend-item-label">Last qty inline</span>
+          Previous count shown under each unit for quick delta check
+        </div>
+      </div>
+    </div>
+
+    <div class="annotation">
+      <div class="annotation-icon">⚡</div>
+      <div class="annotation-text">
+        <strong>Interactive:</strong> tap the +/− buttons, then try Save and Next to see state transitions live.
+      </div>
+    </div>
+
+    <div class="design-note">
+      Font: system-ui · Breakpoint: 390px (iPhone 14) · Min tap target: 48×48px · Bottom bar safe area aware
+    </div>
+  </div>
+
+  <script>
+    const ITEMS = [
+      { name: "Basmati Rice Premium", sku: "RIC-BAS-001", cat: "Dry Goods",
+        units: [
+          { name: "Box",   last: 12,  lastDate: "Jun 6, 08:14", val: 14 },
+          { name: "Gram",  last: 500, lastDate: "Jun 6, 08:14", val: 500 },
+          { name: "Piece", last: null,lastDate: "Not recorded",  val: 0 }
+        ]
+      },
+      { name: "Olive Oil Extra Virgin", sku: "OIL-OLV-002", cat: "Oils & Fats",
+        units: [
+          { name: "Bottle", last: 24, lastDate: "Jun 5, 14:30", val: 24 },
+          { name: "Litre",  last: 6,  lastDate: "Jun 5, 14:30", val: 6 }
+        ]
+      },
+      { name: "Sugar White Fine",  sku: "SUG-WHT-003", cat: "Sweeteners",
+        units: [
+          { name: "Bag",   last: 8,  lastDate: "Jun 4, 09:00", val: 0 },
+          { name: "Kilo",  last: 40, lastDate: "Jun 4, 09:00", val: 0 }
+        ]
+      },
+      { name: "Wheat Flour Type 1", sku: "FLR-WHT-004", cat: "Dry Goods",
+        units: [
+          { name: "Sack",  last: 15, lastDate: "Jun 6, 11:22", val: 17 },
+          { name: "Kilo",  last: 375, lastDate: "Jun 6, 11:22", val: 425 }
+        ]
+      },
+    ];
+
+    let currentIdx = 0;
+    let saved = new Set();
+    let countedCount = 47;
+
+    function computeStatus(item) {
+      const allZero = item.units.every(u => u.val === 0 && u.last === null);
+      const anyChanged = item.units.some(u => u.val !== (u.last ?? 0));
+      if (saved.has(currentIdx)) return 'counted';
+      if (anyChanged && !allZero) return 'modified';
+      return 'not-counted';
+    }
+
+    function render() {
+      const item = ITEMS[currentIdx];
+      document.getElementById('product-name').textContent = item.name;
+      document.getElementById('sku-val').textContent = item.sku;
+      document.getElementById('cat-val').textContent = item.cat;
+
+      const status = computeStatus(item);
+      const badge = document.getElementById('status-badge');
+      const statusText = document.getElementById('status-text');
+      badge.className = `status-badge status--${status}`;
+      statusText.textContent = status === 'not-counted' ? 'Not Counted'
+                             : status === 'counted'     ? 'Counted'
+                             :                            'Modified';
+
+      // Re-build unit cards
+      const scrollArea = document.querySelector('.scroll-area');
+      // Remove old unit cards & section header
+      scrollArea.querySelectorAll('.unit-card, .section-header').forEach(el => el.remove());
+
+      // Re-insert section header after product card
+      const sectionHeader = document.createElement('div');
+      sectionHeader.className = 'section-header';
+      sectionHeader.innerHTML = `<span class="section-title">Quantity per Unit</span><div class="section-line"></div>`;
+      scrollArea.appendChild(sectionHeader);
+
+      item.units.forEach((u, i) => {
+        const changed = u.val !== (u.last ?? 0);
+        const lastLine = u.last !== null
+          ? `Last: <span class="last-qty">${u.last}</span> · ${u.lastDate}`
+          : `Last: <span class="last-qty">—</span> · ${u.lastDate}`;
+        const card = document.createElement('div');
+        card.className = `unit-card ${i === 0 ? 'active' : ''}`;
+        card.id = `unit-card-${i}`;
+        card.innerHTML = `
+          <div class="unit-row">
+            <div class="unit-label-col">
+              <div class="unit-name">${u.name}</div>
+              <div class="unit-last">${lastLine}</div>
+            </div>
+            <div class="stepper">
+              <button class="stepper-btn" onclick="step(${i},-1)" aria-label="Decrease">−</button>
+              <div class="stepper-divider"></div>
+              <div class="stepper-value ${changed ? 'changed' : ''}" id="val-${i}">${u.val}</div>
+              <div class="stepper-divider"></div>
+              <button class="stepper-btn" onclick="step(${i},1)" aria-label="Increase">+</button>
+            </div>
+          </div>
+        `;
+        scrollArea.appendChild(card);
+      });
+    }
+
+    function step(unitIdx, delta) {
+      const item = ITEMS[currentIdx];
+      item.units[unitIdx].val = Math.max(0, item.units[unitIdx].val + delta);
+      // Remove saved state on change
+      saved.delete(currentIdx);
+      render();
+      // Highlight active card briefly
+      const card = document.getElementById(`unit-card-${unitIdx}`);
+      if (card) {
+        document.querySelectorAll('.unit-card').forEach(c => c.classList.remove('active'));
+        card.classList.add('active');
+      }
+    }
+
+    function saveItem() {
+      saved.add(currentIdx);
+      if (countedCount < 183) countedCount++;
+      updateProgress();
+      render();
+      // Flash save button
+      const btn = document.querySelector('.btn-primary');
+      btn.textContent = '✓ Saved';
+      btn.style.background = 'linear-gradient(135deg,#16A34A,#22C55E)';
+      setTimeout(() => {
+        btn.innerHTML = '<span class="btn-icon">✓</span><span>Save</span>';
+        btn.style.background = '';
+      }, 700);
+    }
+
+    function navigate(dir) {
+      currentIdx = (currentIdx + dir + ITEMS.length) % ITEMS.length;
+      render();
+      document.querySelector('.scroll-area').scrollTop = 0;
+      // Update item counter in product card hint
+      document.querySelector('.item-nav-hint').textContent =
+        `Item ${currentIdx + 1} of 184`;
+    }
+
+    function updateProgress() {
+      const pct = Math.round((countedCount / 184) * 100);
+      document.getElementById('counted-num').textContent = countedCount;
+      document.getElementById('pct-label').textContent = pct + '%';
+      document.getElementById('progress-fill').style.width = pct + '%';
+    }
+
+    render();
+  </script>
+</body>
+</html>
