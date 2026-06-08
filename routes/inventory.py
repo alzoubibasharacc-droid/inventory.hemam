@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, abort, Response
 from flask_login import login_required, current_user
-from models import db, Branch, Department, Item, InventoryCount, Unit, UnitConversion, InventorySession, SessionDepartment
+from models import db, Branch, Department, Item, ItemUnitConversion, InventoryCount, Unit, UnitConversion, InventorySession, SessionDepartment
 from sqlalchemy import func, distinct
 from sqlalchemy.orm import joinedload
 from utils.decorators import get_scope
@@ -576,6 +576,282 @@ def edit_entry(entry_id):
         'entered_unit': entered_unit.name_ar if entered_unit else '',
         'item_name':    item.name_ar,
         'notes':        notes,
+    })
+
+
+# ── guided count: page ───────────────────────────────────────────────────────
+
+@inventory_bp.route('/count/guided')
+@login_required
+def guided_count():
+    """Mobile-first product-by-product guided counting page."""
+    if not current_user.is_manager and current_user.branch_id:
+        req_branch = request.args.get('branch_id', type=int)
+        if req_branch and req_branch != current_user.branch_id:
+            flash('وصول غير مصرح به', 'danger')
+            return redirect(url_for('inventory.dashboard'))
+
+    branch_id = (
+        request.args.get('branch_id', type=int)
+        if current_user.is_admin or current_user.is_manager
+        else current_user.branch_id
+    )
+
+    branches = (
+        [current_user.branch]
+        if not current_user.is_manager and current_user.branch_id
+        else Branch.query.order_by(Branch.name_ar).all()
+    )
+
+    inv_session = None
+    if branch_id:
+        try:
+            resolved = resolve_session_for_branch(branch_id)
+            if not resolved.is_baseline:
+                inv_session = resolved
+        except RuntimeError:
+            pass
+
+    if (inv_session
+            and not current_user.is_manager
+            and current_user.department_id
+            and inv_session.session_departments):
+        allowed_dept_ids = {sd.department_id for sd in inv_session.session_departments}
+        if current_user.department_id not in allowed_dept_ids:
+            flash('لا توجد جلسة جرد نشطة لقسمك حالياً', 'warning')
+            return redirect(url_for('inventory.session_list'))
+
+    return render_template(
+        'inventory/guided_count.html',
+        branches=branches,
+        selected_branch=branch_id,
+        inv_session=inv_session,
+    )
+
+
+# ── guided count: items API ───────────────────────────────────────────────────
+
+@inventory_bp.route('/count/guided/items')
+@login_required
+def guided_count_items():
+    """JSON — all items for the session with their units and existing counts."""
+    branch_id = (
+        request.args.get('branch_id', type=int)
+        if current_user.is_admin or current_user.is_manager
+        else current_user.branch_id
+    )
+
+    if not branch_id:
+        return jsonify({'ok': False, 'error': 'الفرع مطلوب'}), 400
+
+    if not current_user.is_manager and current_user.branch_id:
+        if branch_id != current_user.branch_id:
+            return jsonify({'ok': False, 'error': 'وصول غير مصرح به'}), 403
+
+    try:
+        inv_session = resolve_session_for_branch(branch_id)
+        if inv_session.is_baseline:
+            return jsonify({'ok': False, 'error': 'لا توجد جلسة جرد نشطة حالياً'}), 409
+    except RuntimeError as e:
+        return jsonify({'ok': False, 'error': str(e)}), 409
+
+    _, scope_dept = get_scope()
+
+    sd_dept_ids = (
+        [sd.department_id for sd in inv_session.session_departments]
+        if inv_session.session_departments else None
+    )
+
+    # Employees are always restricted to their own department
+    if not current_user.is_manager and current_user.department_id:
+        if sd_dept_ids and current_user.department_id not in sd_dept_ids:
+            return jsonify({'ok': False, 'error': 'قسمك غير مشمول في جلسة الجرد النشطة'}), 403
+        scope_dept = current_user.department_id
+
+    items_q = (
+        Item.query
+        .join(Department)
+        .filter(Department.branch_id == branch_id, Item.is_active == True)
+        .options(
+            joinedload(Item.conversions).joinedload(ItemUnitConversion.unit),
+            joinedload(Item.base_unit),
+            joinedload(Item.unit),
+            joinedload(Item.department),
+            joinedload(Item.category),
+        )
+    )
+    if sd_dept_ids and not scope_dept:
+        items_q = items_q.filter(Item.department_id.in_(sd_dept_ids))
+    if scope_dept:
+        items_q = items_q.filter(Item.department_id == scope_dept)
+
+    items = items_q.order_by(Item.name_ar).all()
+
+    if not items:
+        return jsonify({
+            'ok': True,
+            'session': {
+                'id': inv_session.id,
+                'name': inv_session.name,
+                'count_date': inv_session.count_date.isoformat(),
+                'status': inv_session.status,
+            },
+            'items': [],
+        })
+
+    # Load all existing counts for this session in one query — newest last
+    item_ids = [i.id for i in items]
+    all_counts = (
+        InventoryCount.query
+        .filter(
+            InventoryCount.session_id == inv_session.id,
+            InventoryCount.item_id.in_(item_ids),
+        )
+        .order_by(InventoryCount.created_at.asc())
+        .all()
+    )
+
+    # Build {item_id: {unit_id: latest_InventoryCount}} — newer entries overwrite older
+    last_counts = {}
+    for c in all_counts:
+        uid = c.entered_unit_id or 0
+        last_counts.setdefault(c.item_id, {})[uid] = c
+
+    counted_item_ids = set(last_counts.keys())
+
+    result = []
+    for item in items:
+        if item.conversions:
+            units_list = [
+                {'unit_id': c.unit_id, 'name': c.unit.name_ar, 'multiplier': c.multiplier}
+                for c in item.conversions
+            ]
+        else:
+            base_unit = item.effective_base_unit
+            units_list = [{
+                'unit_id': item.effective_base_unit_id,
+                'name': base_unit.name_ar if base_unit else '—',
+                'multiplier': 1.0,
+            }]
+
+        item_last = last_counts.get(item.id, {})
+        for u in units_list:
+            lc = item_last.get(u['unit_id'])
+            if lc:
+                u['last_qty'] = lc.entered_quantity
+                u['last_at'] = (
+                    lc.created_at.strftime('%H:%M · %d/%m') if lc.created_at else None
+                )
+                u['current_value'] = lc.entered_quantity or 0
+            else:
+                u['last_qty'] = None
+                u['last_at'] = None
+                u['current_value'] = 0
+
+        result.append({
+            'id': item.id,
+            'name': item.name_ar,
+            'sku': item.item_code if current_user.is_manager else None,
+            'category': item.category.name_ar if item.category else None,
+            'dept': item.department.name_ar if item.department else None,
+            'packaging_note': item.packaging_note or None,
+            'is_counted': item.id in counted_item_ids,
+            'units': units_list,
+        })
+
+    return jsonify({
+        'ok': True,
+        'session': {
+            'id': inv_session.id,
+            'name': inv_session.name,
+            'count_date': inv_session.count_date.isoformat(),
+            'status': inv_session.status,
+        },
+        'items': result,
+    })
+
+
+# ── guided count: save one item (replace previous counts) ────────────────────
+
+@inventory_bp.route('/count/guided/save', methods=['POST'])
+@login_required
+def guided_count_save():
+    """Replace all unit counts for one item in the current session."""
+    data       = request.get_json(silent=True) or {}
+    item_id    = data.get('item_id')
+    session_id = data.get('session_id')
+    units_data = data.get('units', [])
+
+    if not item_id or not session_id:
+        return jsonify({'ok': False, 'error': 'بيانات ناقصة'}), 400
+
+    item = Item.query.get(item_id)
+    if not item:
+        return jsonify({'ok': False, 'error': 'الصنف غير موجود'}), 404
+
+    if not current_user.is_manager:
+        if current_user.branch_id and item.department.branch_id != current_user.branch_id:
+            return jsonify({'ok': False, 'error': 'وصول غير مصرح به'}), 403
+        if current_user.department_id and item.department_id != current_user.department_id:
+            return jsonify({'ok': False, 'error': 'وصول غير مصرح به'}), 403
+
+    inv_session = InventorySession.query.get(session_id)
+    if not inv_session:
+        return jsonify({'ok': False, 'error': 'الجلسة غير موجودة'}), 404
+    if inv_session.is_baseline:
+        return jsonify({'ok': False, 'error': 'لا يمكن الحفظ في جلسة أساسية'}), 409
+    if not current_user.is_admin and inv_session.status != 'active':
+        return jsonify({'ok': False, 'error': 'جلسة الجرد غير نشطة حالياً'}), 409
+
+    if not current_user.is_manager and inv_session.session_departments:
+        allowed = {sd.department_id for sd in inv_session.session_departments}
+        if current_user.department_id and current_user.department_id not in allowed:
+            return jsonify({'ok': False, 'error': 'قسمك غير مشمول في جلسة الجرد'}), 403
+
+    valid_unit_ids = {c.unit_id for c in item.conversions} or {item.effective_base_unit_id}
+
+    entries_to_create = []
+    for u in units_data:
+        uid = u.get('unit_id')
+        if uid not in valid_unit_ids:
+            return jsonify({'ok': False, 'error': f'وحدة غير صالحة: {uid}'}), 400
+        try:
+            qty = float(u.get('qty', 0))
+        except (ValueError, TypeError):
+            qty = 0
+        if qty < 0:
+            return jsonify({'ok': False, 'error': 'الكمية لا يمكن أن تكون سالبة'}), 400
+        if qty > 0:
+            entries_to_create.append({'unit_id': uid, 'qty': qty})
+
+    # Replace: remove all previous entries for this item in this session
+    InventoryCount.query.filter(
+        InventoryCount.item_id    == item_id,
+        InventoryCount.session_id == session_id,
+    ).delete(synchronize_session=False)
+
+    count_date = inv_session.count_date
+    for e in entries_to_create:
+        multiplier = item.get_multiplier(e['unit_id'])
+        db.session.add(InventoryCount(
+            item_id          = item.id,
+            session_id       = inv_session.id,
+            quantity         = e['qty'] * multiplier,
+            entered_quantity = e['qty'],
+            entered_unit_id  = e['unit_id'],
+            count_date       = count_date,
+            month            = count_date.month,
+            year             = count_date.year,
+            user_id          = current_user.id,
+            notes            = 'جرد سريع',
+        ))
+
+    db.session.commit()
+
+    return jsonify({
+        'ok':         True,
+        'item_id':    item_id,
+        'is_counted': len(entries_to_create) > 0,
     })
 
 
