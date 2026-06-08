@@ -17,29 +17,128 @@
 
   /* ── Element refs ───────────────────────────────────────────────────────── */
   const $ = id => document.getElementById(id);
-  const searchInput   = $('searchInput');
-  const searchResults = $('searchResults');
-  const searchClear   = $('searchClear');
-  const searchSection = $('searchSection');
-  const entrySection  = $('entrySection');
-  const entryItemName = $('entryItemName');
-  const entryItemNote = $('entryItemNote');
-  const entryItemDept = $('entryItemDept');
-  const entryItemCode = $('entryItemCode');
-  const entryAlready  = $('entryAlreadyCounted');
-  const entryQty      = $('entryQty');
-  const entryUnit     = $('entryUnit');
-  const entryNotes    = $('entryNotes');
-  const saveBtn       = $('saveBtn');
-  const cancelBtn     = $('cancelBtn');
-  const recentList    = $('recentList');
-  const recentCard    = $('recentCard');
-  const emptyState    = $('emptyState');
-  const progressBar   = $('progressBar');
-  const progressText  = $('progressText');
-  const progressPct   = $('progressPct');
+  const searchInput    = $('searchInput');
+  const searchResults  = $('searchResults');
+  const searchClear    = $('searchClear');
+  const searchSection  = $('searchSection');
+  const entrySection   = $('entrySection');
+  const entryItemName  = $('entryItemName');
+  const entryItemNote  = $('entryItemNote');
+  const entryItemDept  = $('entryItemDept');
+  const entryItemCode  = $('entryItemCode');
+  const entryAlready   = $('entryAlreadyCounted');
+  const entryQty       = $('entryQty');          // hidden input
+  const entryQtyDisplay = $('entryQtyDisplay');  // stepper display
+  const qtyStepper     = $('qtyStepper');
+  const qtyBtnPlus     = $('qtyBtnPlus');
+  const qtyBtnMinus    = $('qtyBtnMinus');
+  const entryUnit      = $('entryUnit');
+  const entryNotes     = $('entryNotes');
+  const saveBtn        = $('saveBtn');
+  const cancelBtn      = $('cancelBtn');
+  const recentList     = $('recentList');
+  const recentCard     = $('recentCard');
+  const emptyState     = $('emptyState');
+  const progressBar    = $('progressBar');
+  const progressText   = $('progressText');
+  const progressPct    = $('progressPct');
 
   if (!searchInput) return;  // no-branch state for non-admin users
+
+  /* ── Stepper ────────────────────────────────────────────────────────────── */
+  const np = { display: '0', isFirstKey: true, hasDecimal: false };
+
+  function stepperSetValue(val) {
+    const n = Math.max(0, val);
+    const display = n === Math.floor(n) ? String(n) : String(n);
+    entryQty.value = display;
+    entryQtyDisplay.textContent = display === '0' ? '0' : display;
+    entryQtyDisplay.classList.toggle('has-value', parseFloat(display) > 0);
+    qtyStepper.classList.remove('is-invalid');
+  }
+
+  function stepperGetValue() { return parseFloat(entryQty.value) || 0; }
+
+  let holdTimer = null, holdInterval = null;
+
+  function startHold(delta) {
+    holdTimer = setTimeout(() => {
+      holdInterval = setInterval(() => stepperSetValue(stepperGetValue() + delta), 65);
+    }, 360);
+  }
+  function clearHold() { clearTimeout(holdTimer); clearInterval(holdInterval); }
+
+  qtyBtnPlus.addEventListener('click',       () => stepperSetValue(stepperGetValue() + 1));
+  qtyBtnMinus.addEventListener('click',      () => stepperSetValue(Math.max(0, stepperGetValue() - 1)));
+  qtyBtnPlus.addEventListener('pointerdown', () => startHold(1));
+  qtyBtnMinus.addEventListener('pointerdown',() => startHold(-1));
+  ['pointerup','pointercancel','pointerleave'].forEach(ev => {
+    qtyBtnPlus.addEventListener(ev,  clearHold);
+    qtyBtnMinus.addEventListener(ev, clearHold);
+  });
+
+  entryQtyDisplay.addEventListener('click', openNumpad);
+
+  /* ── Numpad ─────────────────────────────────────────────────────────────── */
+  const npOverlay = $('cntNumpadOverlay');
+  const npSheet   = $('cntNumpadSheet');
+  const npDisplay = $('cntNpDisplay');
+  const npClose   = $('cntNpClose');
+  const npConfirm = $('cntNpConfirm');
+
+  function openNumpad() {
+    const cur = stepperGetValue();
+    np.display    = cur > 0 ? fmtNum(cur) : '0';
+    np.isFirstKey = true;
+    np.hasDecimal = np.display.includes('.');
+    npDisplay.textContent = np.display;
+    npOverlay.classList.add('cnt-np-open');
+    npSheet.classList.add('cnt-np-open');
+  }
+
+  function closeNumpad() {
+    npOverlay.classList.remove('cnt-np-open');
+    npSheet.classList.remove('cnt-np-open');
+  }
+
+  function numpadPress(key) {
+    if (key === 'del') {
+      if (np.display.length > 1) {
+        if (np.display.slice(-1) === '.') np.hasDecimal = false;
+        np.display = np.display.slice(0, -1);
+      } else {
+        np.display = '0'; np.isFirstKey = true; np.hasDecimal = false;
+      }
+    } else if (key === '.') {
+      if (!np.hasDecimal) {
+        np.display    = np.isFirstKey ? '0.' : np.display + '.';
+        np.hasDecimal = true;
+        np.isFirstKey = false;
+      }
+    } else {
+      if (np.isFirstKey) {
+        np.display    = key;
+        np.isFirstKey = false;
+      } else {
+        if (np.display.length < 10) np.display += key;
+      }
+    }
+    npDisplay.textContent = np.display;
+  }
+
+  function confirmNumpad() {
+    const val = parseFloat(np.display) || 0;
+    stepperSetValue(val);
+    closeNumpad();
+  }
+
+  npOverlay.addEventListener('click', closeNumpad);
+  npClose.addEventListener('click',   closeNumpad);
+  npConfirm.addEventListener('click', confirmNumpad);
+
+  document.querySelectorAll('#cntNumpadSheet .cnt-np-btn').forEach(btn => {
+    btn.addEventListener('click', () => numpadPress(btn.dataset.k));
+  });
 
   /* ── Search ─────────────────────────────────────────────────────────────── */
   let searchTimer;
@@ -180,16 +279,15 @@
       entryUnit.appendChild(opt);
     });
 
-    entryQty.value   = '';
+    stepperSetValue(0);
     entryNotes.value = '';
-    entryQty.classList.remove('is-invalid');
+    qtyStepper.classList.remove('is-invalid');
     entryNotes.classList.remove('is-invalid');
     const errEl = $('entryError');
     if (errEl) errEl.style.display = 'none';
 
     searchSection.style.display = 'none';
     entrySection.style.display  = 'block';
-    setTimeout(() => entryQty.focus(), 80);
   }
 
   /* ── Cancel → back to search ────────────────────────────────────────────── */
@@ -205,26 +303,20 @@
   /* ── Save entry ─────────────────────────────────────────────────────────── */
   saveBtn.addEventListener('click', saveEntry);
 
-  entryQty.addEventListener('keydown', e => {
-    if (e.key === 'Enter') {
-      if (entryUnit.options.length > 1) entryUnit.focus();
-      else entryNotes.focus();
-      e.preventDefault();
-    }
-  });
+  /* entryQty is now a hidden input — keyboard flow goes unit → notes */
   entryUnit.addEventListener('keydown',  e => { if (e.key === 'Enter') { entryNotes.focus(); e.preventDefault(); } });
   entryNotes.addEventListener('keydown', e => { if (e.key === 'Enter') { saveEntry(); e.preventDefault(); } });
 
   async function saveEntry() {
     if (!STATE.selectedItem) return;
 
-    const qty = entryQty.value.trim();
+    const qty = entryQty.value;
     if (!qty || isNaN(parseFloat(qty)) || parseFloat(qty) <= 0) {
-      entryQty.classList.add('is-invalid');
-      entryQty.focus();
+      qtyStepper.classList.add('is-invalid');
+      openNumpad();
       return;
     }
-    entryQty.classList.remove('is-invalid');
+    qtyStepper.classList.remove('is-invalid');
 
     const notes = entryNotes.value.trim();
     if (!notes) {

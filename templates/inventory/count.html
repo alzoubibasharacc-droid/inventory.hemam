@@ -147,24 +147,121 @@
     display:inline-block;
 }
 
-/* Quantity input */
-.qty-input {
-    font-size:2.4rem;
-    font-weight:700;
-    text-align:center;
-    height:90px;
-    border-radius:14px;
+/* Stepper widget */
+.qty-stepper {
+    display:flex;
+    align-items:stretch;
     border:2px solid #dee2e6;
-    color:var(--brand-green);
-    letter-spacing:2px;
+    border-radius:14px;
+    overflow:hidden;
+    background:#fff;
+    height:90px;
     transition:border-color .2s, box-shadow .2s;
 }
-.qty-input:focus {
-    border-color:var(--brand-green);
-    box-shadow:0 0 0 4px rgba(41,88,49,0.12);
-    outline:none;
+.qty-stepper.is-invalid { border-color:#dc3545; box-shadow:0 0 0 4px rgba(220,53,69,0.12); }
+.qty-btn {
+    background:#f8faf8;
+    border:none;
+    width:68px;
+    font-size:2rem;
+    font-weight:300;
+    color:var(--brand-olive);
+    cursor:pointer;
+    flex-shrink:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    transition:background .12s;
+    -webkit-tap-highlight-color:transparent;
+    user-select:none;
 }
-.qty-input.is-invalid { border-color:#dc3545; box-shadow:0 0 0 4px rgba(220,53,69,0.12); }
+.qty-btn:active { background:#e8f0e8; }
+.qty-val-display {
+    flex:1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:2.4rem;
+    font-weight:700;
+    color:#bbb;
+    cursor:pointer;
+    position:relative;
+    letter-spacing:2px;
+}
+.qty-val-display.has-value { color:var(--brand-green); }
+.qty-val-display::after {
+    content:'✎';
+    position:absolute;
+    top:8px; right:10px;
+    font-size:0.75rem;
+    color:#ccc;
+}
+@media (max-width:576px) { .qty-stepper { height:76px; } .qty-val-display { font-size:2rem; } }
+
+/* Numpad overlay + sheet */
+.cnt-np-overlay {
+    position:fixed; inset:0;
+    background:rgba(0,0,0,0.35);
+    z-index:1050;
+    opacity:0;
+    transition:opacity .28s;
+    pointer-events:none;
+}
+.cnt-np-overlay.cnt-np-open { opacity:1; pointer-events:auto; }
+#cntNumpadSheet {
+    position:fixed; bottom:0; left:50%;
+    transform:translateX(-50%) translateY(110%);
+    transition:transform 0.28s cubic-bezier(0.32,0.72,0,1);
+    width:min(480px,100vw);
+    background:#fff;
+    border-radius:24px 24px 0 0;
+    padding:0 0 calc(20px + env(safe-area-inset-bottom)) 0;
+    z-index:1051;
+    box-shadow:0 -8px 40px rgba(0,0,0,0.18);
+}
+#cntNumpadSheet.cnt-np-open { transform:translateX(-50%) translateY(0); }
+.cnt-np-drag { width:40px; height:4px; background:#ddd; border-radius:2px; margin:12px auto 8px; }
+.cnt-np-header {
+    display:flex; align-items:center;
+    justify-content:space-between;
+    padding:4px 20px 12px;
+    border-bottom:1px solid #f0f0f0;
+}
+.cnt-np-header span { font-weight:700; font-size:1rem; color:#1a2e1a; }
+.cnt-np-close { background:none; border:none; font-size:1.2rem; color:#999; padding:4px; cursor:pointer; }
+.cnt-np-display {
+    font-size:2.8rem; font-weight:700;
+    text-align:center;
+    padding:18px 20px 4px;
+    color:var(--brand-green);
+    letter-spacing:2px;
+    min-height:80px;
+}
+.cnt-np-grid {
+    display:grid; grid-template-columns:repeat(3,1fr);
+    gap:1px; background:#eee;
+    margin:12px 0;
+}
+.cnt-np-btn {
+    background:#fff; border:none;
+    font-size:1.5rem; font-weight:500;
+    padding:20px 0;
+    cursor:pointer;
+    transition:background .1s;
+    -webkit-tap-highlight-color:transparent;
+}
+.cnt-np-btn:active,.cnt-np-btn:focus { background:#f0f5f0; outline:none; }
+.cnt-np-del { font-size:1.2rem; color:#888; }
+.cnt-np-confirm {
+    display:block; width:calc(100% - 32px);
+    margin:0 16px;
+    background:var(--brand-green); color:#fff; border:none;
+    border-radius:14px; height:54px;
+    font-size:1.1rem; font-weight:700;
+    cursor:pointer;
+    transition:background .15s;
+}
+.cnt-np-confirm:active { background:#1e6626; }
 
 /* Unit select */
 .unit-select {
@@ -550,17 +647,17 @@
              style="display:none; border-radius:10px;">
         </div>
 
-        <!-- Quantity -->
+        <!-- Quantity stepper -->
         <div class="mb-4">
           <label class="form-label fw-bold" style="color:var(--brand-olive);">
             الكمية
           </label>
-          <input type="number"
-                 id="entryQty"
-                 class="form-control qty-input"
-                 step="any" min="0"
-                 placeholder="0"
-                 inputmode="decimal">
+          <div class="qty-stepper" id="qtyStepper">
+            <button class="qty-btn" type="button" id="qtyBtnMinus">−</button>
+            <div class="qty-val-display" id="entryQtyDisplay">0</div>
+            <button class="qty-btn" type="button" id="qtyBtnPlus">+</button>
+          </div>
+          <input type="hidden" id="entryQty" value="0">
         </div>
 
         <!-- Unit -->
@@ -600,6 +697,34 @@
 
 <!-- Toast container -->
 <div id="toastContainer"></div>
+
+<!-- Numpad overlay -->
+<div id="cntNumpadOverlay" class="cnt-np-overlay"></div>
+
+<!-- Numpad bottom sheet -->
+<div id="cntNumpadSheet">
+  <div class="cnt-np-drag"></div>
+  <div class="cnt-np-header">
+    <span>الكمية</span>
+    <button class="cnt-np-close" id="cntNpClose"><i class="bi bi-x-lg"></i></button>
+  </div>
+  <div class="cnt-np-display" id="cntNpDisplay">0</div>
+  <div class="cnt-np-grid">
+    <button class="cnt-np-btn" data-k="7">7</button>
+    <button class="cnt-np-btn" data-k="8">8</button>
+    <button class="cnt-np-btn" data-k="9">9</button>
+    <button class="cnt-np-btn" data-k="4">4</button>
+    <button class="cnt-np-btn" data-k="5">5</button>
+    <button class="cnt-np-btn" data-k="6">6</button>
+    <button class="cnt-np-btn" data-k="1">1</button>
+    <button class="cnt-np-btn" data-k="2">2</button>
+    <button class="cnt-np-btn" data-k="3">3</button>
+    <button class="cnt-np-btn" data-k=".">.</button>
+    <button class="cnt-np-btn" data-k="0">0</button>
+    <button class="cnt-np-btn cnt-np-del" data-k="del">⌫</button>
+  </div>
+  <button class="cnt-np-confirm" id="cntNpConfirm">تأكيد</button>
+</div>
 
 {% endblock %}
 
