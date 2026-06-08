@@ -358,37 +358,10 @@
       {% endif %}
 
       {% if inv_session %}
-      {# InventorySession exists — workflow status is the authority.
-         count_date is a fixed business date set at session creation;
-         comparing it to today would always flag sessions as "old" after day 1.
-         Show it as informational only. #}
-      <div class="session-chip" title="تاريخ جلسة الجرد: {{ inv_session.name }}">
+      <div class="session-chip" title="{{ inv_session.name }}">
         <i class="bi bi-calendar-check"></i>
         <strong>{{ count_date }}</strong>
       </div>
-      {% else %}
-      {# Legacy cookie-based path (no InventorySession resolved).
-         Here count_date IS the ephemeral "last counted on" date from the
-         browser cookie — comparing to today is correct in this context only. #}
-      {% set today = now.strftime('%Y-%m-%d') %}
-      {% if count_date != today %}
-      <form method="POST" action="{{ url_for('inventory.new_count_session') }}"
-            id="newSessionForm" class="d-inline">
-        {% if selected_branch %}
-        <input type="hidden" name="branch_id" value="{{ selected_branch }}">
-        {% endif %}
-        <button type="button" class="btn btn-warning btn-sm fw-bold"
-                onclick="document.getElementById('newSessionForm').submit();">
-          <i class="bi bi-calendar-exclamation me-1"></i>
-          <span>تاريخ الجرد: {{ count_date }} — ابدأ جديدة</span>
-        </button>
-      </form>
-      {% else %}
-      <div class="session-chip" title="تاريخ جلسة الجرد مؤمَّن">
-        <i class="bi bi-calendar-check"></i>
-        <strong>{{ count_date }}</strong>
-      </div>
-      {% endif %}
       {% endif %}
 
       <a href="{{ url_for('inventory.dashboard') }}"
@@ -408,6 +381,25 @@
          style="color:var(--brand-olive); opacity:.5;"></i>
       <h5 class="fw-bold mb-2">اختر الفرع لبدء الجرد</h5>
       <p class="text-muted mb-0">استخدم القائمة أعلاه لتحديد الفرع</p>
+    </div>
+
+    {% elif not inv_session %}
+    <!-- ── No active session ─── -->
+    <div class="branch-prompt">
+      <i class="bi bi-journal-x fs-1 mb-3 d-block"
+         style="color:var(--brand-olive); opacity:.4;"></i>
+      <h5 class="fw-bold mb-2">لا توجد جلسة جرد نشطة</h5>
+      <p class="text-muted mb-0">
+        لم يتم تفعيل أي جلسة جرد
+        {% if selected_branch %}لهذا الفرع{% endif %}
+        حالياً.
+      </p>
+      {% if current_user.is_manager %}
+      <a href="{{ url_for('admin.inv_sessions_kanban') }}"
+         class="btn btn-outline-primary btn-sm mt-3">
+        <i class="bi bi-kanban me-1"></i>إدارة الجلسات
+      </a>
+      {% endif %}
     </div>
 
     {% else %}
@@ -618,7 +610,6 @@
     branchId:     {{ selected_branch | tojson }},
     countedItems: {{ counted_items }},
     totalItems:   {{ total_items }},
-    countDate:    {{ count_date | tojson }},
     isAdmin:      {{ current_user.is_admin | tojson }},
     isManager:    {{ current_user.is_manager | tojson }},
     userId:       {{ current_user.id }},

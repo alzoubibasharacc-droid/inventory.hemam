@@ -10,7 +10,6 @@
     branchId:     cfg.branchId     ?? null,
     countedItems: cfg.countedItems ?? 0,
     totalItems:   cfg.totalItems   ?? 0,
-    countDate:    cfg.countDate    ?? new Date().toISOString().slice(0, 10),
     isAdmin:      cfg.isAdmin      ?? false,
     isManager:    cfg.isManager    ?? false,
     userId:       cfg.userId       ?? null,
@@ -79,8 +78,7 @@
   async function doSearch(q) {
     const params = new URLSearchParams({
       q,
-      branch_id:  STATE.branchId || '',
-      count_date: STATE.countDate,
+      branch_id: STATE.branchId || '',
     });
     try {
       const res   = await fetch(`/inventory/count/search?${params}`);
@@ -245,11 +243,10 @@
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          item_id:    STATE.selectedItem.id,
-          qty:        parseFloat(qty),
-          unit_id:    parseInt(entryUnit.value),
-          notes:      notes,
-          count_date: STATE.countDate,
+          item_id: STATE.selectedItem.id,
+          qty:     parseFloat(qty),
+          unit_id: parseInt(entryUnit.value),
+          notes:   notes,
         }),
       });
       const data = await res.json();

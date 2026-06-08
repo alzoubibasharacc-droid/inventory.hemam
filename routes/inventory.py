@@ -1,9 +1,8 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session as flask_session, abort, Response
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, abort, Response
 from flask_login import login_required, current_user
 from models import db, Branch, Department, Item, InventoryCount, Unit, UnitConversion, InventorySession, SessionDepartment
 from sqlalchemy import func, distinct
 from sqlalchemy.orm import joinedload
-from datetime import date
 from utils.decorators import get_scope
 from utils.constants import now_jordan, resolve_session_for_branch, get_active_session
 
@@ -172,8 +171,6 @@ def session_list():
 @inventory_bp.route('/count')
 @login_required
 def count():
-    now = now_jordan()
-
     # Employees: block attempts to view another branch via URL
     if not current_user.is_manager and current_user.branch_id:
         req_branch = request.args.get('branch_id', type=int)
@@ -194,16 +191,20 @@ def count():
     else:
         branches = Branch.query.all()
 
-    # Resolve session for the selected branch — primary grouping context.
+    # InventorySession is the sole source of truth — no cookie fallback.
+    # resolve_session_for_branch falls back to the baseline when no active
+    # session exists; baseline sessions are read-only archives, so we treat
+    # them as absent and show a "no active session" state instead.
     inv_session = None
     if branch_id:
         try:
-            inv_session = resolve_session_for_branch(branch_id)
+            resolved = resolve_session_for_branch(branch_id)
+            if not resolved.is_baseline:
+                inv_session = resolved
         except RuntimeError:
             pass
 
-    # For employees: if the resolved session does not include their department,
-    # redirect to the session task list so they see the correct scope.
+    # For employees: redirect if their department is not in this session's scope.
     if (inv_session
             and not current_user.is_manager
             and current_user.department_id
@@ -213,91 +214,57 @@ def count():
             flash('لا توجد جلسة جرد نشطة لقسمك حالياً', 'warning')
             return redirect(url_for('inventory.session_list'))
 
-    # Effective count date for display:
-    #   Session's count_date is authoritative; cookie-lock is the legacy fallback.
-    if inv_session:
-        cd = inv_session.count_date
-        count_date = cd.isoformat()
-    else:
-        count_date = flask_session.get('count_session_date')
-        if not count_date:
-            count_date = now.strftime('%Y-%m-%d')
-            flask_session['count_session_date'] = count_date
-        try:
-            cd = date.fromisoformat(count_date)
-        except (ValueError, TypeError):
-            cd = now.date()
-            count_date = cd.strftime('%Y-%m-%d')
-            flask_session['count_session_date'] = count_date
+    count_date = inv_session.count_date.isoformat() if inv_session else ''
 
     total_items = counted_items = 0
-    if branch_id:
+    if branch_id and inv_session:
         items_q = (
             Item.query.join(Department)
             .filter(Department.branch_id == branch_id, Item.is_active == True)
         )
 
-        # Departments assigned to this session — used to align total and counted
-        # denominators. Both queries must use the same scope so progress is
-        # consistent between the count page and the Kanban card.
+        # Restrict to session's assigned departments so the total denominator
+        # matches the numerator and stays consistent with the Kanban card.
         sd_dept_ids = (
             [sd.department_id for sd in inv_session.session_departments]
-            if inv_session and inv_session.session_departments
+            if inv_session.session_departments
             else None
         )
 
-        # When a session covers only a subset of branch departments, restrict
-        # items_q to those departments so the denominator matches the numerator.
         if sd_dept_ids and not scope_dept:
             items_q = items_q.filter(Item.department_id.in_(sd_dept_ids))
-
         if scope_dept:
             items_q = items_q.filter(Item.department_id == scope_dept)
 
-        if inv_session:
-            counts_q = (
-                db.session.query(func.count(distinct(InventoryCount.item_id)))
-                .join(Item, Item.id == InventoryCount.item_id)
-                .filter(InventoryCount.session_id == inv_session.id)
-            )
-            if sd_dept_ids and not scope_dept:
-                counts_q = counts_q.filter(Item.department_id.in_(sd_dept_ids))
-            if scope_dept:
-                counts_q = counts_q.filter(Item.department_id == scope_dept)
-        else:
-            counts_q = (
-                db.session.query(func.count(distinct(InventoryCount.item_id)))
-                .join(Item).join(Department)
-                .filter(
-                    Department.branch_id == branch_id,
-                    InventoryCount.count_date == cd,
-                )
-            )
-            if scope_dept:
-                counts_q = counts_q.filter(Item.department_id == scope_dept)
+        counts_q = (
+            db.session.query(func.count(distinct(InventoryCount.item_id)))
+            .join(Item, Item.id == InventoryCount.item_id)
+            .filter(InventoryCount.session_id == inv_session.id)
+        )
+        if sd_dept_ids and not scope_dept:
+            counts_q = counts_q.filter(Item.department_id.in_(sd_dept_ids))
+        if scope_dept:
+            counts_q = counts_q.filter(Item.department_id == scope_dept)
 
         total_items   = items_q.count()
         counted_items = counts_q.scalar() or 0
 
-    recent_q = InventoryCount.query.join(Item).join(Department)
+    recent_entries = []
     if inv_session:
-        recent_q = recent_q.filter(InventoryCount.session_id == inv_session.id)
-    else:
-        recent_q = recent_q.filter(InventoryCount.count_date == cd)
-        if branch_id:
-            recent_q = recent_q.filter(Department.branch_id == branch_id)
-    if scope_dept:
-        recent_q = recent_q.filter(Item.department_id == scope_dept)
-    if not current_user.is_manager:
-        recent_q = recent_q.filter(InventoryCount.user_id == current_user.id)
-
-    recent_entries = recent_q.order_by(InventoryCount.created_at.desc()).limit(50).all()
+        recent_q = (
+            InventoryCount.query.join(Item).join(Department)
+            .filter(InventoryCount.session_id == inv_session.id)
+        )
+        if scope_dept:
+            recent_q = recent_q.filter(Item.department_id == scope_dept)
+        if not current_user.is_manager:
+            recent_q = recent_q.filter(InventoryCount.user_id == current_user.id)
+        recent_entries = recent_q.order_by(InventoryCount.created_at.desc()).limit(50).all()
 
     return render_template(
         'inventory/count.html',
         branches=branches,
         selected_branch=branch_id,
-        now=now,
         total_items=total_items,
         counted_items=counted_items,
         recent_entries=recent_entries,
@@ -509,17 +476,6 @@ def count_entry():
     })
 
 
-# ── start a new counting session (clears the locked date) ────────────────────
-
-@inventory_bp.route('/count/new-session', methods=['POST'])
-@login_required
-def new_count_session():
-    flask_session.pop('count_session_date', None)
-    branch_id = request.form.get('branch_id', '')
-    kwargs = {'branch_id': branch_id} if branch_id else {}
-    return redirect(url_for('inventory.count', **kwargs))
-
-
 # ── delete a single count entry ───────────────────────────────────────────────
 
 @inventory_bp.route('/count/delete-entry/<int:entry_id>', methods=['POST'])
@@ -543,13 +499,15 @@ def delete_entry(entry_id):
     db.session.commit()
 
     if request.is_json:
-        # Group by session_id when available; fall back to count_date for legacy entries
         if entry_session_id is not None:
             remaining = InventoryCount.query.filter(
                 InventoryCount.item_id    == item.id,
                 InventoryCount.session_id == entry_session_id,
             ).all()
         else:
+            # Pre-migration records may have session_id = NULL (imported before
+            # the session workflow existed). Scope by count_date from the DB
+            # record — not a cookie — as a one-time backward-compat guard.
             remaining = InventoryCount.query.filter(
                 InventoryCount.item_id    == item.id,
                 InventoryCount.count_date == count_date,
