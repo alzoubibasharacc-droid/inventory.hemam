@@ -668,6 +668,42 @@
           <select id="entryUnit" class="form-select unit-select"></select>
         </div>
 
+        <!-- Add second quantity button -->
+        <div id="addQty2Wrap" class="mb-4 text-center">
+          <button type="button" id="addQty2Btn"
+                  style="border:1px dashed var(--brand-olive);color:var(--brand-olive);background:none;border-radius:10px;padding:7px 18px;font-size:0.85rem;cursor:pointer;-webkit-tap-highlight-color:transparent;">
+            <i class="bi bi-plus-circle me-1"></i>إضافة كمية ثانية
+          </button>
+        </div>
+
+        <!-- Second quantity section (hidden by default) -->
+        <div id="entry2Section" class="mb-4" style="display:none;">
+          <div class="d-flex align-items-center gap-2 mb-3">
+            <div style="flex:1;height:1px;background:#e8ece8;"></div>
+            <span class="small text-muted">كمية إضافية</span>
+            <div style="flex:1;height:1px;background:#e8ece8;"></div>
+          </div>
+          <div class="mb-3">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <label class="form-label fw-bold mb-0" style="color:var(--brand-olive);">الكمية الثانية</label>
+              <button type="button" id="removeQty2Btn"
+                      style="background:none;border:none;font-size:0.8rem;color:#aaa;cursor:pointer;padding:0;display:flex;align-items:center;gap:4px;">
+                <i class="bi bi-x-circle"></i>إزالة
+              </button>
+            </div>
+            <div class="qty-stepper" id="qtyStepper2">
+              <button class="qty-btn" type="button" id="qtyBtnMinus2">−</button>
+              <div class="qty-val-display" id="entryQtyDisplay2">0</div>
+              <button class="qty-btn" type="button" id="qtyBtnPlus2">+</button>
+            </div>
+            <input type="hidden" id="entryQty2" value="0">
+          </div>
+          <div>
+            <label class="form-label fw-bold" style="color:var(--brand-olive);">الوحدة الثانية</label>
+            <select id="entryUnit2" class="form-select unit-select"></select>
+          </div>
+        </div>
+
         <!-- Notes (required) -->
         <div class="mb-4">
           <label class="form-label fw-bold" style="color:var(--brand-olive);">

@@ -441,6 +441,32 @@ def count_entry():
         notes            = notes or None,
     )
     db.session.add(entry)
+
+    entry2      = None
+    qty_raw_2   = data.get('qty_2')
+    unit_id_2   = data.get('unit_id_2')
+    entered_qty_2 = 0
+    if qty_raw_2 is not None and unit_id_2 is not None:
+        try:
+            entered_qty_2 = float(qty_raw_2)
+        except (ValueError, TypeError):
+            entered_qty_2 = 0
+        if entered_qty_2 > 0:
+            multiplier_2    = item.get_multiplier(int(unit_id_2))
+            entry2 = InventoryCount(
+                item_id          = item.id,
+                session_id       = inv_session.id,
+                quantity         = entered_qty_2 * multiplier_2,
+                entered_quantity = entered_qty_2,
+                entered_unit_id  = int(unit_id_2),
+                count_date       = count_date_obj,
+                month            = month,
+                year             = year,
+                user_id          = current_user.id,
+                notes            = notes or None,
+            )
+            db.session.add(entry2)
+
     db.session.commit()
 
     # Aggregate total for this item within the session (primary grouping: session_id)
@@ -455,6 +481,28 @@ def count_entry():
     allowed_units = [{'id': c.unit_id, 'name': c.unit.name_ar} for c in item.conversions]
     if not allowed_units:
         allowed_units = [{'id': item.effective_base_unit_id, 'name': item.effective_base_unit.name_ar}]
+
+    entry2_data = None
+    if entry2:
+        entered_unit_2 = Unit.query.get(int(unit_id_2))
+        entry2_data = {
+            'ok':              True,
+            'entry_id':        entry2.id,
+            'session_id':      inv_session.id,
+            'session_name':    inv_session.name,
+            'session_type':    inv_session.session_type,
+            'total_base':      total_base,
+            'base_unit':       item.effective_base_unit.name_ar,
+            'entry_count':     len(all_entries),
+            'entered_qty':     entered_qty_2,
+            'entered_unit':    entered_unit_2.name_ar if entered_unit_2 else '',
+            'entered_unit_id': int(unit_id_2),
+            'item_name':       item.name_ar,
+            'user_name':       current_user.full_name,
+            'time':            entry2.created_at.strftime('%H:%M') if entry2.created_at else '',
+            'notes':           notes,
+            'allowed_units':   allowed_units,
+        }
 
     return jsonify({
         'ok':              True,
@@ -473,6 +521,7 @@ def count_entry():
         'time':            entry.created_at.strftime('%H:%M') if entry.created_at else '',
         'notes':           notes,
         'allowed_units':   allowed_units,
+        'entry_2':         entry2_data,
     })
 
 
