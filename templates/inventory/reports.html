@@ -145,6 +145,31 @@
         <hr>
     </div>
 
+    <!-- Inline search (date-range view only) -->
+    {% if grouped and not active_session %}
+    <style>
+      #rpt-search::placeholder { color: rgba(255,255,255,.5); }
+      .rpt-dt thead th[data-col]:not([data-col="idx"]) { cursor:pointer; user-select:none; white-space:nowrap; }
+      .rpt-dt thead th[data-col]:not([data-col="idx"]):hover { background:rgba(0,0,0,.06); }
+      .rpt-arr { font-size:.65em; opacity:.75; }
+    </style>
+    <div class="no-print mb-3"
+         style="background:var(--brand-olive);border-radius:12px;display:flex;align-items:center;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.12);">
+      <span style="padding:0 14px;color:#fff;font-size:.95rem;flex-shrink:0;">
+        <i class="bi bi-search"></i>
+      </span>
+      <input type="search" id="rpt-search"
+             placeholder="ابحث بالكود أو الصنف..."
+             autocomplete="off"
+             style="flex:1;background:transparent;border:none;outline:none;color:#fff;font-size:.95rem;padding:11px 0;caret-color:#fff;">
+      <button id="rpt-search-clear" type="button"
+              style="background:none;border:none;color:rgba(255,255,255,.55);padding:8px 14px;font-size:.95rem;cursor:pointer;display:none;"
+              title="مسح">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+    {% endif %}
+
     <!-- Results -->
     {% if grouped %}
         {% for dept_name, rows in grouped.items() %}
@@ -282,18 +307,18 @@
             {% else %}
             {# ── Date-range view: original aggregated table ── #}
             <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
+                <table class="table table-hover align-middle mb-0 rpt-dt">
                     <thead>
                         <tr>
-                            <th>#</th>
+                            <th data-col="idx">#</th>
                             {% if current_user.is_manager %}
-                            <th>الكود</th>
+                            <th data-col="sku">الكود</th>
                             {% endif %}
-                            <th>الصنف</th>
-                            <th>ملاحظة التغليف</th>
-                            <th class="text-center">إجمالي الكمية</th>
-                            <th class="text-center">الوحدة الأساسية</th>
-                            <th class="text-center">عدد الإدخالات</th>
+                            <th data-col="name">الصنف</th>
+                            <th data-col="note">ملاحظة التغليف</th>
+                            <th class="text-center" data-col="qty" data-type="num">إجمالي الكمية</th>
+                            <th class="text-center" data-col="unit">الوحدة الأساسية</th>
+                            <th class="text-center" data-col="cnt" data-type="num">عدد الإدخالات</th>
                             <th class="no-print">تفاصيل</th>
                         </tr>
                     </thead>
@@ -305,7 +330,7 @@
                         <tr{% if row.low_stock %} style="background:rgba(255,193,7,0.1);"{% endif %}>
                             <td class="text-muted small">{{ loop.index }}</td>
                             {% if current_user.is_manager %}
-                            <td>
+                            <td data-search="1">
                                 {% if item.item_code %}
                                 <span class="badge"
                                       style="background:var(--brand-olive);font-family:monospace;font-size:.72rem;">
@@ -316,14 +341,14 @@
                                 {% endif %}
                             </td>
                             {% endif %}
-                            <td class="fw-semibold">{{ item.name_ar }}</td>
+                            <td class="fw-semibold" data-search="1">{{ item.name_ar }}</td>
                             <td class="text-muted small">
                                 {% if item.packaging_note %}
                                 <i class="bi bi-tag me-1"
                                    style="color:var(--brand-orange);"></i>{{ item.packaging_note }}
                                 {% else %}—{% endif %}
                             </td>
-                            <td class="text-center">
+                            <td class="text-center" data-val="{{ total if total else 0 }}">
                                 <span class="fw-bold"
                                       style="color:{% if row.low_stock %}#dc3545{% else %}var(--brand-orange){% endif %};">
                                     {{ total | int if total == total | int else total | round(3) }}
@@ -414,6 +439,121 @@
 </div>
 
 <script>
+/* ── Client-side sort + filter for date-range report tables ─────────────── */
+(function () {
+  'use strict';
+
+  /* Collect [mainRow, detailRow|null] pairs from a tbody.
+     Detail rows are Bootstrap collapse rows (.collapse) that immediately
+     follow their parent — they must travel with it during sort. */
+  function getRowPairs(tbody) {
+    const all = Array.from(tbody.rows);
+    const pairs = [];
+    let i = 0;
+    while (i < all.length) {
+      const row = all[i];
+      if (row.classList.contains('collapse')) { i++; continue; }
+      const next   = all[i + 1];
+      const detail = next && next.classList.contains('collapse') ? next : null;
+      pairs.push([row, detail]);
+      i += detail ? 2 : 1;
+    }
+    return pairs;
+  }
+
+  /* Extract the sort value for a cell: use data-val if present, else trimmed
+     textContent.  Numeric columns return a float; text columns a lowercase string. */
+  function cellVal(row, colIdx, isNum) {
+    const cell = row.cells[colIdx];
+    if (!cell) return isNum ? -Infinity : '';
+    const raw = cell.dataset.val !== undefined
+      ? cell.dataset.val
+      : cell.textContent.replace(/\s+/g, ' ').trim();
+    if (isNum) { const n = parseFloat(raw); return isNaN(n) ? -Infinity : n; }
+    return raw.toLowerCase();
+  }
+
+  /* Per-table sort state */
+  const sortState = new WeakMap();  // table → {colIdx, dir}
+
+  /* Wire sort clicks */
+  document.querySelectorAll('.rpt-dt thead th[data-col]').forEach(th => {
+    if (th.dataset.col === 'idx') return;
+
+    th.addEventListener('click', function () {
+      const table   = th.closest('table');
+      const headers = Array.from(table.querySelectorAll('thead th'));
+      const colIdx  = headers.indexOf(th);
+      const isNum   = th.dataset.type === 'num';
+      const cur     = sortState.get(table);
+      const dir     = (cur && cur.colIdx === colIdx) ? -cur.dir : 1;
+
+      sortState.set(table, { colIdx, dir });
+
+      /* Update arrow indicator */
+      headers.forEach(h => { const a = h.querySelector('.rpt-arr'); if (a) a.remove(); });
+      const arrow = document.createElement('span');
+      arrow.className   = 'rpt-arr';
+      arrow.textContent = dir === 1 ? ' ▲' : ' ▼';
+      th.appendChild(arrow);
+
+      /* Sort row pairs */
+      const tbody = table.querySelector('tbody');
+      const pairs = getRowPairs(tbody);
+      pairs.sort((a, b) => {
+        const av = cellVal(a[0], colIdx, isNum);
+        const bv = cellVal(b[0], colIdx, isNum);
+        return av < bv ? -dir : av > bv ? dir : 0;
+      });
+
+      /* Re-insert sorted pairs + renumber # column */
+      const frag = document.createDocumentFragment();
+      pairs.forEach(([main, detail], idx) => {
+        if (main.cells[0]) main.cells[0].textContent = idx + 1;
+        frag.appendChild(main);
+        if (detail) frag.appendChild(detail);
+      });
+      tbody.appendChild(frag);
+
+      /* Re-apply any active search filter */
+      const q = (document.getElementById('rpt-search') || {}).value || '';
+      if (q.trim()) applyFilter(q.trim().toLowerCase());
+    });
+  });
+
+  /* ── Search ─────────────────────────────────────────────────────────── */
+  function applyFilter(q) {
+    document.querySelectorAll('.rpt-dt').forEach(table => {
+      const pairs = getRowPairs(table.querySelector('tbody'));
+      pairs.forEach(([main, detail]) => {
+        const text = Array.from(main.querySelectorAll('[data-search]'))
+                         .map(c => c.textContent).join(' ').toLowerCase();
+        const show = !q || text.includes(q);
+        main.style.display          = show ? '' : 'none';
+        if (detail) detail.style.display = show ? '' : 'none';
+      });
+    });
+  }
+
+  const searchInput = document.getElementById('rpt-search');
+  const searchClear = document.getElementById('rpt-search-clear');
+
+  if (searchInput) {
+    searchInput.addEventListener('input', function () {
+      const q = this.value.trim().toLowerCase();
+      if (searchClear) searchClear.style.display = q ? '' : 'none';
+      applyFilter(q);
+    });
+  }
+  if (searchClear) {
+    searchClear.addEventListener('click', function () {
+      if (searchInput) { searchInput.value = ''; searchInput.focus(); }
+      this.style.display = 'none';
+      applyFilter('');
+    });
+  }
+})();
+
 function onSessionChange(select) {
     const val          = select.value;
     const dateFromWrap = document.getElementById('date-from-wrap');
