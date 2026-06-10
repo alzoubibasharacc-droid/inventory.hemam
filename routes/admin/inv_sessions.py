@@ -2,7 +2,7 @@ from flask import render_template, request, redirect, url_for, flash, jsonify
 from flask_login import current_user
 from sqlalchemy import func, distinct
 from sqlalchemy.orm import joinedload
-from models import db, InventorySession, Branch, Department, Item, InventoryCount, SessionDepartment, SessionAuditLog
+from models import db, InventorySession, Branch, Department, Item, InventoryCount, SessionDepartment, SessionAuditLog, SessionItem
 from utils.decorators import admin_required
 from routes.admin import admin_bp
 from datetime import date
@@ -174,11 +174,7 @@ def inv_sessions_kanban():
 
     session_ids = [s.id for s in sessions]
 
-    # Bulk-fetch counted distinct items per session — restricted to the
-    # session's assigned departments via session_departments join.
-    # Without this join, items from non-assigned departments (possible when
-    # an admin counts without dept restriction) would inflate `counted`
-    # beyond `total`, producing progress > 100% or false positives.
+    # Bulk-fetch counted distinct items per session (active entries only)
     counted_rows = (
         db.session.query(
             InventoryCount.session_id,
@@ -189,24 +185,23 @@ def inv_sessions_kanban():
             SessionDepartment.session_id   == InventoryCount.session_id,
             SessionDepartment.department_id == Item.department_id,
         ))
-        .filter(InventoryCount.session_id.in_(session_ids))
+        .filter(
+            InventoryCount.session_id.in_(session_ids),
+            InventoryCount.status == 'active',
+        )
         .group_by(InventoryCount.session_id)
         .all()
     ) if session_ids else []
     counted_map = {r[0]: r[1] for r in counted_rows}
 
-    # Bulk-fetch total active items per session via session_departments — one query
+    # Bulk-fetch total items per session from immutable snapshot
     total_rows = (
         db.session.query(
-            SessionDepartment.session_id,
-            func.count(distinct(Item.id)),
+            SessionItem.session_id,
+            func.count(distinct(SessionItem.item_id)),
         )
-        .join(Item, Item.department_id == SessionDepartment.department_id)
-        .filter(
-            SessionDepartment.session_id.in_(session_ids),
-            Item.is_active == True,
-        )
-        .group_by(SessionDepartment.session_id)
+        .filter(SessionItem.session_id.in_(session_ids))
+        .group_by(SessionItem.session_id)
         .all()
     ) if session_ids else []
     total_map = {r[0]: r[1] for r in total_rows}
@@ -372,6 +367,23 @@ def inv_session_create():
                 department_id=dept_id,
             ))
 
+        # Snapshot: record all active items in scope at creation time
+        items_in_scope = (
+            Item.query
+            .filter(
+                Item.department_id.in_(dept_ids),
+                Item.is_active == True,
+            )
+            .with_entities(Item.id, Item.department_id)
+            .all()
+        )
+        for item_id, dept_id in items_in_scope:
+            db.session.add(SessionItem(
+                session_id=inv_session.id,
+                item_id=item_id,
+                department_id=dept_id,
+            ))
+
         db.session.commit()
         flash(f'تم إنشاء جلسة "{inv_session.name}" بنجاح', 'success')
         return redirect(url_for('admin.inv_session_detail', session_id=inv_session.id))
@@ -437,6 +449,8 @@ def inv_session_edit(session_id):
 
             existing_ids = {sd.department_id for sd in inv_session.session_departments}
             new_ids      = set(dept_ids)
+            removed_ids  = existing_ids - new_ids
+            added_ids    = new_ids - existing_ids
 
             # Remove de-selected departments
             for sd in list(inv_session.session_departments):
@@ -444,11 +458,40 @@ def inv_session_edit(session_id):
                     db.session.delete(sd)
 
             # Add newly selected departments
-            for dept_id in new_ids - existing_ids:
+            for dept_id in added_ids:
                 db.session.add(SessionDepartment(
                     session_id=inv_session.id,
                     department_id=dept_id,
                 ))
+
+            # Sync snapshot for draft sessions only (snapshot is locked once active)
+            if inv_session.status == 'draft':
+                if removed_ids:
+                    SessionItem.query.filter(
+                        SessionItem.session_id == inv_session.id,
+                        SessionItem.department_id.in_(removed_ids),
+                    ).delete(synchronize_session=False)
+                if added_ids:
+                    new_items = (
+                        Item.query
+                        .filter(
+                            Item.department_id.in_(added_ids),
+                            Item.is_active == True,
+                        )
+                        .with_entities(Item.id, Item.department_id)
+                        .all()
+                    )
+                    for item_id, dept_id in new_items:
+                        exists = SessionItem.query.filter_by(
+                            session_id=inv_session.id,
+                            item_id=item_id,
+                        ).first()
+                        if not exists:
+                            db.session.add(SessionItem(
+                                session_id=inv_session.id,
+                                item_id=item_id,
+                                department_id=dept_id,
+                            ))
 
         db.session.commit()
         flash('تم حفظ التعديلات بنجاح', 'success')
@@ -530,14 +573,10 @@ def inv_session_control(session_id):
 
     session_dept_ids = [sd.department_id for sd in inv_session.session_departments]
 
-    # ── KPI: total active items across session departments ────────────────────
+    # ── KPI: total items from immutable snapshot ──────────────────────────────
     total_items = (
-        db.session.query(func.count(distinct(Item.id)))
-        .join(SessionDepartment, SessionDepartment.department_id == Item.department_id)
-        .filter(
-            SessionDepartment.session_id == session_id,
-            Item.is_active == True,
-        )
+        db.session.query(func.count(distinct(SessionItem.item_id)))
+        .filter(SessionItem.session_id == session_id)
         .scalar()
     ) or 0
 
@@ -560,8 +599,15 @@ def inv_session_control(session_id):
     # ── Per-department stats ──────────────────────────────────────────────────
     dept_stats = []
     for sd in inv_session.session_departments:
-        dept        = sd.department
-        dept_total  = Item.query.filter_by(department_id=dept.id, is_active=True).count()
+        dept       = sd.department
+        dept_total = (
+            db.session.query(func.count(distinct(SessionItem.item_id)))
+            .filter(
+                SessionItem.session_id    == session_id,
+                SessionItem.department_id == dept.id,
+            )
+            .scalar()
+        ) or 0
         dept_counted = (
             db.session.query(func.count(distinct(InventoryCount.item_id)))
             .join(Item, Item.id == InventoryCount.item_id)
@@ -632,12 +678,22 @@ def inv_session_dept_report(session_id, dept_id):
         session_id=session_id, department_id=dept_id
     ).first_or_404()
 
-    items    = (
+    # Items from immutable snapshot — not live is_active query
+    snap_ids = [
+        r[0] for r in
+        db.session.query(SessionItem.item_id)
+        .filter(
+            SessionItem.session_id    == session_id,
+            SessionItem.department_id == dept_id,
+        )
+        .all()
+    ]
+    items = (
         Item.query
-        .filter_by(department_id=dept_id, is_active=True)
+        .filter(Item.id.in_(snap_ids))
         .order_by(Item.name_ar)
         .all()
-    )
+    ) if snap_ids else []
     item_ids = [i.id for i in items]
 
     entries = (

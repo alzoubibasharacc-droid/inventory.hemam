@@ -4,7 +4,7 @@ from sqlalchemy import func, distinct
 from sqlalchemy.orm import joinedload
 from models import (
     db, Department, Item, InventoryCount, InventorySession,
-    SessionDepartment, SessionAuditLog,
+    SessionDepartment, SessionAuditLog, SessionItem,
 )
 from utils.decorators import admin_required
 from routes.admin import admin_bp
@@ -54,7 +54,7 @@ def sessions():
 
     session_ids = [s.id for s in inv_sessions]
 
-    # Bulk: counted distinct items per session, scoped to session's departments
+    # Bulk: counted distinct items per session (active entries only)
     counted_rows = (
         db.session.query(
             InventoryCount.session_id,
@@ -65,24 +65,23 @@ def sessions():
             SessionDepartment.session_id    == InventoryCount.session_id,
             SessionDepartment.department_id == Item.department_id,
         ))
-        .filter(InventoryCount.session_id.in_(session_ids))
+        .filter(
+            InventoryCount.session_id.in_(session_ids),
+            InventoryCount.status == 'active',
+        )
         .group_by(InventoryCount.session_id)
         .all()
     ) if session_ids else []
     counted_map = {r[0]: r[1] for r in counted_rows}
 
-    # Bulk: total active items per session via session_departments
+    # Bulk: total items per session from immutable snapshot
     total_rows = (
         db.session.query(
-            SessionDepartment.session_id,
-            func.count(distinct(Item.id)),
+            SessionItem.session_id,
+            func.count(distinct(SessionItem.item_id)),
         )
-        .join(Item, Item.department_id == SessionDepartment.department_id)
-        .filter(
-            SessionDepartment.session_id.in_(session_ids),
-            Item.is_active == True,
-        )
-        .group_by(SessionDepartment.session_id)
+        .filter(SessionItem.session_id.in_(session_ids))
+        .group_by(SessionItem.session_id)
         .all()
     ) if session_ids else []
     total_map = {r[0]: r[1] for r in total_rows}
@@ -104,7 +103,10 @@ def sessions():
             'counted': counted,
             'pct':     pct,
         }
-        if counted == 0:
+        # DB completed status always overrides progress computation
+        if s.status == 'completed':
+            completed.append(card)
+        elif counted == 0:
             not_started.append(card)
         elif counted >= total:
             completed.append(card)
@@ -136,30 +138,28 @@ def session_detail(session_id):
         .filter_by(id=session_id)
         .first_or_404()
     )
-    branch   = inv_session.branch
-    dept_ids = [sd.department_id for sd in inv_session.session_departments]
+    branch = inv_session.branch
 
-    items_and_depts = (
-        db.session.query(Item, Department)
-        .join(Department, Item.department_id == Department.id)
-        .filter(
-            Item.department_id.in_(dept_ids),
-            Item.is_active == True,
-        )
+    # ── Item list from immutable snapshot ────────────────────────────────────
+    snapshot_rows = (
+        db.session.query(SessionItem, Item, Department)
+        .join(Item, Item.id == SessionItem.item_id)
+        .join(Department, Department.id == SessionItem.department_id)
+        .filter(SessionItem.session_id == session_id)
         .order_by(Department.name_ar, Item.name_ar)
         .all()
-    ) if dept_ids else []
+    )
 
+    # ── Active count entries only (withdrawn entries excluded from all logic) ─
     all_entries = (
         db.session.query(InventoryCount)
-        .join(Item, InventoryCount.item_id == Item.id)
         .filter(
             InventoryCount.session_id == session_id,
-            Item.department_id.in_(dept_ids),
+            InventoryCount.status == 'active',
         )
         .order_by(InventoryCount.created_at.desc())
         .all()
-    ) if dept_ids else []
+    ) if snapshot_rows else []
 
     item_latest = {}
     item_count  = {}
@@ -172,7 +172,7 @@ def session_detail(session_id):
     dept_order = []
     total_items = counted_items = 0
 
-    for item, dept in items_and_depts:
+    for si, item, dept in snapshot_rows:
         total_items += 1
         latest     = item_latest.get(item.id)
         is_counted = latest is not None
@@ -194,7 +194,11 @@ def session_detail(session_id):
         })
 
     pct = int(counted_items / total_items * 100) if total_items else 0
-    if counted_items == 0:
+
+    # Single source of truth: DB lifecycle status always overrides for terminal states
+    if inv_session.status in ('completed', 'archived'):
+        status = 'completed'
+    elif counted_items == 0:
         status = 'not_started'
     elif counted_items >= total_items:
         status = 'completed'

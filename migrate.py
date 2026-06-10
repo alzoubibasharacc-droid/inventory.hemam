@@ -774,6 +774,103 @@ def run_v10(conn):
     print('  + created session_audit_log table')
 
 
+def run_v12(conn):
+    """
+    v12: session_items — immutable item snapshot per session.
+
+    Steps (idempotent):
+      1. Create session_items table with UNIQUE(session_id, item_id).
+      2. Backfill from inventory_counts (preserves deactivated items).
+      3. Backfill active items in session_departments (uncounted items).
+    """
+    sqlite = _is_sqlite(conn)
+
+    if not _table_exists(conn, 'session_items'):
+        if sqlite:
+            conn.execute(db.text('''
+                CREATE TABLE session_items (
+                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id     INTEGER NOT NULL
+                                   REFERENCES inventory_sessions(id) ON DELETE CASCADE,
+                    item_id        INTEGER NOT NULL
+                                   REFERENCES items(id) ON DELETE CASCADE,
+                    department_id  INTEGER NOT NULL REFERENCES departments(id),
+                    snapshotted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(session_id, item_id)
+                )
+            '''))
+        else:
+            conn.execute(db.text('''
+                CREATE TABLE session_items (
+                    id             SERIAL PRIMARY KEY,
+                    session_id     INTEGER NOT NULL
+                                   REFERENCES inventory_sessions(id) ON DELETE CASCADE,
+                    item_id        INTEGER NOT NULL
+                                   REFERENCES items(id) ON DELETE CASCADE,
+                    department_id  INTEGER NOT NULL REFERENCES departments(id),
+                    snapshotted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(session_id, item_id)
+                )
+            '''))
+        print('  + session_items table created')
+    else:
+        print('  = session_items table already exists')
+
+    if not index_exists(conn, 'ix_session_items_session_id'):
+        conn.execute(db.text(
+            'CREATE INDEX ix_session_items_session_id ON session_items(session_id)'
+        ))
+        print('  + ix_session_items_session_id')
+    else:
+        print('  = ix_session_items_session_id already exists')
+
+    if not index_exists(conn, 'ix_session_items_dept'):
+        conn.execute(db.text(
+            'CREATE INDEX ix_session_items_dept ON session_items(session_id, department_id)'
+        ))
+        print('  + ix_session_items_dept')
+    else:
+        print('  = ix_session_items_dept already exists')
+
+    # Backfill pass 1: items that were actually counted (even if now deactivated)
+    if sqlite:
+        conn.execute(db.text('''
+            INSERT OR IGNORE INTO session_items
+                (session_id, item_id, department_id, snapshotted_at)
+            SELECT DISTINCT ic.session_id, ic.item_id, i.department_id, CURRENT_TIMESTAMP
+            FROM inventory_counts ic
+            JOIN items i ON i.id = ic.item_id
+        '''))
+        # Backfill pass 2: active items in session departments (uncounted items)
+        conn.execute(db.text('''
+            INSERT OR IGNORE INTO session_items
+                (session_id, item_id, department_id, snapshotted_at)
+            SELECT DISTINCT sd.session_id, i.id, i.department_id, CURRENT_TIMESTAMP
+            FROM session_departments sd
+            JOIN items i ON i.department_id = sd.department_id
+            WHERE i.is_active = 1
+        '''))
+    else:
+        conn.execute(db.text('''
+            INSERT INTO session_items (session_id, item_id, department_id, snapshotted_at)
+            SELECT DISTINCT ic.session_id, ic.item_id, i.department_id, CURRENT_TIMESTAMP
+            FROM inventory_counts ic
+            JOIN items i ON i.id = ic.item_id
+            ON CONFLICT (session_id, item_id) DO NOTHING
+        '''))
+        conn.execute(db.text('''
+            INSERT INTO session_items (session_id, item_id, department_id, snapshotted_at)
+            SELECT DISTINCT sd.session_id, i.id, i.department_id, CURRENT_TIMESTAMP
+            FROM session_departments sd
+            JOIN items i ON i.department_id = sd.department_id
+            WHERE i.is_active = TRUE
+            ON CONFLICT (session_id, item_id) DO NOTHING
+        '''))
+
+    n = conn.execute(db.text('SELECT COUNT(*) FROM session_items')).fetchone()[0]
+    print(f'  + session_items contains {n} rows after backfill')
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def run():
@@ -813,6 +910,9 @@ def run():
 
             print('\n-- v11 (Control Center: count status, audit action_type, revision_number) --')
             run_v11(conn)
+
+            print('\n-- v12 (session_items: immutable item snapshot per session) --')
+            run_v12(conn)
 
             trans.commit()
             print('\nMigration complete.\n')

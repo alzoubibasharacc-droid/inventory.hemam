@@ -300,6 +300,40 @@ class SessionDepartment(db.Model):
     )
 
 
+class SessionItem(db.Model):
+    """
+    Immutable snapshot of items in scope when a session was created.
+    Populated once at creation; never mutated after that.
+    Provides a fixed total_items baseline that does not change when items are
+    added, removed, or deactivated after the session was created.
+    """
+    __tablename__ = 'session_items'
+
+    id            = db.Column(db.Integer, primary_key=True)
+    session_id    = db.Column(
+        db.Integer,
+        db.ForeignKey('inventory_sessions.id', ondelete='CASCADE'),
+        nullable=False,
+    )
+    item_id       = db.Column(
+        db.Integer,
+        db.ForeignKey('items.id', ondelete='CASCADE'),
+        nullable=False,
+    )
+    department_id = db.Column(
+        db.Integer,
+        db.ForeignKey('departments.id'),
+        nullable=False,
+    )
+    snapshotted_at = db.Column(db.DateTime, nullable=False, default=_now)
+
+    __table_args__ = (
+        db.UniqueConstraint('session_id', 'item_id', name='uq_session_item'),
+        db.Index('ix_session_items_session_id', 'session_id'),
+        db.Index('ix_session_items_dept', 'session_id', 'department_id'),
+    )
+
+
 class InventoryCount(db.Model):
     """
     Each row is ONE count entry (employees may add multiple per item per month).
