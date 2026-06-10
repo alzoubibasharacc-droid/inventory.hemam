@@ -49,9 +49,11 @@ def _build_entry_query(branch_id, dept_id, user_id, date_from, date_to, session_
         .join(Item, InventoryCount.item_id == Item.id)
         .join(Department, Item.department_id == Department.id)
         .options(
-            joinedload(InventoryCount.item)
-            .joinedload(Item.department)
-            .joinedload(Department.branch),
+            joinedload(InventoryCount.item).options(
+                joinedload(Item.department).joinedload(Department.branch),
+                joinedload(Item.base_unit),
+                joinedload(Item.unit),
+            ),
             joinedload(InventoryCount.user),
             joinedload(InventoryCount.entered_unit),
         )
