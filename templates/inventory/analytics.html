@@ -1,122 +1,166 @@
 {% extends 'base.html' %}
-{% block title %}تحليل الجرد - همم{% endblock %}
+{% block title %}تحليل حركة الجرد — همم{% endblock %}
 
 {%- macro fmtnum(n) -%}
-  {%- if n == n | int -%}{{ n | int }}{%- else -%}{{ n | round(3) }}{%- endif -%}
+  {%- if not n -%}0{%- elif n == n | int -%}{{ n | int }}{%- else -%}{{ n | round(3) }}{%- endif -%}
 {%- endmacro -%}
 
-{% block content %}
+{% block extra_css %}
 <style>
-/* ── Analytics page styles ──────────────────────────────────────────── */
+/* ── KPI strip ──────────────────────────────────────────────────────────── */
+.kpi-card {
+  border-radius: 14px;
+  padding: 16px 20px;
+  background: #fff;
+  box-shadow: 0 1px 6px rgba(0,0,0,.07);
+  display: flex; align-items: center; gap: 14px;
+}
+.kpi-icon {
+  width: 46px; height: 46px; border-radius: 12px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: 1.3rem;
+}
+.kpi-value { font-size: 1.6rem; font-weight: 800; line-height: 1.1; }
+.kpi-label { font-size: 0.73rem; color: #888; margin-top: 2px; }
+
+/* ── Sticky filter bar ──────────────────────────────────────────────────── */
+.filter-bar-sticky {
+  position: sticky; top: 56px; z-index: 100;
+}
+.filter-bar-sticky .card {
+  border: none; box-shadow: 0 2px 10px rgba(0,0,0,.09);
+}
+
+/* ── Quick filter chips ─────────────────────────────────────────────────── */
+.qf-chip {
+  border: 1.5px solid #dee2e6; background: #fff; border-radius: 50px;
+  padding: 4px 14px; font-size: .8rem; font-weight: 600; cursor: pointer;
+  transition: all .15s; white-space: nowrap; color: #555;
+}
+.qf-chip:hover { border-color: #adb5bd; background: #f8f9fa; }
+.qf-chip.active { background: var(--brand-olive); border-color: var(--brand-olive); color: #fff; }
+.qf-chip .qf-badge {
+  background: rgba(255,255,255,.25); border-radius: 50px;
+  padding: 1px 7px; font-size: .72rem; margin-right: 4px;
+  font-weight: 700;
+}
+.qf-chip:not(.active) .qf-badge {
+  background: #e9ecef; color: #666;
+}
+
+/* ── Analytics table ────────────────────────────────────────────────────── */
 .analytics-table th {
-    font-size: 0.78rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: .04em;
-    color: var(--brand-olive);
-    white-space: nowrap;
-    padding: 10px 12px;
+  font-size: 0.73rem; font-weight: 700; white-space: nowrap;
+  color: var(--brand-olive); padding: 10px 12px;
 }
-.analytics-table td { padding: 10px 12px; font-size: 0.88rem; vertical-align: middle; }
+.analytics-table td { padding: 9px 12px; font-size: .87rem; vertical-align: middle; }
+.analytics-table tbody tr.item-row { cursor: pointer; transition: background .1s; }
+.analytics-table tbody tr.item-row:hover { background: rgba(75,89,71,.05) !important; }
 
-/* Movement badges */
-.mv-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
-    font-size: 0.8rem;
-    font-weight: 700;
-    border-radius: 20px;
-    padding: 3px 10px;
-    white-space: nowrap;
+/* Status badges */
+.status-badge {
+  font-size: .7rem; font-weight: 700; border-radius: 50px;
+  padding: 3px 10px; white-space: nowrap;
 }
-.mv-up   { background: rgba(25,135,84,0.12);  color: #198754; }
-.mv-down { background: rgba(220,53,69,0.12);  color: #dc3545; }
-.mv-flat { background: rgba(108,117,125,0.1); color: #6c757d; }
+.sb-needs-review { background: rgba(255,193,7,.15);  color: #a07700; border: 1px solid rgba(255,193,7,.4); }
+.sb-modified      { background: rgba(253,126,20,.12); color: #c05500; border: 1px solid rgba(253,126,20,.35); }
+.sb-counted       { background: rgba(25,135,84,.1);   color: #166d3e; border: 1px solid rgba(25,135,84,.3); }
 
-/* Subtle row tints */
-.row-up   { background: rgba(25,135,84,0.03);  }
-.row-down { background: rgba(220,53,69,0.03); }
-.row-low  { background: rgba(255,193,7,0.08);  }
+/* Diff column */
+.diff-cell { font-size: .95rem; font-weight: 800; white-space: nowrap; }
+.diff-pos  { color: #198754; }
+.diff-neg  { color: #dc3545; }
+.diff-zero { color: #adb5bd; font-weight: 400; }
 
-/* Summary stat cards */
-.summary-stat {
-    background: #fff;
-    border-radius: 14px;
-    padding: 16px 20px;
-    box-shadow: 0 1px 6px rgba(0,0,0,0.07);
-    display: flex;
-    align-items: center;
-    gap: 14px;
+/* Row tints — lower specificity than hover */
+.row-low  { background: rgba(255,193,7,.07); }
+.row-down { background: rgba(220,53,69,.03); }
+.row-up   { background: rgba(25,135,84,.03); }
+
+/* Date sub-line in cells */
+.date-sub { font-size: .7rem; color: #adb5bd; margin-top: 1px; }
+
+/* ── Item detail offcanvas ──────────────────────────────────────────────── */
+.item-drawer-header {
+  background: linear-gradient(135deg, var(--brand-olive), #3d4f3a);
+  color: #fff; padding: 18px 20px;
 }
-.summary-stat .ss-icon {
-    width: 44px; height: 44px;
-    border-radius: 12px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 1.3rem;
-    flex-shrink: 0;
+.drawer-stat { text-align: center; flex: 1; padding: 12px 8px; }
+.drawer-stat .ds-val { font-size: 1.3rem; font-weight: 800; }
+.drawer-stat .ds-lbl { font-size: .68rem; color: #888; margin-top: 2px; }
+
+/* Timeline */
+.timeline-item { display: flex; gap: 12px; margin-bottom: 16px; }
+.tl-dot {
+  width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: .75rem;
+  margin-top: 2px;
 }
-.summary-stat .ss-value { font-size: 1.5rem; font-weight: 800; line-height: 1.1; }
-.summary-stat .ss-label { font-size: 0.75rem; color: #888; margin-top: 1px; }
+.tl-dot-active    { background: rgba(25,135,84,.15);  color: #198754; }
+.tl-dot-withdrawn { background: rgba(220,53,69,.12);  color: #dc3545; }
+.tl-dot-first     { background: rgba(75,89,71,.15);   color: var(--brand-olive); }
+.tl-body { flex: 1; }
+.tl-time  { font-size: .7rem; color: #adb5bd; }
+.tl-qty   { font-size: 1rem; font-weight: 700; margin: 1px 0 2px; }
+.tl-user  { font-size: .75rem; color: #666; }
+.tl-note  { font-size: .73rem; color: #888; font-style: italic; margin-top: 2px; }
+.tl-line  { width: 2px; background: #e9ecef; margin: 0 auto; height: 14px; }
 
-/* Date sub-display in cells */
-.date-sub { font-size: 0.72rem; color: #9aaa9a; margin-top: 1px; }
-
-/* Filter card header */
-.filter-header {
-    font-size: 0.75rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: .05em;
-    color: var(--brand-olive);
-    margin-bottom: 10px;
+/* ── Dept group card header ─────────────────────────────────────────────── */
+.dept-group .card-header {
+  background: var(--brand-olive); color: #fff;
+}
+.dept-group .group-count-badge {
+  background: rgba(255,255,255,.25); color: #fff;
+  font-size: .73rem; border-radius: 50px; padding: 2px 10px;
 }
 
-/* Print overrides */
+/* ── Progress bar card ──────────────────────────────────────────────────── */
+.progress-card { border: none; box-shadow: 0 1px 6px rgba(0,0,0,.07); border-radius: 14px; }
+
 @media print {
-    .no-print { display: none !important; }
-    .analytics-table td, .analytics-table th { font-size: 0.75rem; padding: 6px 8px; }
+  .no-print { display: none !important; }
+  .analytics-table td, .analytics-table th { font-size: .76rem; padding: 6px 8px; }
 }
-
 @media (max-width: 768px) {
-    .analytics-table th, .analytics-table td { font-size: 0.78rem; padding: 8px 8px; }
-    .summary-stat { padding: 12px 14px; }
-    .summary-stat .ss-value { font-size: 1.25rem; }
+  .analytics-table th, .analytics-table td { font-size: .78rem; padding: 7px 8px; }
+  .kpi-card { padding: 12px 14px; }
+  .kpi-value { font-size: 1.3rem; }
 }
 </style>
+{% endblock %}
 
-<div class="container-fluid">
+{% block content %}
+<div class="container-fluid px-3 px-lg-4">
 
-  <!-- ── Page header ──────────────────────────────────────────────────── -->
-  <div class="section-header mb-4">
-    <div class="section-icon"><i class="bi bi-graph-up-arrow"></i></div>
-    <div>
-      <h4 class="mb-0">تحليل حركة الجرد</h4>
-      <p class="text-muted mb-0 small">
-        {{ date_from }} — {{ date_to }}
-        {% if selected_branch %}
-          · <span style="color:var(--brand-orange);">فرع محدد</span>
-        {% endif %}
-      </p>
+  <!-- ── Page Header ──────────────────────────────────────────────────────── -->
+  <div class="d-flex align-items-start justify-content-between mb-4 flex-wrap gap-3">
+    <div class="d-flex align-items-center gap-3">
+      <div class="section-icon"><i class="bi bi-graph-up-arrow"></i></div>
+      <div>
+        <h4 class="mb-1">تحليل حركة الجرد</h4>
+        <p class="text-muted mb-0 small">
+          {{ date_from }} — {{ date_to }}
+          {% if selected_branch %} · <span style="color:var(--brand-orange);">فرع محدد</span>{% endif %}
+        </p>
+      </div>
     </div>
-    <div class="d-flex gap-2 ms-auto no-print">
+    <div class="d-flex gap-2 flex-wrap no-print">
       <button onclick="window.print()" class="btn btn-outline-secondary btn-sm">
         <i class="bi bi-printer me-1"></i>طباعة
       </button>
       {% if current_user.is_manager %}
       <div class="dropdown">
         <button class="btn btn-success btn-sm dropdown-toggle" type="button"
-                id="exportDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                id="exportDropdown" data-bs-toggle="dropdown">
           <i class="bi bi-download me-1"></i>تصدير
         </button>
-        <ul class="dropdown-menu" aria-labelledby="exportDropdown">
+        <ul class="dropdown-menu">
           <li>
             <a class="dropdown-item" id="excelExportLink"
                href="{{ url_for('analytics.export_excel',
                                 branch_id=selected_branch or '',
                                 dept_id=selected_dept or '',
-                                date_from=date_from,
-                                date_to=date_to) }}">
+                                date_from=date_from, date_to=date_to) }}">
               <i class="bi bi-file-earmark-excel me-2 text-success"></i>تصدير Excel
             </a>
           </li>
@@ -125,8 +169,7 @@
                href="{{ url_for('analytics.export_pdf',
                                 branch_id=selected_branch or '',
                                 dept_id=selected_dept or '',
-                                date_from=date_from,
-                                date_to=date_to) }}"
+                                date_from=date_from, date_to=date_to) }}"
                target="_blank">
               <i class="bi bi-file-earmark-pdf me-2 text-danger"></i>تصدير PDF
             </a>
@@ -137,281 +180,363 @@
     </div>
   </div>
 
-  <!-- ── Filter form ──────────────────────────────────────────────────── -->
-  <div class="card mb-4 no-print">
+  <!-- ── KPI Cards ────────────────────────────────────────────────────────── -->
+  <div class="row g-3 mb-3">
+
+    <div class="col-6 col-lg">
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:rgba(75,89,71,.1);">
+          <i class="bi bi-box-seam" style="color:var(--brand-olive);"></i>
+        </div>
+        <div>
+          <div class="kpi-value" style="color:var(--brand-olive);">{{ total_in_scope }}</div>
+          <div class="kpi-label">إجمالي الأصناف</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-lg">
+      <div class="kpi-card" style="border-right:4px solid #198754;">
+        <div class="kpi-icon" style="background:rgba(25,135,84,.1);">
+          <i class="bi bi-check2-circle" style="color:#198754; font-size:1.4rem;"></i>
+        </div>
+        <div>
+          <div class="kpi-value" style="color:#198754;">{{ total_items }}</div>
+          <div class="kpi-label">أصناف تم جردها</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-lg">
+      <div class="kpi-card" style="border-right:4px solid #6c757d;">
+        <div class="kpi-icon" style="background:rgba(108,117,125,.1);">
+          <i class="bi bi-hourglass-split" style="color:#6c757d; font-size:1.3rem;"></i>
+        </div>
+        <div>
+          <div class="kpi-value" style="color:#6c757d;">{{ uncounted_items }}</div>
+          <div class="kpi-label">أصناف لم تُجرَّد</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-lg">
+      <div class="kpi-card" style="border-right:4px solid var(--brand-orange);">
+        <div class="kpi-icon" style="background:rgba(242,135,5,.1);">
+          <i class="bi bi-arrow-left-right" style="color:var(--brand-orange); font-size:1.3rem;"></i>
+        </div>
+        <div>
+          <div class="kpi-value" style="color:var(--brand-orange);">{{ changes_count }}</div>
+          <div class="kpi-label">أصناف بها تغيير</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-lg">
+      <div class="kpi-card" style="border-right:4px solid #ffc107;">
+        <div class="kpi-icon" style="background:rgba(255,193,7,.12);">
+          <i class="bi bi-exclamation-triangle-fill" style="color:#e0a800; font-size:1.3rem;"></i>
+        </div>
+        <div>
+          <div class="kpi-value" style="color:#e0a800;">{{ needs_review_count }}</div>
+          <div class="kpi-label">تحتاج مراجعة</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Progress Bar ──────────────────────────────────────────────────────── -->
+  {% if total_in_scope > 0 %}
+  {% set pct = (total_items / total_in_scope * 100) | int %}
+  <div class="progress-card card mb-3 no-print">
     <div class="card-body py-3">
-      <div class="filter-header"><i class="bi bi-funnel me-1"></i>فلترة التحليل</div>
-      <form method="GET" class="row g-2 align-items-end">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="small fw-semibold text-muted">
+          <i class="bi bi-bar-chart-fill me-1"></i>تقدم الجرد
+        </span>
+        <span class="fw-bold
+          {% if pct == 100 %}text-success{% elif pct >= 70 %}text-primary{% elif pct >= 40 %}text-warning{% else %}text-danger{% endif %}">
+          {{ pct }}%
+          <span class="text-muted fw-normal small"> — {{ total_items }} / {{ total_in_scope }} صنف</span>
+        </span>
+      </div>
+      <div class="progress" style="height:10px; border-radius:6px;">
+        <div class="progress-bar
+          {% if pct == 100 %}bg-success{% elif pct >= 70 %}bg-primary{% elif pct >= 40 %}bg-warning{% else %}bg-danger{% endif %}"
+          role="progressbar" style="width:{{ pct }}%; border-radius:6px;"></div>
+      </div>
+      {% if uncounted_items > 0 %}
+      <p class="text-muted small mb-0 mt-2">
+        <i class="bi bi-info-circle me-1"></i>
+        {{ uncounted_items }} صنف لم يُجرَّد بعد — استخدم مركز التحكم لمتابعة التقدم.
+      </p>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
 
-        <div class="col-6 col-sm-3 col-md-2">
-          <label class="form-label small mb-1">من تاريخ</label>
-          <input type="date" name="date_from" class="form-control form-control-sm"
-                 value="{{ date_from }}">
-        </div>
-        <div class="col-6 col-sm-3 col-md-2">
-          <label class="form-label small mb-1">إلى تاريخ</label>
-          <input type="date" name="date_to" class="form-control form-control-sm"
-                 value="{{ date_to }}">
-        </div>
+  <!-- ── Sticky Filter Bar + Quick Filters ─────────────────────────────────── -->
+  <div class="filter-bar-sticky mb-3 no-print">
+    <div class="card">
+      <div class="card-body py-2 px-3">
+        <form method="GET" id="filterForm" class="row g-2 align-items-end mb-2">
 
-        {% if current_user.is_admin %}
-        <div class="col-12 col-sm-4 col-md-3">
-          <label class="form-label small mb-1">الفرع</label>
-          <select name="branch_id" class="form-select form-select-sm"
-                  onchange="this.form.submit()">
-            <option value="">جميع الفروع</option>
-            {% for b in branches %}
-            <option value="{{ b.id }}"
-                    {% if b.id == selected_branch %}selected{% endif %}>{{ b.name_ar }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        {% endif %}
+          <div class="col-6 col-sm-3 col-md-2">
+            <label class="form-label small mb-1">من تاريخ</label>
+            <input type="date" name="date_from" id="f_date_from"
+                   class="form-control form-control-sm" value="{{ date_from }}">
+          </div>
+          <div class="col-6 col-sm-3 col-md-2">
+            <label class="form-label small mb-1">إلى تاريخ</label>
+            <input type="date" name="date_to" id="f_date_to"
+                   class="form-control form-control-sm" value="{{ date_to }}">
+          </div>
 
-        <div class="col-12 col-sm-4 col-md-3">
-          <label class="form-label small mb-1">القسم</label>
-          <select name="dept_id" class="form-select form-select-sm">
-            <option value="">جميع الأقسام</option>
-            {% for d in departments %}
-            <option value="{{ d.id }}"
-                    {% if d.id == selected_dept %}selected{% endif %}>
-              {{ d.name_ar }}
-            </option>
-            {% endfor %}
-          </select>
-        </div>
+          {% if current_user.is_admin %}
+          <div class="col-12 col-sm-4 col-md-2">
+            <label class="form-label small mb-1">الفرع</label>
+            <select name="branch_id" class="form-select form-select-sm"
+                    onchange="this.form.submit()">
+              <option value="">جميع الفروع</option>
+              {% for b in branches %}
+              <option value="{{ b.id }}"
+                      {% if b.id == selected_branch %}selected{% endif %}>{{ b.name_ar }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          {% endif %}
 
-        <div class="col-12 col-sm-2 col-md-2">
-          <button type="submit" class="btn btn-primary btn-sm w-100">
-            <i class="bi bi-search me-1"></i>تحليل
+          <div class="col-12 col-sm-4 col-md-2">
+            <label class="form-label small mb-1">القسم</label>
+            <select name="dept_id" class="form-select form-select-sm">
+              <option value="">جميع الأقسام</option>
+              {% for d in departments %}
+              <option value="{{ d.id }}"
+                      {% if d.id == selected_dept %}selected{% endif %}>{{ d.name_ar }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="col-12 col-sm-5 col-md-3">
+            <label class="form-label small mb-1">بحث بالاسم أو الكود</label>
+            <div class="input-group input-group-sm">
+              <span class="input-group-text"><i class="bi bi-search"></i></span>
+              <input type="text" id="searchInput" class="form-control"
+                     placeholder="اكتب اسم الصنف أو الكود..."
+                     autocomplete="off">
+            </div>
+          </div>
+
+          <div class="col-6 col-sm-2 col-md-1">
+            <button type="submit" class="btn btn-primary btn-sm w-100">
+              <i class="bi bi-funnel me-1"></i>تحليل
+            </button>
+          </div>
+
+        </form>
+
+        <div class="d-flex gap-2 flex-wrap align-items-center pt-1 border-top">
+          <span class="small text-muted ps-1">عرض:</span>
+          <button class="qf-chip active" data-filter="all">
+            الكل <span class="qf-badge">{{ total_items }}</span>
+          </button>
+          <button class="qf-chip" data-filter="changed">
+            تغيير <span class="qf-badge">{{ changes_count }}</span>
+          </button>
+          <button class="qf-chip" data-filter="needs_review">
+            <i class="bi bi-exclamation-triangle me-1"></i>تحتاج مراجعة
+            <span class="qf-badge">{{ needs_review_count }}</span>
+          </button>
+          <button class="qf-chip" data-filter="modified">
+            معدّل <span class="qf-badge">{{ modified_count }}</span>
+          </button>
+          <button class="qf-chip" data-filter="counted">
+            مجرود <span class="qf-badge">{{ counted_clean }}</span>
+          </button>
+          <button class="qf-chip" data-filter="up">
+            ارتفع <span class="qf-badge">{{ increases }}</span>
+          </button>
+          <button class="qf-chip" data-filter="down">
+            انخفض <span class="qf-badge">{{ decreases }}</span>
           </button>
         </div>
-
-      </form>
+      </div>
     </div>
   </div>
 
+  <!-- ── Empty / No-results states ────────────────────────────────────────── -->
   {% if total_items == 0 %}
-  <!-- ── Empty state ──────────────────────────────────────────────────── -->
   <div class="alert alert-info text-center py-5">
     <i class="bi bi-inbox fs-1 d-block mb-3" style="color:var(--brand-orange);"></i>
     <h5 class="fw-bold">لا توجد بيانات جرد لهذه الفترة</h5>
     <p class="text-muted mb-0">اختر فترة زمنية مختلفة أو تأكد من إدخال بيانات الجرد</p>
   </div>
-
   {% else %}
 
-  <!-- ── Summary cards ─────────────────────────────────────────────────── -->
-  <div class="row g-3 mb-4">
-
-    <div class="col-6 col-md-3">
-      <div class="summary-stat">
-        <div class="ss-icon" style="background:rgba(75,89,71,0.1);">
-          <i class="bi bi-box-seam" style="color:var(--brand-olive);"></i>
-        </div>
-        <div>
-          <div class="ss-value" style="color:var(--brand-olive);">{{ total_items }}</div>
-          <div class="ss-label">إجمالي الأصناف المحللة</div>
-        </div>
-      </div>
+  <div id="noResultsMsg" class="d-none">
+    <div class="text-center py-5 text-muted">
+      <i class="bi bi-search display-5 d-block mb-3"></i>
+      <h6>لا توجد نتائج تطابق البحث الحالي</h6>
+      <button class="btn btn-outline-secondary btn-sm mt-2" onclick="clearFilters()">
+        <i class="bi bi-x-circle me-1"></i>إلغاء الفلترة
+      </button>
     </div>
-
-    <div class="col-6 col-md-3">
-      <div class="summary-stat" style="border-right:4px solid #198754;">
-        <div class="ss-icon" style="background:rgba(25,135,84,0.1);">
-          <i class="bi bi-arrow-up-circle-fill" style="color:#198754; font-size:1.4rem;"></i>
-        </div>
-        <div>
-          <div class="ss-value" style="color:#198754;">{{ increases }}</div>
-          <div class="ss-label">صنف ارتفعت كميته</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-6 col-md-3">
-      <div class="summary-stat" style="border-right:4px solid #dc3545;">
-        <div class="ss-icon" style="background:rgba(220,53,69,0.1);">
-          <i class="bi bi-arrow-down-circle-fill" style="color:#dc3545; font-size:1.4rem;"></i>
-        </div>
-        <div>
-          <div class="ss-value" style="color:#dc3545;">{{ decreases }}</div>
-          <div class="ss-label">صنف انخفضت كميته</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-6 col-md-3">
-      <div class="summary-stat" style="border-right:4px solid #6c757d;">
-        <div class="ss-icon" style="background:rgba(108,117,125,0.1);">
-          <i class="bi bi-dash-circle-fill" style="color:#6c757d; font-size:1.4rem;"></i>
-        </div>
-        <div>
-          <div class="ss-value" style="color:#6c757d;">{{ unchanged }}</div>
-          <div class="ss-label">صنف بدون تغيير</div>
-        </div>
-      </div>
-    </div>
-
   </div>
 
-  <!-- ── Data tables grouped by branch → department ────────────────────── -->
+  <!-- ── Grouped data tables ─────────────────────────────────────────────── -->
   {% for group in groups %}
-  <div class="card mb-4">
+  <div class="dept-group card mb-3" id="group-{{ loop.index }}">
 
-    <div class="card-header d-flex justify-content-between align-items-center"
-         style="background:var(--brand-olive); color:#fff;">
+    <div class="card-header d-flex justify-content-between align-items-center py-2">
       <span class="fw-bold">
         <i class="bi bi-diagram-3 me-2"></i>{{ group.dept_name }}
         <span class="opacity-75 fw-normal small ms-2">— {{ group.branch_name }}</span>
       </span>
-      <span class="badge bg-light text-dark">{{ group.rows | length }} صنف</span>
+      <span class="group-count-badge">
+        <span class="group-visible-count">{{ group.rows | length }}</span> صنف
+      </span>
     </div>
 
     <div class="table-responsive">
       <table class="table table-hover align-middle mb-0 analytics-table">
         <thead class="table-light">
           <tr>
-            <th style="width:2.2rem;">#</th>
-            {% if current_user.is_manager %}<th>الكود</th>{% endif %}
-            <th>الصنف</th>
-            <th class="text-center">الإدخالات</th>
+            <th style="min-width:200px;">الصنف</th>
+            <th class="text-center d-none d-sm-table-cell">الوحدة</th>
             <th class="text-center">أول جرد</th>
             <th class="text-center">آخر جرد</th>
-            <th class="text-center">الحركة الصافية</th>
-            <th class="text-center">الحد الأدنى</th>
-            <th class="text-center d-none d-md-table-cell">أقل يومي</th>
-            <th class="text-center d-none d-md-table-cell">أعلى يومي</th>
-            <th class="text-center">الوحدة</th>
+            <th class="text-center">الفرق</th>
+            <th class="text-center d-none d-md-table-cell">الإدخالات</th>
+            <th class="text-center">الحالة</th>
+            <th class="text-center no-print" style="width:44px;"></th>
           </tr>
         </thead>
         <tbody>
           {% for row in group.rows %}
           {% set abs_ch = row.net_change | abs %}
-          <tr class="{% if row.low_stock %}row-low{% elif row.trend == 'up' %}row-up{% elif row.trend == 'down' %}row-down{% endif %}">
+          <tr class="item-row
+              {% if row.low_stock %}row-low
+              {% elif row.trend == 'up' %}row-up
+              {% elif row.trend == 'down' %}row-down{% endif %}"
+              data-item-id="{{ row.item.id }}"
+              data-status="{{ row.status }}"
+              data-trend="{{ row.trend }}"
+              data-name="{{ row.item.name_ar | lower }}"
+              data-code="{{ row.item.item_code | lower if row.item.item_code else '' }}"
+              onclick="openItemDrawer({{ row.item.id }}, '{{ row.item.name_ar | replace("'", "\\'") }}')">
 
-            <td class="text-muted small">{{ loop.index }}</td>
-
-            {% if current_user.is_manager %}
+            {# ── Item name + code ── #}
             <td>
               {% if row.item.item_code %}
-              <span class="badge"
-                    style="background:var(--brand-olive); font-family:monospace; font-size:0.68rem;">
+              <span class="badge me-1"
+                    style="background:var(--brand-olive); font-family:monospace; font-size:.62rem;">
                 {{ row.item.item_code }}
               </span>
-              {% else %}<span class="text-muted">—</span>{% endif %}
-            </td>
-            {% endif %}
-
-            <td>
-              <div class="fw-semibold" style="color:#1a2e1a;">{{ row.item.name_ar }}</div>
+              {% endif %}
+              <span class="fw-semibold" style="color:#1a2e1a;">{{ row.item.name_ar }}</span>
               {% if row.item.packaging_note %}
-              <div class="text-muted small mt-1">
+              <div class="text-muted" style="font-size:.7rem; margin-top:2px;">
                 <i class="bi bi-tag me-1" style="color:var(--brand-orange);"></i>{{ row.item.packaging_note }}
               </div>
               {% endif %}
             </td>
 
+            {# ── Unit ── #}
+            <td class="text-center text-muted d-none d-sm-table-cell" style="font-size:.8rem;">
+              {{ row.item.effective_base_unit.name_ar if row.item.effective_base_unit else '—' }}
+            </td>
+
+            {# ── First count ── #}
             <td class="text-center">
+              <div class="fw-semibold">{{ fmtnum(row.first_qty) }}</div>
+              <div class="date-sub">{{ row.first_date.strftime('%m-%d') if row.first_date else '—' }}</div>
+            </td>
+
+            {# ── Latest count ── #}
+            <td class="text-center">
+              <div class="fw-semibold">{{ fmtnum(row.last_qty) }}</div>
+              <div class="date-sub">{{ row.last_date.strftime('%m-%d') if row.last_date else '—' }}</div>
+            </td>
+
+            {# ── Difference — visually emphasized ── #}
+            <td class="text-center diff-cell">
+              {% if row.trend == 'up' %}
+              <span class="diff-pos">
+                <i class="bi bi-arrow-up-short"></i>+{{ fmtnum(abs_ch) }}
+              </span>
+              {% elif row.trend == 'down' %}
+              <span class="diff-neg">
+                <i class="bi bi-arrow-down-short"></i>{{ fmtnum(row.net_change) }}
+              </span>
+              {% else %}
+              <span class="diff-zero">—</span>
+              {% endif %}
+            </td>
+
+            {# ── Entry count ── #}
+            <td class="text-center d-none d-md-table-cell">
               <span class="badge"
-                    style="background:var(--brand-light); color:var(--brand-olive); font-size:0.78rem;">
+                    style="background:var(--brand-light); color:var(--brand-olive); font-size:.75rem;">
                 {{ row.entry_count }}
               </span>
             </td>
 
+            {# ── Status badge ── #}
             <td class="text-center">
-              <div class="fw-semibold">{{ fmtnum(row.first_qty) }}</div>
-              <div class="date-sub">{{ row.first_date.strftime('%Y-%m-%d') if row.first_date else '—' }}</div>
-            </td>
-
-            <td class="text-center">
-              <div class="fw-semibold">{{ fmtnum(row.last_qty) }}</div>
-              <div class="date-sub">{{ row.last_date.strftime('%Y-%m-%d') if row.last_date else '—' }}</div>
-            </td>
-
-            <td class="text-center">
-              {% if row.trend == 'up' %}
-              <span class="mv-badge mv-up">
-                <i class="bi bi-arrow-up-short fs-6"></i>+{{ fmtnum(abs_ch) }}
+              {% if row.status == 'needs_review' %}
+              <span class="status-badge sb-needs-review">
+                <i class="bi bi-exclamation-triangle-fill me-1"></i>تحت الحد
               </span>
-              {% elif row.trend == 'down' %}
-              <span class="mv-badge mv-down">
-                <i class="bi bi-arrow-down-short fs-6"></i>-{{ fmtnum(abs_ch) }}
+              {% elif row.status == 'modified' %}
+              <span class="status-badge sb-modified">
+                <i class="bi bi-layers me-1"></i>معدّل
               </span>
               {% else %}
-              <span class="mv-badge mv-flat">
-                <i class="bi bi-dash me-1"></i>لا تغيير
+              <span class="status-badge sb-counted">
+                <i class="bi bi-check2 me-1"></i>مجرود
               </span>
               {% endif %}
             </td>
 
-            <td class="text-center">
-              {% if row.minimum_stock > 0 %}
-                {% if row.low_stock %}
-                <span style="color:#dc3545; font-weight:700;">
-                  <i class="bi bi-exclamation-triangle-fill me-1"></i>{{ fmtnum(row.minimum_stock) }}
-                </span>
-                {% else %}
-                <span style="color:var(--brand-orange-dark); font-size:0.85rem;">
-                  {{ fmtnum(row.minimum_stock) }}
-                </span>
-                {% endif %}
-              {% else %}
-              <span class="text-muted">—</span>
-              {% endif %}
-            </td>
-            <td class="text-center text-muted d-none d-md-table-cell">
-              {{ fmtnum(row.min_qty) }}
-            </td>
-            <td class="text-center text-muted d-none d-md-table-cell">
-              {{ fmtnum(row.max_qty) }}
-            </td>
-
-            <td class="text-center">
-              <span class="badge bg-secondary" style="font-size:0.72rem;">
-                {{ row.item.effective_base_unit.name_ar }}
-              </span>
+            {# ── Details button ── #}
+            <td class="text-center no-print">
+              <button class="btn btn-sm btn-link p-0 text-muted details-btn"
+                      title="تفاصيل الصنف"
+                      onclick="event.stopPropagation(); openItemDrawer({{ row.item.id }}, '{{ row.item.name_ar | replace("'", "\\'") }}')">
+                <i class="bi bi-layout-sidebar-inset-reverse fs-5"></i>
+              </button>
             </td>
 
           </tr>
           {% endfor %}
         </tbody>
 
-        <!-- Department totals footer -->
-        {% set dept_first  = namespace(v=0) %}
-        {% set dept_last   = namespace(v=0) %}
-        {% set dept_change = namespace(v=0) %}
+        {# ── Department totals footer ── #}
+        {% set df = namespace(v=0) %}
+        {% set dl = namespace(v=0) %}
         {% for row in group.rows %}
-          {% set dept_first.v  = dept_first.v  + row.first_qty %}
-          {% set dept_last.v   = dept_last.v   + row.last_qty %}
-          {% set dept_change.v = dept_change.v + row.net_change %}
+          {% set df.v = df.v + row.first_qty %}
+          {% set dl.v = dl.v + row.last_qty %}
         {% endfor %}
+        {% set dc = dl.v - df.v %}
         <tfoot>
-          <tr style="background:rgba(75,89,71,0.06); font-weight:700;">
-            <td colspan="{% if current_user.is_manager %}3{% else %}2{% endif %}"
-                class="text-end" style="color:var(--brand-olive);">
-              إجمالي القسم
-            </td>
-            <td></td>
-            <td class="text-center" style="color:var(--brand-olive);">
-              {{ fmtnum(dept_first.v) }}
-            </td>
-            <td class="text-center" style="color:var(--brand-olive);">
-              {{ fmtnum(dept_last.v) }}
-            </td>
-            <td class="text-center">
-              {% set abs_dept = dept_change.v | abs %}
-              {% if dept_change.v > 0.001 %}
-              <span class="mv-badge mv-up">+{{ fmtnum(abs_dept) }}</span>
-              {% elif dept_change.v < -0.001 %}
-              <span class="mv-badge mv-down">-{{ fmtnum(abs_dept) }}</span>
+          <tr class="dept-footer" style="background:rgba(75,89,71,.06); font-weight:700;">
+            <td class="text-end" style="color:var(--brand-olive);">إجمالي القسم</td>
+            <td class="d-none d-sm-table-cell"></td>
+            <td class="text-center" style="color:var(--brand-olive);">{{ fmtnum(df.v) }}</td>
+            <td class="text-center" style="color:var(--brand-olive);">{{ fmtnum(dl.v) }}</td>
+            <td class="text-center diff-cell">
+              {% if dc > 0.001 %}
+              <span class="diff-pos"><i class="bi bi-arrow-up-short"></i>+{{ fmtnum(dc) }}</span>
+              {% elif dc < -0.001 %}
+              <span class="diff-neg"><i class="bi bi-arrow-down-short"></i>{{ fmtnum(dc) }}</span>
               {% else %}
-              <span class="mv-badge mv-flat">—</span>
+              <span class="diff-zero">—</span>
               {% endif %}
             </td>
-            <td></td>
-            <td class="d-none d-md-table-cell"></td>
             <td class="d-none d-md-table-cell"></td>
             <td></td>
+            <td class="no-print"></td>
           </tr>
         </tfoot>
 
@@ -424,14 +549,376 @@
 
 </div>
 
-<!-- ── Print-only header ────────────────────────────────────────────── -->
+<!-- ── Print-only header ────────────────────────────────────────────────── -->
 <div class="d-none d-print-block mb-4 text-center">
   <h4 class="fw-bold">مطاعم همم — تحليل حركة الجرد</h4>
   <p class="text-muted mb-0">{{ date_from }} — {{ date_to }}</p>
   <hr>
 </div>
 
+<!-- ── Item Details Offcanvas (offcanvas-start = right side in RTL) ──────── -->
+<div class="offcanvas offcanvas-start no-print" tabindex="-1" id="itemDrawer"
+     style="width: min(560px, 96vw);">
+  <div class="offcanvas-header p-0 border-0">
+    <div class="item-drawer-header w-100 d-flex align-items-center justify-content-between">
+      <div>
+        <div class="fw-bold fs-6" id="itemDrawerTitle">تفاصيل الصنف</div>
+        <div class="opacity-75 small mt-1" id="itemDrawerSub"></div>
+      </div>
+      <button type="button" class="btn-close btn-close-white"
+              data-bs-dismiss="offcanvas" aria-label="إغلاق"></button>
+    </div>
+  </div>
+  <div class="offcanvas-body p-0" id="itemDrawerBody">
+    <div class="text-center py-5">
+      <div class="spinner-border text-primary" role="status"></div>
+      <p class="text-muted small mt-3">جاري تحميل البيانات...</p>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
 <script>
+// ── Filter state ─────────────────────────────────────────────────────────
+const FILTER_DATE_FROM = "{{ date_from }}";
+const FILTER_DATE_TO   = "{{ date_to }}";
+const FILTER_SESSION   = "{{ selected_session or '' }}";
+
+let activeFilter = 'all';
+
+// ── Quick filter chips ───────────────────────────────────────────────────
+document.querySelectorAll('.qf-chip').forEach(btn => {
+  btn.addEventListener('click', function () {
+    document.querySelectorAll('.qf-chip').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+    activeFilter = this.dataset.filter;
+    applyFilters();
+  });
+});
+
+// ── Search input (client-side, instant) ──────────────────────────────────
+const searchInput = document.getElementById('searchInput');
+if (searchInput) {
+  searchInput.addEventListener('input', applyFilters);
+}
+
+function applyFilters() {
+  const q = (searchInput ? searchInput.value.trim().toLowerCase() : '');
+  const filter = activeFilter;
+  let visibleTotal = 0;
+
+  document.querySelectorAll('.dept-group').forEach(groupEl => {
+    let groupVisible = 0;
+    groupEl.querySelectorAll('tr.item-row').forEach(row => {
+      const status = row.dataset.status;
+      const trend  = row.dataset.trend;
+      const name   = row.dataset.name;
+      const code   = row.dataset.code;
+
+      const matchSearch = !q || name.includes(q) || code.includes(q);
+
+      const matchFilter =
+        filter === 'all' ||
+        (filter === 'changed'       && trend !== 'flat') ||
+        (filter === 'needs_review'  && status === 'needs_review') ||
+        (filter === 'modified'      && status === 'modified') ||
+        (filter === 'counted'       && status === 'counted') ||
+        (filter === 'up'            && trend === 'up') ||
+        (filter === 'down'          && trend === 'down');
+
+      const show = matchSearch && matchFilter;
+      row.style.display = show ? '' : 'none';
+      if (show) { groupVisible++; visibleTotal++; }
+    });
+
+    // Show/hide the group card and update its count badge
+    groupEl.style.display = groupVisible > 0 ? '' : 'none';
+    const badge = groupEl.querySelector('.group-visible-count');
+    if (badge) badge.textContent = groupVisible;
+
+    // Show/hide footer only when all rows visible
+    const footer = groupEl.querySelector('.dept-footer');
+    if (footer) footer.style.display = groupVisible > 0 ? '' : 'none';
+  });
+
+  const noResults = document.getElementById('noResultsMsg');
+  if (noResults) noResults.classList.toggle('d-none', visibleTotal > 0);
+}
+
+function clearFilters() {
+  if (searchInput) searchInput.value = '';
+  document.querySelectorAll('.qf-chip').forEach(b => b.classList.remove('active'));
+  document.querySelector('.qf-chip[data-filter="all"]')?.classList.add('active');
+  activeFilter = 'all';
+  applyFilters();
+}
+
+// ── Item Details Drawer ──────────────────────────────────────────────────
+let drawerOffcanvas = null;
+
+function openItemDrawer(itemId, itemName) {
+  const drawerEl = document.getElementById('itemDrawer');
+  if (!drawerOffcanvas) {
+    drawerOffcanvas = new bootstrap.Offcanvas(drawerEl);
+  }
+
+  document.getElementById('itemDrawerTitle').textContent = itemName;
+  document.getElementById('itemDrawerSub').textContent   = 'جاري التحميل...';
+  document.getElementById('itemDrawerBody').innerHTML    =
+    '<div class="text-center py-5">' +
+    '<div class="spinner-border text-primary" role="status"></div>' +
+    '<p class="text-muted small mt-3">جاري تحميل البيانات...</p></div>';
+
+  drawerOffcanvas.show();
+
+  const params = new URLSearchParams({
+    date_from:  FILTER_DATE_FROM,
+    date_to:    FILTER_DATE_TO,
+    session_id: FILTER_SESSION,
+  });
+
+  fetch(`/analytics/item/${itemId}/history?${params}`)
+    .then(r => r.json())
+    .then(data => renderDrawer(data))
+    .catch(() => {
+      document.getElementById('itemDrawerBody').innerHTML =
+        '<div class="alert alert-danger m-3">فشل تحميل بيانات الصنف. حاول مرة أخرى.</div>';
+    });
+}
+
+function renderDrawer(data) {
+  const item    = data.item;
+  const entries = data.entries;
+  const audits  = data.audit_logs;
+
+  // Update subtitle
+  const parts = [];
+  if (item.item_code) parts.push(item.item_code);
+  if (item.unit)      parts.push(item.unit);
+  document.getElementById('itemDrawerSub').textContent = parts.join(' · ');
+
+  // Split active vs historical
+  const active    = entries.filter(e => e.status === 'active');
+  const withdrawn = entries.filter(e => e.status === 'withdrawn');
+  const official  = active[active.length - 1];  // latest active = official count
+  const firstActive = active[0];
+
+  const officialQty = official   ? official.quantity   : null;
+  const firstQty    = firstActive ? firstActive.quantity : null;
+  const diff        = (officialQty !== null && firstQty !== null) ? (officialQty - firstQty) : null;
+
+  function fmtq(n) {
+    if (n === null || n === undefined) return '—';
+    return Number.isInteger(n) ? String(n) : parseFloat(n.toFixed(3)).toString();
+  }
+
+  function diffHTML(d) {
+    if (d === null) return '<span class="text-muted">—</span>';
+    if (d > 0.001)  return `<span style="color:#198754;font-weight:800;">+${fmtq(d)}</span>`;
+    if (d < -0.001) return `<span style="color:#dc3545;font-weight:800;">${fmtq(d)}</span>`;
+    return `<span class="text-muted fw-normal">لا تغيير</span>`;
+  }
+
+  // ── Official Count Banner ─────────────────────────────────────────────
+  let officialBanner = '';
+  if (official) {
+    officialBanner = `
+      <div class="px-3 pt-3 pb-2">
+        <div class="p-3 rounded-3 border border-success-subtle" style="background:rgba(25,135,84,.06);">
+          <div class="d-flex align-items-center justify-content-between mb-1">
+            <span class="fw-bold" style="font-size:.75rem; color:#198754; text-transform:uppercase; letter-spacing:.05em;">
+              <i class="bi bi-check-circle-fill me-1"></i>الجرد الرسمي المعتمد
+            </span>
+            <span class="badge bg-success" style="font-size:.65rem;">هذا ما تظهره التقارير</span>
+          </div>
+          <div class="d-flex align-items-baseline gap-2 mt-2">
+            <span style="font-size:2rem; font-weight:900; color:#198754; line-height:1;">${fmtq(officialQty)}</span>
+            <span class="text-muted fw-semibold">${item.unit}</span>
+          </div>
+          <div class="text-muted mt-1" style="font-size:.73rem;">
+            <i class="bi bi-person me-1"></i>${official.user_name}
+            &nbsp;·&nbsp;
+            <i class="bi bi-clock me-1"></i>${official.created_at}
+          </div>
+        </div>
+      </div>`;
+  } else {
+    officialBanner = `
+      <div class="alert alert-secondary mx-3 mt-3 py-2 small">
+        <i class="bi bi-dash-circle me-2"></i>لا يوجد جرد نشط لهذا الصنف في الفترة المحددة.
+      </div>`;
+  }
+
+  // ── Summary strip ────────────────────────────────────────────────────
+  const activeCount = active.length;
+  const totalCount  = entries.length;
+
+  const summaryHTML = `
+    <div class="d-flex border-top border-bottom" style="background:#f8f9fa;">
+      <div class="drawer-stat border-end">
+        <div class="ds-val text-primary">${fmtq(firstQty)}</div>
+        <div class="ds-lbl">${item.unit}</div>
+        <div style="font-size:.65rem;color:#adb5bd;margin-top:2px;">أول جرد نشط</div>
+      </div>
+      <div class="drawer-stat border-end">
+        <div class="ds-val" style="color:var(--brand-olive);">${fmtq(officialQty)}</div>
+        <div class="ds-lbl">${item.unit}</div>
+        <div style="font-size:.65rem;color:#198754;margin-top:2px;font-weight:600;">الجرد الرسمي</div>
+      </div>
+      <div class="drawer-stat border-end">
+        <div class="ds-val">${diffHTML(diff)}</div>
+        <div class="ds-lbl">${item.unit}</div>
+        <div style="font-size:.65rem;color:#adb5bd;margin-top:2px;">الفرق</div>
+      </div>
+      <div class="drawer-stat">
+        <div class="ds-val text-secondary">${activeCount}<span style="font-size:.85rem;color:#adb5bd;"> / ${totalCount}</span></div>
+        <div class="ds-lbl">نشط / كلي</div>
+        <div style="font-size:.65rem;color:#adb5bd;margin-top:2px;">الإدخالات</div>
+      </div>
+    </div>`;
+
+  // Min stock alert
+  let minStockHTML = '';
+  if (item.min_stock > 0 && officialQty !== null && officialQty < item.min_stock) {
+    minStockHTML = `
+      <div class="alert alert-warning py-2 px-3 mx-3 mt-3 mb-0 d-flex align-items-center gap-2"
+           style="font-size:.8rem;">
+        <i class="bi bi-exclamation-triangle-fill flex-shrink-0"></i>
+        الكمية الرسمية (${fmtq(officialQty)}) أقل من الحد الأدنى (${fmtq(item.min_stock)} ${item.unit})
+      </div>`;
+  }
+
+  // Packaging note
+  let packHTML = '';
+  if (item.packaging_note) {
+    packHTML = `
+      <div class="text-muted mx-3 mt-2" style="font-size:.75rem;">
+        <i class="bi bi-tag me-1" style="color:var(--brand-orange);"></i>${item.packaging_note}
+      </div>`;
+  }
+
+  // ── Timeline ────────────────────────────────────────────────────────
+  let timelineHTML = `
+    <div class="px-3 pt-3 pb-1">
+      <h6 class="fw-bold mb-1" style="font-size:.85rem;">
+        <i class="bi bi-clock-history me-2 text-primary"></i>سجل التغييرات
+      </h6>`;
+
+  if (entries.length === 0) {
+    timelineHTML += '<p class="text-muted small mt-2">لا توجد إدخالات مسجلة في هذه الفترة.</p>';
+  } else {
+    // Show entries in chronological order (already ordered ASC by created_at)
+    const hasWithdrawn = withdrawn.length > 0;
+    if (hasWithdrawn) {
+      timelineHTML += `
+        <p class="text-muted mb-3" style="font-size:.73rem;">
+          <i class="bi bi-info-circle me-1"></i>
+          الإدخالات المؤرشفة لا تؤثر على التقارير أو الحسابات — للتدقيق فقط.
+        </p>`;
+    } else {
+      timelineHTML += '<div class="mb-3"></div>';
+    }
+
+    entries.forEach((e, idx) => {
+      const isWithdrawn = e.status === 'withdrawn';
+      const isOfficial  = !isWithdrawn && e === official;
+      const dotClass    = isWithdrawn ? 'tl-dot-withdrawn'
+                        : isOfficial  ? 'tl-dot-first'
+                        :               'tl-dot-active';
+      const dotIcon     = isWithdrawn ? 'bi-x-circle'
+                        : isOfficial  ? 'bi-check-circle-fill'
+                        :               'bi-check-circle';
+
+      let qtyDisplay = `${fmtq(e.quantity)} ${item.unit}`;
+      if (e.entered_quantity && e.entered_unit) {
+        qtyDisplay += ` <span style="color:#adb5bd;font-size:.7rem;font-weight:400;">(${fmtq(e.entered_quantity)} ${e.entered_unit})</span>`;
+      }
+
+      // Badge logic
+      let badges = '';
+      if (isOfficial) {
+        badges += ' <span class="badge bg-success" style="font-size:.6rem;">الجرد الرسمي</span>';
+      }
+      if (isWithdrawn) {
+        badges += ' <span class="badge bg-secondary-subtle text-secondary border" style="font-size:.6rem;">مؤرشف — تاريخي فقط</span>';
+      }
+
+      const rowStyle = isWithdrawn
+        ? 'opacity:.5; filter:grayscale(0.4);'
+        : '';
+      const qtyStyle = isWithdrawn
+        ? 'text-decoration:line-through; color:#adb5bd; font-weight:400;'
+        : isOfficial ? 'color:#198754;' : '';
+
+      timelineHTML += `
+        <div class="timeline-item" style="${rowStyle}">
+          <div>
+            <div class="tl-dot ${dotClass}"><i class="bi ${dotIcon}"></i></div>
+            ${idx < entries.length - 1 ? '<div class="tl-line"></div>' : ''}
+          </div>
+          <div class="tl-body">
+            <div class="tl-time">${e.created_at}</div>
+            <div class="tl-qty" style="${qtyStyle}">${qtyDisplay}${badges}</div>
+            <div class="tl-user"><i class="bi bi-person me-1"></i>${e.user_name}</div>
+            ${e.notes ? `<div class="tl-note"><i class="bi bi-chat-left me-1"></i>${e.notes}</div>` : ''}
+          </div>
+        </div>`;
+    });
+  }
+  timelineHTML += '</div>';
+
+  // ── Audit Log ───────────────────────────────────────────────────────
+  let auditHTML = '';
+  if (audits.length > 0) {
+    const actionLabels = {
+      edit:         { lbl: 'تعديل',     cls: 'bg-info-subtle text-info' },
+      withdrawal:   { lbl: 'سحب',       cls: 'bg-danger-subtle text-danger' },
+      correction:   { lbl: 'تصحيح',     cls: 'bg-warning-subtle text-warning' },
+      reopen:       { lbl: 'إعادة فتح', cls: 'bg-secondary-subtle text-secondary' },
+    };
+
+    auditHTML = `
+      <div class="px-3 pb-3 border-top mt-2 pt-3">
+        <h6 class="fw-bold mb-3" style="font-size:.85rem;">
+          <i class="bi bi-journal-text me-2 text-warning"></i>سجل التعديلات الإدارية
+        </h6>
+        <div class="table-responsive">
+          <table class="table table-sm" style="font-size:.78rem;">
+            <thead class="table-light">
+              <tr>
+                <th>التاريخ</th>
+                <th>بواسطة</th>
+                <th>الإجراء</th>
+                <th>من</th>
+                <th>إلى</th>
+                <th>السبب</th>
+              </tr>
+            </thead>
+            <tbody>`;
+
+    audits.forEach(al => {
+      const meta = actionLabels[al.action_type] || { lbl: al.action_type, cls: 'bg-secondary-subtle text-secondary' };
+      auditHTML += `
+              <tr>
+                <td class="text-muted">${al.changed_at}</td>
+                <td>${al.editor}</td>
+                <td><span class="badge ${meta.cls}" style="font-size:.62rem;">${meta.lbl}</span></td>
+                <td>${al.old_value || '—'}</td>
+                <td>${al.new_value || '—'}</td>
+                <td class="fst-italic text-muted">${al.reason || '—'}</td>
+              </tr>`;
+    });
+
+    auditHTML += '</tbody></table></div></div>';
+  }
+
+  document.getElementById('itemDrawerBody').innerHTML =
+    officialBanner + summaryHTML + minStockHTML + packHTML + timelineHTML + auditHTML;
+}
+
+// ── Excel export spinner ─────────────────────────────────────────────────
 (function () {
   var link = document.getElementById('excelExportLink');
   if (!link) return;
@@ -441,12 +928,8 @@
     var orig = btn.innerHTML;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>جاري التصدير...';
     btn.disabled = true;
-    setTimeout(function () {
-      btn.innerHTML = orig;
-      btn.disabled = false;
-    }, 3500);
+    setTimeout(() => { btn.innerHTML = orig; btn.disabled = false; }, 3500);
   });
 }());
 </script>
-
 {% endblock %}

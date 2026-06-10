@@ -1,7 +1,7 @@
-from flask import Blueprint, render_template, request, flash, redirect, url_for, send_file
+from flask import Blueprint, render_template, request, flash, redirect, url_for, send_file, jsonify
 from flask_login import login_required, current_user
 from sqlalchemy import func, and_
-from models import db, Branch, Department, Item, InventoryCount
+from models import db, Branch, Department, Item, InventoryCount, SessionAuditLog
 from datetime import datetime, date
 import calendar
 from utils.constants import now_jordan
@@ -96,6 +96,7 @@ def _analytics_data(branch_id, dept_id, date_from, date_to, session_id=None):
         agg_q = agg_q.filter(Department.branch_id == branch_id)
     if dept_id:
         agg_q = agg_q.filter(Item.department_id == dept_id)
+    agg_q = agg_q.filter(InventoryCount.status == 'active')
     agg_q = agg_q.group_by(InventoryCount.item_id).subquery('agg')
 
     # ── Subquery 2: total qty on first_date per item ──────────────────────────
@@ -108,6 +109,7 @@ def _analytics_data(branch_id, dept_id, date_from, date_to, session_id=None):
             InventoryCount.item_id    == agg_q.c.item_id,
             InventoryCount.count_date == agg_q.c.first_date,
         ))
+        .filter(InventoryCount.status == 'active')
         .group_by(InventoryCount.item_id)
         .subquery('fq')
     )
@@ -122,6 +124,7 @@ def _analytics_data(branch_id, dept_id, date_from, date_to, session_id=None):
             InventoryCount.item_id    == agg_q.c.item_id,
             InventoryCount.count_date == agg_q.c.last_date,
         ))
+        .filter(InventoryCount.status == 'active')
         .group_by(InventoryCount.item_id)
         .subquery('lq')
     )
@@ -147,6 +150,7 @@ def _analytics_data(branch_id, dept_id, date_from, date_to, session_id=None):
         daily_q = daily_q.filter(Department.branch_id == branch_id)
     if dept_id:
         daily_q = daily_q.filter(Item.department_id == dept_id)
+    daily_q = daily_q.filter(InventoryCount.status == 'active')
     daily_q = daily_q.group_by(
         InventoryCount.item_id, InventoryCount.count_date
     ).subquery('daily')
@@ -195,6 +199,7 @@ def _process_rows(raw_rows):
     groups      = {}
     group_order = []
     increases = decreases = unchanged = 0
+    needs_review_count = modified_count = 0
 
     for (item, dept, branch,
          entry_count, total_qty, min_qty, max_qty,
@@ -223,7 +228,18 @@ def _process_rows(raw_rows):
             }
             group_order.append(key)
 
-        ms = item.effective_minimum_stock
+        ms       = item.effective_minimum_stock
+        low_stock = ms > 0 and last_qty < ms
+
+        if low_stock:
+            status = 'needs_review'
+            needs_review_count += 1
+        elif entry_count > 1:
+            status = 'modified'
+            modified_count += 1
+        else:
+            status = 'counted'
+
         groups[key]['rows'].append({
             'item':           item,
             'entry_count':    entry_count,
@@ -237,10 +253,11 @@ def _process_rows(raw_rows):
             'net_change':     net_change,
             'trend':          trend,
             'minimum_stock':  ms,
-            'low_stock':      ms > 0 and last_qty < ms,
+            'low_stock':      low_stock,
+            'status':         status,
         })
 
-    return [groups[k] for k in group_order], increases, decreases, unchanged
+    return [groups[k] for k in group_order], increases, decreases, unchanged, needs_review_count, modified_count
 
 
 # ── Excel builder ─────────────────────────────────────────────────────────────
@@ -447,19 +464,41 @@ def index():
     )
 
     raw_rows = _analytics_data(branch_id, dept_id, date_from, date_to, session_id)
-    groups, increases, decreases, unchanged = _process_rows(raw_rows)
+    groups, increases, decreases, unchanged, needs_review_count, modified_count = _process_rows(raw_rows)
+
+    counted_items = increases + decreases + unchanged
+    changes_count = increases + decreases
+    counted_clean = counted_items - needs_review_count - modified_count
+
+    # Total active items in scope (for uncounted KPI)
+    scope_q = Item.query.filter_by(is_active=True)
+    if branch_id:
+        scope_q = scope_q.join(Department, Item.department_id == Department.id).filter(
+            Department.branch_id == branch_id
+        )
+    if dept_id:
+        scope_q = scope_q.filter(Item.department_id == dept_id)
+    total_in_scope  = scope_q.count()
+    uncounted_items = max(0, total_in_scope - counted_items)
 
     return render_template(
         'inventory/analytics.html',
         groups=groups,
-        total_items=increases + decreases + unchanged,
+        total_items=counted_items,
+        total_in_scope=total_in_scope,
+        uncounted_items=uncounted_items,
         increases=increases,
         decreases=decreases,
         unchanged=unchanged,
+        changes_count=changes_count,
+        needs_review_count=needs_review_count,
+        modified_count=modified_count,
+        counted_clean=counted_clean,
         branches=branches,
         departments=departments,
         selected_branch=branch_id,
         selected_dept=dept_id,
+        selected_session=session_id,
         date_from=date_from_str,
         date_to=date_to_str,
         now=now_jordan(),
@@ -478,7 +517,7 @@ def export_excel():
         branch_id = current_user.branch_id
 
     raw_rows = _analytics_data(branch_id, dept_id, date_from, date_to, session_id)
-    groups, increases, decreases, unchanged = _process_rows(raw_rows)
+    groups, increases, decreases, unchanged, *_ = _process_rows(raw_rows)
     total_items = increases + decreases + unchanged
 
     branch_label = dept_label = ''
@@ -517,7 +556,7 @@ def export_pdf():
         branch_id = current_user.branch_id
 
     raw_rows = _analytics_data(branch_id, dept_id, date_from, date_to, session_id)
-    groups, increases, decreases, unchanged = _process_rows(raw_rows)
+    groups, increases, decreases, unchanged, *_ = _process_rows(raw_rows)
 
     branch_label = dept_label = ''
     if branch_id:
@@ -542,3 +581,77 @@ def export_pdf():
         dept_label=dept_label,
         now=now_jordan(),
     )
+
+
+@analytics_bp.route('/item/<int:item_id>/history')
+@login_required
+def item_history(item_id):
+    if not current_user.is_manager:
+        return jsonify({'error': 'unauthorized'}), 403
+
+    item = Item.query.get_or_404(item_id)
+    session_id    = request.args.get('session_id',  type=int)
+    date_from_str = request.args.get('date_from', '')
+    date_to_str   = request.args.get('date_to',   '')
+
+    date_from = date_to = None
+    try:
+        date_from = datetime.strptime(date_from_str, '%Y-%m-%d').date() if date_from_str else None
+    except ValueError:
+        pass
+    try:
+        date_to = datetime.strptime(date_to_str, '%Y-%m-%d').date() if date_to_str else None
+    except ValueError:
+        pass
+
+    q = InventoryCount.query.filter_by(item_id=item_id)
+    if session_id:
+        q = q.filter_by(session_id=session_id)
+    else:
+        if date_from:
+            q = q.filter(InventoryCount.count_date >= date_from)
+        if date_to:
+            q = q.filter(InventoryCount.count_date <= date_to)
+    entries = q.order_by(InventoryCount.created_at.asc()).all()
+
+    al_q = SessionAuditLog.query.filter_by(item_id=item_id)
+    if session_id:
+        al_q = al_q.filter_by(session_id=session_id)
+    elif date_from or date_to:
+        if date_from:
+            al_q = al_q.filter(SessionAuditLog.changed_at >= datetime.combine(date_from, datetime.min.time()))
+        if date_to:
+            al_q = al_q.filter(SessionAuditLog.changed_at <= datetime.combine(date_to, datetime.max.time()))
+    audit_logs = al_q.order_by(SessionAuditLog.changed_at.asc()).all()
+
+    unit_name = item.effective_base_unit.name_ar if item.effective_base_unit else ''
+
+    return jsonify({
+        'item': {
+            'id':             item.id,
+            'name_ar':        item.name_ar,
+            'item_code':      item.item_code or '',
+            'unit':           unit_name,
+            'packaging_note': item.packaging_note or '',
+            'min_stock':      float(item.effective_minimum_stock or 0),
+        },
+        'entries': [{
+            'id':               e.id,
+            'quantity':         float(e.quantity or 0),
+            'entered_quantity': float(e.entered_quantity) if e.entered_quantity else None,
+            'entered_unit':     e.entered_unit.name_ar if e.entered_unit else '',
+            'user_name':        e.user.full_name if e.user else '—',
+            'count_date':       e.count_date.isoformat() if e.count_date else '',
+            'created_at':       e.created_at.strftime('%Y-%m-%d %H:%M') if e.created_at else '',
+            'notes':            e.notes or '',
+            'status':           getattr(e, 'status', 'active'),
+        } for e in entries],
+        'audit_logs': [{
+            'changed_at':  al.changed_at.strftime('%Y-%m-%d %H:%M') if al.changed_at else '',
+            'editor':      al.editor.full_name if al.editor else '—',
+            'old_value':   al.old_value or '',
+            'new_value':   al.new_value or '',
+            'reason':      al.reason or '',
+            'action_type': getattr(al, 'action_type', 'edit'),
+        } for al in audit_logs],
+    })

@@ -706,44 +706,61 @@
 <div class="modal fade" id="correctModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
+
       <div class="modal-header border-0 pb-0">
-        <h6 class="modal-title text-success fw-bold">
-          <i class="bi bi-pencil-square me-2"></i>تصحيح الكمية
+        <h6 class="modal-title fw-bold">
+          <i class="bi bi-pencil-square me-2 text-success"></i>تصحيح الجرد
         </h6>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
+
       <div class="modal-body">
-        <div class="alert alert-info small py-2 mb-3 d-flex gap-2">
-          <i class="bi bi-info-circle flex-shrink-0 mt-1"></i>
-          <span>الكميات السابقة تُحفظ كـ"مسحوبة". تُنشأ مراجعة جديدة بالكمية الصحيحة.</span>
-        </div>
-        <div class="row g-2 mb-3">
-          <div class="col-8">
-            <div class="text-muted small">الصنف</div>
-            <div class="fw-semibold" id="correctItemName">—</div>
+
+        {# Item name #}
+        <div class="fw-semibold mb-3 px-1" id="correctItemName" style="font-size:.95rem;">—</div>
+
+        {# OLD → NEW visual change strip #}
+        <div class="d-flex align-items-center gap-2 mb-3 p-3 rounded-3"
+             style="background:#f8f9fa; border:1px solid #e9ecef;">
+          <div class="flex-fill text-center">
+            <div class="text-muted" style="font-size:.68rem; text-transform:uppercase; letter-spacing:.05em;">الكمية السابقة</div>
+            <div class="fw-bold fs-5 text-secondary" id="correctCurrentQty">—</div>
+            <div style="font-size:.65rem; color:#adb5bd;" id="correctCurrentUnit"></div>
           </div>
-          <div class="col-4 text-end">
-            <div class="text-muted small">الكمية الحالية</div>
-            <div class="fw-semibold" id="correctCurrentQty">—</div>
+          <div class="text-muted" style="font-size:1.4rem;">
+            <i class="bi bi-arrow-left"></i>
+          </div>
+          <div class="flex-fill text-center">
+            <div class="text-muted" style="font-size:.68rem; text-transform:uppercase; letter-spacing:.05em;">الكمية الصحيحة</div>
+            <input type="number" id="correctQtyInput"
+                   class="form-control form-control-sm text-center fw-bold"
+                   style="font-size:1.05rem; max-width:120px; margin:4px auto 0;"
+                   min="0" step="0.001" placeholder="0">
+            <div style="font-size:.65rem; color:#198754; margin-top:3px;" id="correctNewUnit"></div>
           </div>
         </div>
-        <div class="mb-3">
-          <label class="form-label small fw-semibold">
-            الكمية الصحيحة <span class="text-danger">*</span>
-            <span class="text-muted fw-normal" id="correctUnitLabel"></span>
-          </label>
-          <input type="number" id="correctQtyInput" class="form-control form-control-sm"
-                 min="0" step="0.001" placeholder="0">
-        </div>
+
+        {# Reason — mandatory #}
         <div class="mb-2">
-          <label class="form-label small fw-semibold">
+          <label class="form-label small fw-semibold mb-1">
             سبب التصحيح <span class="text-danger">*</span>
           </label>
           <textarea id="correctReasonInput" class="form-control form-control-sm" rows="2"
-                    placeholder="مثال: إعادة عد — خطأ في الإدخال الأول"></textarea>
+                    placeholder="مثال: إعادة عد ميداني — الكمية الفعلية 45 كغ"></textarea>
         </div>
-        <div id="correctError" class="alert alert-danger py-2 small d-none"></div>
+
+        {# Consequence note #}
+        <div class="d-flex gap-2 mt-3 p-2 rounded" style="background:rgba(25,135,84,.07); font-size:.75rem;">
+          <i class="bi bi-check2-circle text-success flex-shrink-0 mt-1"></i>
+          <span class="text-success">
+            الكمية المصححة ستصبح الجرد الرسمي فوراً في جميع التقارير والتحليلات.
+            الكمية السابقة تُحفظ في سجل التدقيق فقط ولا تؤثر على أي حسابات.
+          </span>
+        </div>
+
+        <div id="correctError" class="alert alert-danger py-2 small d-none mt-2"></div>
       </div>
+
       <div class="modal-footer border-0 pt-0">
         <button type="button" class="btn btn-secondary btn-sm"
                 data-bs-dismiss="modal">إلغاء</button>
@@ -752,6 +769,7 @@
           <i class="bi bi-check-lg me-1"></i>حفظ التصحيح
         </button>
       </div>
+
     </div>
   </div>
 </div>
@@ -884,13 +902,20 @@ let _correctItemId = null;
 
 function openCorrectModal(itemId, itemName, currentQty, unit) {
   _correctItemId = itemId;
-  document.getElementById('correctItemName').textContent   = itemName;
-  document.getElementById('correctCurrentQty').textContent = currentQty + (unit ? ' ' + unit : '');
-  document.getElementById('correctUnitLabel').textContent  = unit ? '(' + unit + ')' : '';
-  document.getElementById('correctQtyInput').value         = currentQty;
-  document.getElementById('correctReasonInput').value      = '';
+  document.getElementById('correctItemName').textContent    = itemName;
+  document.getElementById('correctCurrentQty').textContent  = currentQty;
+  document.getElementById('correctCurrentUnit').textContent = unit || '';
+  document.getElementById('correctNewUnit').textContent     = unit || '';
+  document.getElementById('correctQtyInput').value          = '';
+  document.getElementById('correctQtyInput').placeholder    = currentQty;
+  document.getElementById('correctReasonInput').value       = '';
   document.getElementById('correctError').classList.add('d-none');
   new bootstrap.Modal(document.getElementById('correctModal')).show();
+  // Focus the qty input after modal is shown
+  document.getElementById('correctModal').addEventListener('shown.bs.modal', function focus() {
+    document.getElementById('correctQtyInput').focus();
+    this.removeEventListener('shown.bs.modal', focus);
+  });
 }
 
 async function submitCorrection() {
