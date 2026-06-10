@@ -1,0 +1,956 @@
+{% extends 'base.html' %}
+{% block title %}مركز التحكم — {{ inv_session.name }} — همم{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── KPI Cards ─────────────────────────────────────────────── */
+.kpi-card { border-radius: 14px; transition: transform .15s, box-shadow .15s; }
+.kpi-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,.1) !important; }
+.kpi-icon {
+  width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: 1.15rem;
+}
+.kpi-value { font-size: 1.7rem; font-weight: 800; line-height: 1.1; }
+.kpi-label { font-size: 0.72rem; color: #888; margin-top: 1px; }
+
+/* ── Department Cards ──────────────────────────────────────── */
+.dept-ctrl-card {
+  border-radius: 14px; cursor: pointer;
+  transition: transform .15s, box-shadow .15s, border-color .15s;
+  border: 1.5px solid #e8ecf0;
+}
+.dept-ctrl-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0,0,0,.12) !important;
+  border-color: var(--bs-primary);
+}
+.dept-ctrl-card:focus { outline: 2px solid var(--bs-primary); outline-offset: 2px; }
+.dept-pct-chip {
+  font-size: 0.72rem; font-weight: 700;
+  padding: 3px 10px; border-radius: 20px;
+}
+
+/* ── Progress bars ─────────────────────────────────────────── */
+.progress-sm  { height: 6px;  border-radius: 6px; }
+.progress-md  { height: 12px; border-radius: 8px; }
+
+/* ── Audit Timeline ────────────────────────────────────────── */
+.audit-timeline { position: relative; padding-right: 28px; }
+.audit-timeline::before {
+  content: '';
+  position: absolute; right: 10px; top: 8px; bottom: 0;
+  width: 2px;
+  background: linear-gradient(to bottom, #0d6efd55, #e0e0e000);
+  border-radius: 2px;
+}
+.audit-item {
+  position: relative; margin-bottom: 12px;
+  background: #fff; border-radius: 10px;
+  padding: 10px 14px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  border-right: 3px solid #dee2e6;
+  transition: box-shadow .12s;
+}
+.audit-item:hover { box-shadow: 0 3px 10px rgba(0,0,0,.1); }
+.audit-item.type-edit       { border-right-color: #0d6efd; }
+.audit-item.type-withdrawal { border-right-color: #dc3545; }
+.audit-item.type-correction { border-right-color: #198754; }
+.audit-item.type-reopen     { border-right-color: #fd7e14; }
+.audit-dot {
+  position: absolute; right: -34px; top: 12px;
+  width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px rgba(13,110,253,.2);
+}
+
+/* ── Session meta strip ────────────────────────────────────── */
+.meta-dot {
+  display: inline-block; width: 4px; height: 4px;
+  border-radius: 50%; background: #ccc; vertical-align: middle;
+  margin: 0 6px;
+}
+
+/* ── Tab clean look ────────────────────────────────────────── */
+.nav-tabs .nav-link { color: #666; border-radius: 8px 8px 0 0; }
+.nav-tabs .nav-link.active { color: #0d6efd; font-weight: 700; }
+
+@media print {
+  .no-print { display: none !important; }
+}
+</style>
+{% endblock %}
+
+
+{% block content %}
+<div class="container-fluid px-3 px-lg-4">
+
+  {# ── Breadcrumb ──────────────────────────────────────────────── #}
+  <nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb small">
+      <li class="breadcrumb-item">
+        <a href="{{ url_for('admin.inv_sessions_kanban') }}">لوحة الجلسات</a>
+      </li>
+      <li class="breadcrumb-item active" aria-current="page">{{ inv_session.name }}</li>
+    </ol>
+  </nav>
+
+  {# ── Page Header ─────────────────────────────────────────────── #}
+  <div class="row align-items-start g-3 mb-4">
+
+    <div class="col">
+      <h3 class="fw-bold mb-2">{{ inv_session.name }}</h3>
+      <div class="d-flex align-items-center flex-wrap gap-2" style="font-size:.82rem; color:#666;">
+        <span class="badge bg-{{ type_colors[inv_session.session_type] }}-subtle
+                          text-{{ type_colors[inv_session.session_type] }}
+                          border border-{{ type_colors[inv_session.session_type] }}-subtle
+                          rounded-pill px-3 py-1">
+          <i class="bi bi-tag me-1"></i>{{ type_labels[inv_session.session_type] }}
+        </span>
+        <span class="badge bg-{{ status_colors[inv_session.status] }}-subtle
+                          text-{{ status_colors[inv_session.status] }}
+                          border border-{{ status_colors[inv_session.status] }}-subtle
+                          rounded-pill px-3 py-1">
+          {{ status_labels[inv_session.status] }}
+        </span>
+        <span class="meta-dot"></span>
+        <i class="bi bi-building me-1"></i>{{ inv_session.branch.name_ar }}
+        <span class="meta-dot"></span>
+        <i class="bi bi-calendar3 me-1"></i>{{ inv_session.count_date.strftime('%d %b %Y') }}
+        {% if inv_session.creator %}
+        <span class="meta-dot"></span>
+        <i class="bi bi-person me-1"></i>{{ inv_session.creator.full_name }}
+        {% endif %}
+        {% if inv_session.is_baseline %}
+        <span class="badge bg-light text-secondary border rounded-pill px-2 py-1 small">
+          <i class="bi bi-shield-lock me-1"></i>أساسي — محمي
+        </span>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="col-auto d-flex gap-2 flex-wrap no-print">
+      {% if not inv_session.is_baseline %}
+      <button class="btn btn-outline-secondary btn-sm"
+              data-bs-toggle="modal" data-bs-target="#editSettingsModal">
+        <i class="bi bi-pencil me-1"></i>تعديل الإعدادات
+      </button>
+      {% endif %}
+
+      {% if inv_session.status == 'draft' and not inv_session.is_baseline %}
+      <form method="POST"
+            action="{{ url_for('admin.inv_session_activate', session_id=inv_session.id) }}"
+            class="d-inline">
+        <button type="submit" class="btn btn-success btn-sm">
+          <i class="bi bi-play-fill me-1"></i>تفعيل
+        </button>
+      </form>
+      {% elif inv_session.status == 'active' %}
+      <form method="POST"
+            action="{{ url_for('admin.inv_session_pause', session_id=inv_session.id) }}"
+            class="d-inline">
+        <button type="submit" class="btn btn-warning btn-sm">
+          <i class="bi bi-pause-fill me-1"></i>إيقاف مؤقت
+        </button>
+      </form>
+      <form method="POST"
+            action="{{ url_for('admin.inv_session_complete', session_id=inv_session.id) }}"
+            class="d-inline">
+        <button type="submit" class="btn btn-primary btn-sm">
+          <i class="bi bi-check-circle me-1"></i>إغلاق كمكتملة
+        </button>
+      </form>
+      {% elif inv_session.status == 'paused' %}
+      <form method="POST"
+            action="{{ url_for('admin.inv_session_activate', session_id=inv_session.id) }}"
+            class="d-inline">
+        <button type="submit" class="btn btn-success btn-sm">
+          <i class="bi bi-play-fill me-1"></i>استئناف
+        </button>
+      </form>
+      {% endif %}
+
+      <a href="{{ url_for('inventory.inventory_report', session_id=inv_session.id) }}"
+         class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-file-text me-1"></i>تقرير
+      </a>
+      <button onclick="window.print()" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-printer"></i>
+      </button>
+    </div>
+  </div>
+
+  {# ── KPI Cards ───────────────────────────────────────────────── #}
+  <div class="row g-3 mb-4">
+
+    <div class="col-6 col-sm-4 col-lg-2">
+      <div class="kpi-card card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3 py-3 px-3">
+          <div class="kpi-icon bg-primary-subtle text-primary">
+            <i class="bi bi-grid-3x3-gap"></i>
+          </div>
+          <div>
+            <div class="kpi-value text-primary">{{ total_depts }}</div>
+            <div class="kpi-label">الأقسام</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-sm-4 col-lg-2">
+      <div class="kpi-card card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3 py-3 px-3">
+          <div class="kpi-icon bg-info-subtle text-info">
+            <i class="bi bi-box-seam"></i>
+          </div>
+          <div>
+            <div class="kpi-value text-info">{{ total_items }}</div>
+            <div class="kpi-label">إجمالي الأصناف</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-sm-4 col-lg-2">
+      <div class="kpi-card card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3 py-3 px-3">
+          <div class="kpi-icon bg-success-subtle text-success">
+            <i class="bi bi-check-circle"></i>
+          </div>
+          <div>
+            <div class="kpi-value text-success">{{ counted_items }}</div>
+            <div class="kpi-label">تم جردها</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-sm-4 col-lg-2">
+      <div class="kpi-card card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3 py-3 px-3">
+          <div class="kpi-icon bg-warning-subtle text-warning">
+            <i class="bi bi-hourglass-split"></i>
+          </div>
+          <div>
+            <div class="kpi-value text-warning">{{ remaining_items }}</div>
+            <div class="kpi-label">متبقية</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-sm-4 col-lg-2">
+      <div class="kpi-card card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3 py-3 px-3">
+          <div class="kpi-icon bg-secondary-subtle text-secondary">
+            <i class="bi bi-journal-text"></i>
+          </div>
+          <div>
+            <div class="kpi-value text-secondary">{{ total_entries }}</div>
+            <div class="kpi-label">إدخالات الجرد</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-sm-4 col-lg-2">
+      <div class="kpi-card card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3 py-3 px-3">
+          <div class="kpi-icon bg-danger-subtle text-danger">
+            <i class="bi bi-shield-check"></i>
+          </div>
+          <div>
+            <div class="kpi-value text-danger">{{ total_corrections }}</div>
+            <div class="kpi-label">التعديلات</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  {# ── Progress Overview ───────────────────────────────────────── #}
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-body py-3 px-4">
+      <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+        <div class="fw-semibold">
+          <i class="bi bi-activity me-2 text-primary"></i>تقدم الجرد الإجمالي
+        </div>
+        <div class="small text-muted">
+          {{ counted_items }} من {{ total_items }} صنف مُجرَّد
+          <span class="ms-2 fw-bold
+            {% if completion_pct == 100 %}text-success
+            {% elif completion_pct >= 50 %}text-primary
+            {% else %}text-warning{% endif %}">
+            {{ completion_pct }}%
+          </span>
+        </div>
+      </div>
+      <div class="progress progress-md">
+        <div class="progress-bar
+          {% if completion_pct == 100 %}bg-success
+          {% elif completion_pct >= 50 %}bg-primary
+          {% else %}bg-warning{% endif %}"
+          role="progressbar"
+          style="width: {{ completion_pct }}%; transition: width .8s ease;"
+          aria-valuenow="{{ completion_pct }}" aria-valuemin="0" aria-valuemax="100">
+        </div>
+      </div>
+      <div class="mt-2 small
+        {% if completion_pct == 100 %}text-success
+        {% else %}text-muted{% endif %}">
+        {% if completion_pct == 100 %}
+          <i class="bi bi-check-circle-fill me-1"></i>جميع الأصناف تم جردها بنجاح
+        {% elif remaining_items > 0 %}
+          <i class="bi bi-exclamation-circle me-1"></i>
+          {{ remaining_items }} صنف لم يُجرَّد بعد
+        {% else %}
+          <i class="bi bi-dash me-1"></i>لم يبدأ الجرد بعد
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# ── Main Tabs ───────────────────────────────────────────────── #}
+  <ul class="nav nav-tabs mb-4" id="controlTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active fw-semibold px-4"
+              id="depts-tab" data-bs-toggle="tab"
+              data-bs-target="#depts-panel" type="button" role="tab">
+        <i class="bi bi-grid me-2"></i>الأقسام
+        <span class="badge bg-primary-subtle text-primary ms-1">{{ total_depts }}</span>
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link fw-semibold px-4"
+              id="audit-tab" data-bs-toggle="tab"
+              data-bs-target="#audit-panel" type="button" role="tab">
+        <i class="bi bi-shield-check me-2"></i>سجل التدقيق
+        {% if total_corrections > 0 %}
+        <span class="badge bg-danger-subtle text-danger ms-1">{{ total_corrections }}</span>
+        {% endif %}
+      </button>
+    </li>
+  </ul>
+
+  <div class="tab-content" id="controlTabContent">
+
+    {# ══════════════════════ DEPARTMENTS TAB ═══════════════════════ #}
+    <div class="tab-pane fade show active" id="depts-panel" role="tabpanel">
+      {% if dept_stats %}
+      <div class="row g-3">
+        {% for ds in dept_stats %}
+        <div class="col-12 col-md-6 col-xl-4">
+          <div class="dept-ctrl-card card shadow-sm h-100"
+               role="button" tabindex="0"
+               onclick="openDeptReport({{ ds.dept.id }}, '{{ ds.dept.name_ar | replace("'","\\'")}}')"
+               onkeypress="if(event.key==='Enter') openDeptReport({{ ds.dept.id }}, '{{ ds.dept.name_ar | replace("'","\\'")}}')"
+               aria-label="عرض تقرير قسم {{ ds.dept.name_ar }}">
+            <div class="card-body pb-3">
+
+              {# Header row #}
+              <div class="d-flex justify-content-between align-items-start mb-3">
+                <h6 class="fw-bold mb-0 me-2">
+                  <i class="bi bi-grid-3x3-gap text-primary me-2"></i>
+                  {{ ds.dept.name_ar }}
+                </h6>
+                <span class="dept-pct-chip
+                  {% if ds.pct == 100 %}bg-success-subtle text-success
+                  {% elif ds.pct >= 50 %}bg-primary-subtle text-primary
+                  {% elif ds.pct > 0  %}bg-warning-subtle text-warning
+                  {% else            %}bg-danger-subtle text-danger{% endif %}
+                  flex-shrink-0">
+                  {{ ds.pct }}%
+                </span>
+              </div>
+
+              {# Stats row #}
+              <div class="d-flex justify-content-between small text-muted mb-2">
+                <span>
+                  <i class="bi bi-check-circle text-success me-1"></i>
+                  {{ ds.counted }} / {{ ds.total }} صنف
+                </span>
+                <span>
+                  {% if ds.pct == 100 %}
+                    <i class="bi bi-check-all text-success"></i> مكتمل
+                  {% elif ds.pct == 0 %}
+                    <i class="bi bi-x-circle text-danger"></i> لم يبدأ
+                  {% else %}
+                    <i class="bi bi-hourglass-split text-warning"></i> جارٍ
+                  {% endif %}
+                </span>
+              </div>
+
+              {# Progress bar #}
+              <div class="progress progress-sm mb-3">
+                <div class="progress-bar
+                  {% if ds.pct == 100 %}bg-success
+                  {% elif ds.pct >= 50 %}bg-primary
+                  {% elif ds.pct > 0  %}bg-warning
+                  {% else            %}bg-danger{% endif %}"
+                  role="progressbar" style="width: {{ ds.pct }}%;">
+                </div>
+              </div>
+
+              {# Footer row #}
+              <div class="d-flex justify-content-between align-items-center">
+                <small class="text-muted">
+                  {% if ds.last_activity %}
+                    <i class="bi bi-clock me-1"></i>
+                    {{ ds.last_activity.strftime('%d %b — %H:%M') }}
+                  {% else %}
+                    <i class="bi bi-dash me-1"></i>لا يوجد نشاط
+                  {% endif %}
+                </small>
+                <small class="text-primary fw-semibold">
+                  <i class="bi bi-eye me-1"></i>عرض التقرير
+                </small>
+              </div>
+
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="text-center py-5 text-muted">
+        <i class="bi bi-grid display-4 d-block mb-3"></i>
+        <h5>لا توجد أقسام مسجلة في هذه الجلسة</h5>
+        {% if not inv_session.is_baseline %}
+        <a href="{{ url_for('admin.inv_session_edit', session_id=inv_session.id) }}"
+           class="btn btn-primary btn-sm mt-2">
+          <i class="bi bi-plus me-1"></i>إضافة أقسام
+        </a>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>{# /depts-panel #}
+
+
+    {# ══════════════════════ AUDIT LOG TAB ═════════════════════════ #}
+    <div class="tab-pane fade" id="audit-panel" role="tabpanel">
+
+      {# Filter bar #}
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body py-2 px-3">
+          <div class="row g-2 align-items-center">
+            <div class="col-12 col-md-5">
+              <div class="input-group input-group-sm">
+                <span class="input-group-text bg-light border-0">
+                  <i class="bi bi-search text-muted"></i>
+                </span>
+                <input type="text" id="auditSearch" class="form-control bg-light border-0"
+                       placeholder="بحث في الصنف أو المستخدم أو السبب…"
+                       oninput="filterAuditLog()">
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <select id="auditTypeFilter" class="form-select form-select-sm bg-light border-0"
+                      onchange="filterAuditLog()">
+                <option value="">كل الأنواع</option>
+                <option value="edit">تعديل</option>
+                <option value="withdrawal">سحب</option>
+                <option value="correction">تصحيح</option>
+                <option value="reopen">إعادة فتح</option>
+              </select>
+            </div>
+            <div class="col-6 col-md-4 text-muted small">
+              <i class="bi bi-info-circle me-1"></i>
+              <span id="auditCountDisplay">{{ audit_logs | length }} سجل</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {% if audit_logs %}
+      <div class="audit-timeline" id="auditTimeline">
+        {% for log in audit_logs %}
+        {% set atype = log.action_type if log.action_type else 'edit' %}
+        <div class="audit-item type-{{ atype }}"
+             data-search="{{ (log.item.name_ar if log.item else '') | lower }} {{ (log.editor.full_name if log.editor else '') | lower }} {{ log.reason or '' | lower }}"
+             data-type="{{ atype }}">
+
+          {# Dot on the timeline line #}
+          <span class="audit-dot
+            {% if atype == 'withdrawal' %}bg-danger
+            {% elif atype == 'correction' %}bg-success
+            {% elif atype == 'reopen' %}bg-warning
+            {% else %}bg-primary{% endif %}"></span>
+
+          {# Row 1: timestamp + badge #}
+          <div class="d-flex justify-content-between align-items-start mb-1 flex-wrap gap-1">
+            <span class="small text-muted">
+              <i class="bi bi-clock me-1"></i>
+              {{ log.changed_at.strftime('%d %b %Y — %H:%M') }}
+              {% if log.revision_number %}
+              <span class="badge bg-light text-secondary border ms-1"
+                    style="font-size:.65rem;">مراجعة {{ log.revision_number }}</span>
+              {% endif %}
+            </span>
+            <span class="badge rounded-pill px-2 py-1
+              {% if atype == 'withdrawal' %}bg-danger-subtle text-danger
+              {% elif atype == 'correction' %}bg-success-subtle text-success
+              {% elif atype == 'reopen' %}bg-warning-subtle text-warning
+              {% else %}bg-primary-subtle text-primary{% endif %}"
+              style="font-size:.68rem;">
+              {% if atype == 'withdrawal' %}<i class="bi bi-dash-circle me-1"></i>سحب
+              {% elif atype == 'correction' %}<i class="bi bi-check-circle me-1"></i>تصحيح
+              {% elif atype == 'reopen' %}<i class="bi bi-arrow-clockwise me-1"></i>إعادة فتح
+              {% else %}<i class="bi bi-pencil me-1"></i>تعديل{% endif %}
+            </span>
+          </div>
+
+          {# Row 2: actor + item + change #}
+          <div class="d-flex align-items-center gap-3 flex-wrap small">
+            <span>
+              <i class="bi bi-person text-muted me-1"></i>
+              <strong>{{ log.editor.full_name if log.editor else '—' }}</strong>
+            </span>
+            {% if log.item %}
+            <span class="text-muted">
+              <i class="bi bi-box-seam me-1"></i>{{ log.item.name_ar }}
+            </span>
+            {% endif %}
+            {% if log.old_value and log.new_value %}
+            <span class="d-flex align-items-center gap-1">
+              <span class="badge bg-danger-subtle text-danger px-2">{{ log.old_value }}</span>
+              <i class="bi bi-arrow-left text-muted"></i>
+              <span class="badge bg-success-subtle text-success px-2">{{ log.new_value }}</span>
+            </span>
+            {% endif %}
+          </div>
+
+          {% if log.reason %}
+          <div class="mt-1 small text-muted fst-italic">
+            <i class="bi bi-chat-left-text me-1"></i>{{ log.reason }}
+          </div>
+          {% endif %}
+
+        </div>
+        {% endfor %}
+      </div>
+      <div id="auditEmptyMsg" class="text-center py-4 text-muted d-none">
+        <i class="bi bi-search fs-2 d-block mb-2"></i>لا توجد نتائج مطابقة
+      </div>
+      {% else %}
+      <div class="text-center py-5 text-muted">
+        <i class="bi bi-shield-check display-4 d-block mb-3"></i>
+        <h5>لا توجد تعديلات مسجلة</h5>
+        <p class="small mb-0">سيظهر هنا كل تعديل أو سحب أو تصحيح يُجرى على بيانات الجرد</p>
+      </div>
+      {% endif %}
+
+    </div>{# /audit-panel #}
+
+  </div>{# /tab-content #}
+
+</div>{# /container-fluid #}
+
+
+{# ════════════════════════════════════════════════════════════════
+   DEPARTMENT COUNT REPORT MODAL
+════════════════════════════════════════════════════════════════ #}
+<div class="modal fade" id="deptReportModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header border-bottom">
+        <div>
+          <h5 class="modal-title fw-bold mb-0">
+            <i class="bi bi-grid-3x3-gap text-primary me-2"></i>
+            <span id="deptReportName">تقرير القسم</span>
+          </h5>
+          <div class="text-muted small mt-1" id="deptReportSubtitle">
+            {{ inv_session.name }} &nbsp;·&nbsp; {{ inv_session.count_date.strftime('%d %b %Y') }}
+          </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0" id="deptReportBody">
+        <div class="text-center py-5">
+          <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">جارٍ التحميل…</span>
+          </div>
+          <div class="mt-2 text-muted small">جارٍ تحميل بيانات القسم…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+{# ════════════════════════════════════════════════════════════════
+   EDIT SESSION SETTINGS MODAL
+════════════════════════════════════════════════════════════════ #}
+{% if not inv_session.is_baseline %}
+<div class="modal fade" id="editSettingsModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title fw-bold">
+          <i class="bi bi-pencil-square me-2"></i>إعدادات الجلسة
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form method="POST"
+              action="{{ url_for('admin.inv_session_edit', session_id=inv_session.id) }}"
+              id="editSettingsForm">
+          <input type="hidden" name="next"
+                 value="{{ url_for('admin.inv_session_control', session_id=inv_session.id) }}">
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">
+              اسم الجلسة <span class="text-danger">*</span>
+            </label>
+            <input type="text" name="name" class="form-control"
+                   value="{{ inv_session.name }}" required maxlength="200">
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">تاريخ الجرد</label>
+            <input type="date" name="count_date" class="form-control"
+                   value="{{ inv_session.count_date.isoformat() }}" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">ملاحظات</label>
+            <textarea name="notes" class="form-control" rows="2"
+                      placeholder="ملاحظات اختيارية…">{{ inv_session.notes or '' }}</textarea>
+          </div>
+
+          <div class="mb-1">
+            <label class="form-label fw-semibold">الأقسام المشمولة</label>
+            <div class="border rounded p-3">
+              {% for dept in inv_session.branch.departments %}
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox"
+                       name="department_ids" value="{{ dept.id }}"
+                       id="ctrl_dept_{{ dept.id }}"
+                       {% if dept.id in current_dept_ids %}checked{% endif %}>
+                <label class="form-check-label small" for="ctrl_dept_{{ dept.id }}">
+                  {{ dept.name_ar }}
+                </label>
+              </div>
+              {% else %}
+              <p class="text-muted small mb-0">لا توجد أقسام لهذا الفرع</p>
+              {% endfor %}
+            </div>
+            <div class="form-text text-muted small">يجب اختيار قسم واحد على الأقل.</div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer border-0">
+        <button type="button" class="btn btn-secondary btn-sm"
+                data-bs-dismiss="modal">إلغاء</button>
+        <button type="submit" form="editSettingsForm" class="btn btn-primary btn-sm">
+          <i class="bi bi-check-lg me-1"></i>حفظ الإعدادات
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+
+{# ════════════════════════════════════════════════════════════════
+   WITHDRAW COUNT MODAL
+════════════════════════════════════════════════════════════════ #}
+<div class="modal fade" id="withdrawModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h6 class="modal-title text-danger fw-bold">
+          <i class="bi bi-dash-circle me-2"></i>سحب الإدخال
+        </h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning small py-2 mb-3 d-flex gap-2">
+          <i class="bi bi-shield-check flex-shrink-0 mt-1"></i>
+          <span>الإدخال الأصلي يُحفظ دائماً في سجل التدقيق. لن يُحذف أي بيانات.</span>
+        </div>
+        <div class="row g-2 mb-3">
+          <div class="col-7">
+            <div class="text-muted small">الصنف</div>
+            <div class="fw-semibold" id="withdrawItemName">—</div>
+          </div>
+          <div class="col-5 text-end">
+            <div class="text-muted small">الكمية الحالية</div>
+            <div class="fw-bold text-danger" id="withdrawCurrentQty">—</div>
+          </div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small fw-semibold">
+            سبب السحب <span class="text-danger">*</span>
+          </label>
+          <textarea id="withdrawReasonInput" class="form-control form-control-sm" rows="2"
+                    placeholder="اذكر سبب سحب هذا الإدخال…"></textarea>
+        </div>
+        <div id="withdrawError" class="alert alert-danger py-2 small d-none"></div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-secondary btn-sm"
+                data-bs-dismiss="modal">إلغاء</button>
+        <button type="button" class="btn btn-danger btn-sm" id="withdrawConfirmBtn"
+                onclick="submitWithdraw()">
+          <i class="bi bi-dash-circle me-1"></i>تأكيد السحب
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+{# ════════════════════════════════════════════════════════════════
+   CORRECT COUNT MODAL
+════════════════════════════════════════════════════════════════ #}
+<div class="modal fade" id="correctModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h6 class="modal-title text-success fw-bold">
+          <i class="bi bi-pencil-square me-2"></i>تصحيح الكمية
+        </h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-info small py-2 mb-3 d-flex gap-2">
+          <i class="bi bi-info-circle flex-shrink-0 mt-1"></i>
+          <span>الكميات السابقة تُحفظ كـ"مسحوبة". تُنشأ مراجعة جديدة بالكمية الصحيحة.</span>
+        </div>
+        <div class="row g-2 mb-3">
+          <div class="col-8">
+            <div class="text-muted small">الصنف</div>
+            <div class="fw-semibold" id="correctItemName">—</div>
+          </div>
+          <div class="col-4 text-end">
+            <div class="text-muted small">الكمية الحالية</div>
+            <div class="fw-semibold" id="correctCurrentQty">—</div>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">
+            الكمية الصحيحة <span class="text-danger">*</span>
+            <span class="text-muted fw-normal" id="correctUnitLabel"></span>
+          </label>
+          <input type="number" id="correctQtyInput" class="form-control form-control-sm"
+                 min="0" step="0.001" placeholder="0">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small fw-semibold">
+            سبب التصحيح <span class="text-danger">*</span>
+          </label>
+          <textarea id="correctReasonInput" class="form-control form-control-sm" rows="2"
+                    placeholder="مثال: إعادة عد — خطأ في الإدخال الأول"></textarea>
+        </div>
+        <div id="correctError" class="alert alert-danger py-2 small d-none"></div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-secondary btn-sm"
+                data-bs-dismiss="modal">إلغاء</button>
+        <button type="button" class="btn btn-success btn-sm" id="correctConfirmBtn"
+                onclick="submitCorrection()">
+          <i class="bi bi-check-lg me-1"></i>حفظ التصحيح
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}{# /content #}
+
+
+{% block scripts %}
+<script>
+const SESSION_ID = {{ inv_session.id }};
+
+/* ════════════════════════════════════════════════════════════════
+   AUDIT LOG CLIENT FILTER
+════════════════════════════════════════════════════════════════ */
+function filterAuditLog() {
+  const search = document.getElementById('auditSearch').value.toLowerCase().trim();
+  const type   = document.getElementById('auditTypeFilter').value;
+  const items  = document.querySelectorAll('#auditTimeline .audit-item');
+  let visible  = 0;
+  items.forEach(el => {
+    const matchSearch = !search || (el.dataset.search || '').includes(search);
+    const matchType   = !type   || el.dataset.type === type;
+    el.style.display  = matchSearch && matchType ? '' : 'none';
+    if (matchSearch && matchType) visible++;
+  });
+  const countEl = document.getElementById('auditCountDisplay');
+  if (countEl) countEl.textContent = visible + ' سجل';
+  const emptyEl = document.getElementById('auditEmptyMsg');
+  if (emptyEl) emptyEl.classList.toggle('d-none', visible > 0 || items.length === 0);
+}
+
+
+/* ════════════════════════════════════════════════════════════════
+   DEPARTMENT REPORT — load HTML partial into modal
+════════════════════════════════════════════════════════════════ */
+let _currentDeptId   = null;
+let _deptReportModal = null;
+
+function openDeptReport(deptId, deptName) {
+  _currentDeptId = deptId;
+  document.getElementById('deptReportName').textContent = deptName;
+  document.getElementById('deptReportBody').innerHTML =
+    '<div class="text-center py-5">' +
+    '<div class="spinner-border text-primary" role="status"></div>' +
+    '<div class="mt-2 text-muted small">جارٍ تحميل بيانات القسم…</div>' +
+    '</div>';
+
+  if (!_deptReportModal) {
+    _deptReportModal = new bootstrap.Modal(
+      document.getElementById('deptReportModal')
+    );
+  }
+  _deptReportModal.show();
+
+  fetch(`/admin/inv-sessions/${SESSION_ID}/dept/${deptId}/report`)
+    .then(r => r.ok ? r.text() : Promise.reject(r.status))
+    .then(html => {
+      document.getElementById('deptReportBody').innerHTML = html;
+    })
+    .catch(() => {
+      document.getElementById('deptReportBody').innerHTML =
+        '<div class="alert alert-danger m-3">فشل تحميل تقرير القسم. يرجى المحاولة مجدداً.</div>';
+    });
+}
+
+function refreshDeptReport() {
+  if (_currentDeptId) {
+    fetch(`/admin/inv-sessions/${SESSION_ID}/dept/${_currentDeptId}/report`)
+      .then(r => r.text())
+      .then(html => { document.getElementById('deptReportBody').innerHTML = html; });
+  }
+}
+
+
+/* ════════════════════════════════════════════════════════════════
+   WITHDRAW COUNT
+════════════════════════════════════════════════════════════════ */
+let _withdrawEntryId = null;
+
+function openWithdrawModal(entryId, itemName, currentQty) {
+  _withdrawEntryId = entryId;
+  document.getElementById('withdrawItemName').textContent   = itemName;
+  document.getElementById('withdrawCurrentQty').textContent = currentQty;
+  document.getElementById('withdrawReasonInput').value      = '';
+  document.getElementById('withdrawError').classList.add('d-none');
+  new bootstrap.Modal(document.getElementById('withdrawModal')).show();
+}
+
+async function submitWithdraw() {
+  const reason = document.getElementById('withdrawReasonInput').value.trim();
+  const errEl  = document.getElementById('withdrawError');
+  errEl.classList.add('d-none');
+  if (!reason) {
+    errEl.textContent = 'سبب السحب مطلوب';
+    errEl.classList.remove('d-none');
+    return;
+  }
+  const btn = document.getElementById('withdrawConfirmBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>جارٍ السحب…';
+  try {
+    const res  = await fetch(
+      `/admin/inv-sessions/${SESSION_ID}/counts/${_withdrawEntryId}/withdraw`,
+      { method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({reason}) }
+    );
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      errEl.textContent = data.error || 'حدث خطأ';
+      errEl.classList.remove('d-none');
+      return;
+    }
+    bootstrap.Modal.getInstance(document.getElementById('withdrawModal'))?.hide();
+    refreshDeptReport();
+    showToast('تم سحب الإدخال بنجاح', 'success');
+  } catch {
+    errEl.textContent = 'فشل الاتصال بالخادم';
+    errEl.classList.remove('d-none');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-dash-circle me-1"></i>تأكيد السحب';
+  }
+}
+
+
+/* ════════════════════════════════════════════════════════════════
+   CORRECT COUNT
+════════════════════════════════════════════════════════════════ */
+let _correctItemId = null;
+
+function openCorrectModal(itemId, itemName, currentQty, unit) {
+  _correctItemId = itemId;
+  document.getElementById('correctItemName').textContent   = itemName;
+  document.getElementById('correctCurrentQty').textContent = currentQty + (unit ? ' ' + unit : '');
+  document.getElementById('correctUnitLabel').textContent  = unit ? '(' + unit + ')' : '';
+  document.getElementById('correctQtyInput').value         = currentQty;
+  document.getElementById('correctReasonInput').value      = '';
+  document.getElementById('correctError').classList.add('d-none');
+  new bootstrap.Modal(document.getElementById('correctModal')).show();
+}
+
+async function submitCorrection() {
+  const qty    = parseFloat(document.getElementById('correctQtyInput').value);
+  const reason = document.getElementById('correctReasonInput').value.trim();
+  const errEl  = document.getElementById('correctError');
+  errEl.classList.add('d-none');
+  if (isNaN(qty) || qty < 0) {
+    errEl.textContent = 'أدخل كمية صحيحة (≥ 0)';
+    errEl.classList.remove('d-none');
+    return;
+  }
+  if (!reason) {
+    errEl.textContent = 'سبب التصحيح مطلوب';
+    errEl.classList.remove('d-none');
+    return;
+  }
+  const btn = document.getElementById('correctConfirmBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>جارٍ الحفظ…';
+  try {
+    const res  = await fetch(
+      `/admin/inv-sessions/${SESSION_ID}/items/${_correctItemId}/correct`,
+      { method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({quantity: qty, reason}) }
+    );
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      errEl.textContent = data.error || 'حدث خطأ';
+      errEl.classList.remove('d-none');
+      return;
+    }
+    bootstrap.Modal.getInstance(document.getElementById('correctModal'))?.hide();
+    refreshDeptReport();
+    showToast('تم حفظ التصحيح بنجاح', 'success');
+  } catch {
+    errEl.textContent = 'فشل الاتصال بالخادم';
+    errEl.classList.remove('d-none');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>حفظ التصحيح';
+  }
+}
+
+
+/* ════════════════════════════════════════════════════════════════
+   TOAST NOTIFICATION
+════════════════════════════════════════════════════════════════ */
+function showToast(message, type) {
+  const el = document.createElement('div');
+  el.className = `toast align-items-center text-bg-${type || 'primary'} border-0 position-fixed bottom-0 start-50 translate-middle-x mb-4`;
+  el.style.zIndex = '9999';
+  el.setAttribute('role', 'alert');
+  el.innerHTML =
+    '<div class="d-flex"><div class="toast-body fw-semibold">' + message + '</div>' +
+    '<button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>';
+  document.body.appendChild(el);
+  const t = new bootstrap.Toast(el, {delay: 3000});
+  t.show();
+  el.addEventListener('hidden.bs.toast', () => el.remove());
+}
+</script>
+{% endblock %}

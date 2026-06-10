@@ -1,0 +1,287 @@
+{#
+  Department Count Report — HTML partial loaded via AJAX into #deptReportBody.
+  JS functions (openWithdrawModal, openCorrectModal) live in inv_session_control.html.
+#}
+
+<style>
+.rpt-stat-card { border-radius: 10px; }
+.rpt-table th  { font-size: 0.72rem; color: #888; font-weight: 600; white-space: nowrap; }
+.rpt-table td  { font-size: 0.82rem; vertical-align: middle; }
+.qty-pill      {
+  background: rgba(25,135,84,.1); color: #198754;
+  font-weight: 700; border-radius: 6px; padding: 2px 8px; font-size: .8rem;
+}
+.rev-row td    { font-size: .75rem; background: #f8f9fa; }
+.rev-row.withdrawn td { opacity: .55; text-decoration: line-through; }
+</style>
+
+{# ── Summary Stats Strip ─────────────────────────────────────── #}
+<div class="row g-2 px-3 pt-3 mb-3">
+  <div class="col-6 col-sm-3">
+    <div class="rpt-stat-card card border-0 bg-light h-100">
+      <div class="card-body text-center py-3">
+        <div class="fs-3 fw-bold text-info">{{ total_items }}</div>
+        <div class="text-muted small">إجمالي الأصناف</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-sm-3">
+    <div class="rpt-stat-card card border-0 h-100" style="background:rgba(25,135,84,.07);">
+      <div class="card-body text-center py-3">
+        <div class="fs-3 fw-bold text-success">{{ counted_items }}</div>
+        <div class="text-muted small">تم جردها</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-sm-3">
+    <div class="rpt-stat-card card border-0 h-100" style="background:rgba(220,53,69,.07);">
+      <div class="card-body text-center py-3">
+        <div class="fs-3 fw-bold text-danger">{{ missing_items }}</div>
+        <div class="text-muted small">لم تُجرَّد</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-sm-3">
+    <div class="rpt-stat-card card border-0 bg-light h-100">
+      <div class="card-body text-center py-3">
+        <div class="fs-3 fw-bold text-secondary">{{ total_revisions }}</div>
+        <div class="text-muted small">إجمالي الإدخالات</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if last_modified %}
+<div class="px-3 mb-2 text-muted small">
+  <i class="bi bi-clock me-1"></i>آخر تعديل:
+  <strong>{{ last_modified.strftime('%d %b %Y — %H:%M') }}</strong>
+</div>
+{% endif %}
+
+{# ── Completion progress bar ─────────────────────────────────── #}
+{% if total_items > 0 %}
+{% set dept_pct = (counted_items / total_items * 100) | int %}
+<div class="px-3 mb-3">
+  <div class="d-flex justify-content-between small mb-1">
+    <span class="text-muted">التقدم</span>
+    <span class="fw-semibold
+      {% if dept_pct == 100 %}text-success{% elif dept_pct >= 50 %}text-primary{% else %}text-warning{% endif %}">
+      {{ dept_pct }}%
+    </span>
+  </div>
+  <div class="progress" style="height:8px; border-radius:6px;">
+    <div class="progress-bar
+      {% if dept_pct == 100 %}bg-success{% elif dept_pct >= 50 %}bg-primary{% else %}bg-warning{% endif %}"
+      role="progressbar" style="width:{{ dept_pct }}%;"></div>
+  </div>
+</div>
+{% endif %}
+
+{# ── Inventory Count Grid ────────────────────────────────────── #}
+{% if item_rows %}
+<div class="table-responsive">
+  <table class="table table-sm table-hover rpt-table mb-0 align-middle">
+    <thead class="table-light">
+      <tr>
+        <th class="ps-3" style="min-width:190px;">الصنف</th>
+        <th>الوحدة</th>
+        <th style="min-width:90px;">الكمية</th>
+        <th style="min-width:110px;">جُرِّد بواسطة</th>
+        <th style="min-width:95px;">وقت الجرد</th>
+        <th style="min-width:95px;">آخر تعديل</th>
+        {% if can_edit %}<th style="min-width:160px;">الإجراءات</th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in item_rows %}
+
+      {# ── Main item row ── #}
+      <tr class="{% if not row.has_count %}table-warning bg-opacity-25{% endif %}">
+
+        {# Item name + code + packaging note #}
+        <td class="ps-3">
+          <div class="fw-semibold">
+            {% if row.item.item_code %}
+            <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle me-1"
+                  style="font-size:.62rem; font-family:monospace;">
+              {{ row.item.item_code }}
+            </span>
+            {% endif %}
+            {{ row.item.name_ar }}
+          </div>
+          {% if row.item.packaging_note %}
+          <div class="text-muted" style="font-size:.7rem;">
+            <i class="bi bi-tag me-1" style="color:#fd7e14;"></i>
+            {{ row.item.packaging_note }}
+          </div>
+          {% endif %}
+          {% if row.entry_count > 1 %}
+          <button class="btn btn-link btn-sm p-0 mt-1 text-primary"
+                  style="font-size:.68rem;"
+                  onclick="toggleRevisions('rev-{{ row.item.id }}', this)">
+            <i class="bi bi-layers me-1"></i>
+            {{ row.entry_count }} إدخالات — عرض السجل
+          </button>
+          {% endif %}
+        </td>
+
+        {# Unit #}
+        <td class="text-muted">
+          {{ row.item.effective_base_unit.name_ar if row.item.effective_base_unit else '—' }}
+        </td>
+
+        {# Counted qty #}
+        <td>
+          {% if row.has_count %}
+          <span class="qty-pill">{{ '%g' | format(row.total_qty) }}</span>
+          {% else %}
+          <span class="badge bg-danger-subtle text-danger border border-danger-subtle">
+            <i class="bi bi-dash"></i> لم يُجرَّد
+          </span>
+          {% endif %}
+        </td>
+
+        {# Counted by #}
+        <td class="small">
+          {% if row.latest and row.latest.user %}{{ row.latest.user.full_name }}
+          {% elif row.has_count %}—
+          {% else %}<span class="text-muted">—</span>{% endif %}
+        </td>
+
+        {# Count time #}
+        <td class="text-muted small">
+          {% if row.latest and row.latest.created_at %}
+            {{ row.latest.created_at.strftime('%d %b %H:%M') }}
+          {% else %}—{% endif %}
+        </td>
+
+        {# Last modified #}
+        <td class="text-muted small">
+          {% if row.latest and row.latest.updated_at %}
+            {{ row.latest.updated_at.strftime('%d %b %H:%M') }}
+          {% else %}—{% endif %}
+        </td>
+
+        {# Actions #}
+        {% if can_edit %}
+        <td>
+          {% if row.has_count %}
+          <div class="d-flex gap-1 flex-wrap">
+            {# Correct #}
+            <button class="btn btn-outline-success btn-sm py-0 px-2"
+                    style="font-size:.7rem;"
+                    onclick="openCorrectModal(
+                      {{ row.item.id }},
+                      '{{ row.item.name_ar | replace("'","\\'") }}',
+                      {{ row.total_qty }},
+                      '{{ row.item.effective_base_unit.name_ar | replace("'","\\'") if row.item.effective_base_unit else '' }}'
+                    )">
+              <i class="bi bi-pencil me-1"></i>تصحيح
+            </button>
+            {# Withdraw latest active entry #}
+            {% if row.latest %}
+            <button class="btn btn-outline-danger btn-sm py-0 px-2"
+                    style="font-size:.7rem;"
+                    onclick="openWithdrawModal(
+                      {{ row.latest.id }},
+                      '{{ row.item.name_ar | replace("'","\\'") }}',
+                      {{ row.total_qty }}
+                    )">
+              <i class="bi bi-dash-circle me-1"></i>سحب
+            </button>
+            {% endif %}
+          </div>
+          {% endif %}
+        </td>
+        {% endif %}
+
+      </tr>
+
+      {# ── Revision history sub-rows (collapsed by default) ── #}
+      {% if row.entry_count > 1 %}
+      <tr id="rev-{{ row.item.id }}" class="d-none">
+        <td colspan="{{ 7 if can_edit else 6 }}" class="p-0">
+          <div class="px-4 py-2 border-top border-bottom bg-light">
+            <div class="text-muted small fw-semibold mb-2">
+              <i class="bi bi-layers me-1"></i>سجل جميع الإدخالات لهذا الصنف
+            </div>
+            <table class="table table-sm mb-0" style="font-size:.76rem;">
+              <thead>
+                <tr class="text-muted">
+                  <th>الحالة</th>
+                  <th>الكمية</th>
+                  <th>بواسطة</th>
+                  <th>وقت الإدخال</th>
+                  <th>ملاحظات</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for entry in row.all_entries %}
+                <tr class="{% if entry.status == 'withdrawn' %}rev-row withdrawn{% else %}rev-row{% endif %}">
+                  <td>
+                    <span class="badge
+                      {% if entry.status == 'withdrawn' %}bg-danger-subtle text-danger
+                      {% else %}bg-success-subtle text-success{% endif %}"
+                      style="font-size:.62rem;">
+                      {% if entry.status == 'withdrawn' %}
+                        <i class="bi bi-dash-circle me-1"></i>مسحوب
+                      {% else %}
+                        <i class="bi bi-check-circle me-1"></i>نشط
+                      {% endif %}
+                    </span>
+                  </td>
+                  <td class="fw-semibold">
+                    {{ '%g' | format(entry.quantity) }}
+                    <span class="text-muted fw-normal">
+                      {{ row.item.effective_base_unit.name_ar if row.item.effective_base_unit else '' }}
+                    </span>
+                    {% if entry.entered_quantity and entry.entered_unit %}
+                    <span class="text-muted" style="font-size:.68rem;">
+                      ({{ '%g' | format(entry.entered_quantity) }} {{ entry.entered_unit.name_ar }})
+                    </span>
+                    {% endif %}
+                  </td>
+                  <td>{{ entry.user.full_name if entry.user else '—' }}</td>
+                  <td class="text-muted">
+                    {{ entry.created_at.strftime('%d %b %Y %H:%M') if entry.created_at else '—' }}
+                  </td>
+                  <td class="text-muted fst-italic" style="max-width:200px; word-break:break-word;">
+                    {{ entry.notes or '—' }}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </td>
+      </tr>
+      {% endif %}
+
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% else %}
+<div class="text-center py-5 text-muted">
+  <i class="bi bi-box-seam display-4 d-block mb-3"></i>
+  <h6>لا توجد أصناف نشطة في هذا القسم</h6>
+</div>
+{% endif %}
+
+<script>
+function toggleRevisions(rowId, btn) {
+  const row = document.getElementById(rowId);
+  if (!row) return;
+  const hidden = row.classList.toggle('d-none');
+  btn.innerHTML = hidden
+    ? '<i class="bi bi-layers me-1"></i>' + btn.dataset.count + ' إدخالات — عرض السجل'
+    : '<i class="bi bi-chevron-up me-1"></i>إخفاء السجل';
+}
+
+// Stamp entry count onto each toggle button after render
+document.querySelectorAll('[onclick^="toggleRevisions"]').forEach(btn => {
+  const match = btn.textContent.match(/(\d+)/);
+  if (match) btn.dataset.count = match[1];
+});
+</script>

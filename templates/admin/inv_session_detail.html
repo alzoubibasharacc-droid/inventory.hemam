@@ -41,8 +41,12 @@
     </div>
 
     <div class="d-flex gap-2 flex-wrap">
+      <a href="{{ url_for('admin.inv_session_control', session_id=inv_session.id) }}"
+         class="btn btn-primary btn-sm">
+        <i class="bi bi-speedometer2 me-1"></i>مركز التحكم
+      </a>
       <a href="{{ url_for('admin.inv_session_edit', session_id=inv_session.id) }}"
-         class="btn btn-outline-primary btn-sm">
+         class="btn btn-outline-secondary btn-sm">
         <i class="bi bi-pencil me-1"></i>تعديل
       </a>
 

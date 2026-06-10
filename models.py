@@ -336,6 +336,9 @@ class InventoryCount(db.Model):
     created_at = db.Column(db.DateTime, default=_now)
     updated_at = db.Column(db.DateTime, default=_now, onupdate=_now)
 
+    # active | withdrawn — withdrawn entries are kept for audit; never deleted
+    status = db.Column(db.String(20), nullable=False, default='active')
+
     user = db.relationship('User', backref='counts')
     entered_unit = db.relationship('Unit', foreign_keys=[entered_unit_id])
 
@@ -385,12 +388,15 @@ class SessionAuditLog(db.Model):
         db.ForeignKey('items.id', ondelete='SET NULL'),
         nullable=True,
     )
-    changed_by    = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    changed_at    = db.Column(db.DateTime, nullable=False, default=_now)
-    field_changed = db.Column(db.String(100), nullable=False, default='quantity')
-    old_value     = db.Column(db.Text, nullable=True)
-    new_value     = db.Column(db.Text, nullable=True)
-    reason        = db.Column(db.Text, nullable=True)
+    changed_by      = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    changed_at      = db.Column(db.DateTime, nullable=False, default=_now)
+    field_changed   = db.Column(db.String(100), nullable=False, default='quantity')
+    old_value       = db.Column(db.Text, nullable=True)
+    new_value       = db.Column(db.Text, nullable=True)
+    reason          = db.Column(db.Text, nullable=True)
+    # edit | withdrawal | correction | reopen | session_status
+    action_type     = db.Column(db.String(50), nullable=False, default='edit')
+    revision_number = db.Column(db.Integer, nullable=True)
 
     item   = db.relationship('Item', foreign_keys=[item_id])
     editor = db.relationship('User', foreign_keys=[changed_by])

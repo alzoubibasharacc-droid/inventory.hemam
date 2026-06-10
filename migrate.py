@@ -686,6 +686,50 @@ def run_v9(conn):
         print('  = baseline session departments already assigned')
 
 
+def run_v11(conn):
+    """
+    v11: Session Control Center fields.
+
+    1. inventory_counts.status        — 'active' | 'withdrawn'
+    2. session_audit_log.action_type  — 'edit' | 'withdrawal' | 'correction' | 'reopen'
+    3. session_audit_log.revision_number — integer revision counter (nullable)
+    """
+    # ── inventory_counts.status ───────────────────────────────────────────────
+    if not column_exists(conn, 'inventory_counts', 'status'):
+        conn.execute(db.text(
+            "ALTER TABLE inventory_counts ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'active'"
+        ))
+        # Backfill any NULLs (SQLite honours DEFAULT on ADD COLUMN, but be safe)
+        conn.execute(db.text(
+            "UPDATE inventory_counts SET status = 'active' WHERE status IS NULL"
+        ))
+        print("  + inventory_counts.status  (all existing rows set to 'active')")
+    else:
+        print('  = inventory_counts.status already present')
+
+    # ── session_audit_log.action_type ─────────────────────────────────────────
+    if not column_exists(conn, 'session_audit_log', 'action_type'):
+        conn.execute(db.text(
+            "ALTER TABLE session_audit_log ADD COLUMN action_type VARCHAR(50) NOT NULL DEFAULT 'edit'"
+        ))
+        conn.execute(db.text(
+            "UPDATE session_audit_log SET action_type = 'edit' WHERE action_type IS NULL"
+        ))
+        print("  + session_audit_log.action_type  (all existing rows set to 'edit')")
+    else:
+        print('  = session_audit_log.action_type already present')
+
+    # ── session_audit_log.revision_number ─────────────────────────────────────
+    if not column_exists(conn, 'session_audit_log', 'revision_number'):
+        col_type = 'INTEGER' if _is_sqlite(conn) else 'INTEGER'
+        conn.execute(db.text(
+            f'ALTER TABLE session_audit_log ADD COLUMN revision_number {col_type}'
+        ))
+        print('  + session_audit_log.revision_number')
+    else:
+        print('  = session_audit_log.revision_number already present')
+
+
 def run_v10(conn):
     """Create session_audit_log table for admin corrections on count quantities."""
     if _table_exists(conn, 'session_audit_log'):
@@ -766,6 +810,9 @@ def run():
 
             print('\n-- v10 (session_audit_log table) --')
             run_v10(conn)
+
+            print('\n-- v11 (Control Center: count status, audit action_type, revision_number) --')
+            run_v11(conn)
 
             trans.commit()
             print('\nMigration complete.\n')

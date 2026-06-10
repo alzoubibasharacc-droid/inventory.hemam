@@ -542,12 +542,12 @@
                 <i class="bi bi-lock"></i>مكتملة
               </span>
               {% endif %}
-              <a href="{{ url_for('admin.inv_session_detail', session_id=session.id) }}"
-                 class="kb-action-btn view-btn" title="عرض التفاصيل">
-                <i class="bi bi-eye"></i>
+              <a href="{{ url_for('admin.inv_session_control', session_id=session.id) }}"
+                 class="kb-action-btn view-btn" title="مركز التحكم">
+                <i class="bi bi-speedometer2"></i>
               </a>
               <a href="{{ url_for('admin.inv_session_edit', session_id=session.id) }}"
-                 class="kb-action-btn edit-btn" title="تعديل">
+                 class="kb-action-btn edit-btn" title="تعديل الإعدادات">
                 <i class="bi bi-pencil"></i>
               </a>
               <a href="{{ url_for('admin.session_detail', session_id=session.id) }}"

@@ -2,10 +2,11 @@ from flask import render_template, request, redirect, url_for, flash, jsonify
 from flask_login import current_user
 from sqlalchemy import func, distinct
 from sqlalchemy.orm import joinedload
-from models import db, InventorySession, Branch, Department, Item, InventoryCount, SessionDepartment
+from models import db, InventorySession, Branch, Department, Item, InventoryCount, SessionDepartment, SessionAuditLog
 from utils.decorators import admin_required
 from routes.admin import admin_bp
 from datetime import date
+from collections import defaultdict
 
 # ── Label maps (used in templates via context) ────────────────────────────────
 
@@ -451,6 +452,9 @@ def inv_session_edit(session_id):
 
         db.session.commit()
         flash('تم حفظ التعديلات بنجاح', 'success')
+        next_url = request.form.get('next', '').strip()
+        if next_url and next_url.startswith('/'):
+            return redirect(next_url)
         return redirect(url_for('admin.inv_session_detail', session_id=inv_session.id))
 
     current_dept_ids = {sd.department_id for sd in inv_session.session_departments}
@@ -505,3 +509,311 @@ def inv_session_complete(session_id):
     except ValueError as e:
         flash(str(e), 'warning')
     return redirect(url_for('admin.inv_session_detail', session_id=session_id))
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# SESSION CONTROL CENTER
+# ════════════════════════════════════════════════════════════════════════════════
+
+@admin_bp.route('/inv-sessions/<int:session_id>/control')
+@admin_required
+def inv_session_control(session_id):
+    inv_session = (
+        InventorySession.query
+        .options(
+            joinedload(InventorySession.session_departments)
+            .joinedload(SessionDepartment.department),
+            joinedload(InventorySession.branch),
+        )
+        .get_or_404(session_id)
+    )
+
+    session_dept_ids = [sd.department_id for sd in inv_session.session_departments]
+
+    # ── KPI: total active items across session departments ────────────────────
+    total_items = (
+        db.session.query(func.count(distinct(Item.id)))
+        .join(SessionDepartment, SessionDepartment.department_id == Item.department_id)
+        .filter(
+            SessionDepartment.session_id == session_id,
+            Item.is_active == True,
+        )
+        .scalar()
+    ) or 0
+
+    # ── KPI: distinct items with at least one active count ────────────────────
+    counted_items = (
+        db.session.query(func.count(distinct(InventoryCount.item_id)))
+        .join(Item, Item.id == InventoryCount.item_id)
+        .filter(
+            InventoryCount.session_id == session_id,
+            InventoryCount.status == 'active',
+            Item.department_id.in_(session_dept_ids) if session_dept_ids else db.false(),
+        )
+        .scalar()
+    ) or 0
+
+    total_entries    = InventoryCount.query.filter_by(session_id=session_id).count()
+    total_corrections = SessionAuditLog.query.filter_by(session_id=session_id).count()
+    completion_pct   = int(counted_items / total_items * 100) if total_items else 0
+
+    # ── Per-department stats ──────────────────────────────────────────────────
+    dept_stats = []
+    for sd in inv_session.session_departments:
+        dept        = sd.department
+        dept_total  = Item.query.filter_by(department_id=dept.id, is_active=True).count()
+        dept_counted = (
+            db.session.query(func.count(distinct(InventoryCount.item_id)))
+            .join(Item, Item.id == InventoryCount.item_id)
+            .filter(
+                InventoryCount.session_id == session_id,
+                InventoryCount.status     == 'active',
+                Item.department_id        == dept.id,
+            )
+            .scalar()
+        ) or 0
+        last_activity = (
+            db.session.query(func.max(InventoryCount.created_at))
+            .join(Item, Item.id == InventoryCount.item_id)
+            .filter(
+                InventoryCount.session_id == session_id,
+                Item.department_id        == dept.id,
+            )
+            .scalar()
+        )
+        dept_pct = int(dept_counted / dept_total * 100) if dept_total else 0
+        dept_stats.append({
+            'dept':          dept,
+            'total':         dept_total,
+            'counted':       dept_counted,
+            'remaining':     dept_total - dept_counted,
+            'pct':           dept_pct,
+            'last_activity': last_activity,
+        })
+
+    # ── Audit log (most recent 100 entries) ───────────────────────────────────
+    audit_logs = (
+        SessionAuditLog.query
+        .filter_by(session_id=session_id)
+        .order_by(SessionAuditLog.changed_at.desc())
+        .limit(100)
+        .all()
+    )
+
+    current_dept_ids = {sd.department_id for sd in inv_session.session_departments}
+
+    return render_template(
+        'admin/inv_session_control.html',
+        inv_session=inv_session,
+        total_depts=len(inv_session.session_departments),
+        total_items=total_items,
+        counted_items=counted_items,
+        remaining_items=total_items - counted_items,
+        total_entries=total_entries,
+        total_corrections=total_corrections,
+        completion_pct=completion_pct,
+        dept_stats=dept_stats,
+        audit_logs=audit_logs,
+        current_dept_ids=current_dept_ids,
+        **_session_context(),
+    )
+
+
+# ── Department Count Report (HTML partial, loaded into modal via AJAX) ────────
+
+@admin_bp.route('/inv-sessions/<int:session_id>/dept/<int:dept_id>/report')
+@admin_required
+def inv_session_dept_report(session_id, dept_id):
+    inv_session = InventorySession.query.get_or_404(session_id)
+    dept        = Department.query.get_or_404(dept_id)
+
+    # Guard: dept must be assigned to this session
+    SessionDepartment.query.filter_by(
+        session_id=session_id, department_id=dept_id
+    ).first_or_404()
+
+    items    = (
+        Item.query
+        .filter_by(department_id=dept_id, is_active=True)
+        .order_by(Item.name_ar)
+        .all()
+    )
+    item_ids = [i.id for i in items]
+
+    entries = (
+        InventoryCount.query
+        .filter(
+            InventoryCount.session_id == session_id,
+            InventoryCount.item_id.in_(item_ids) if item_ids else db.false(),
+        )
+        .options(
+            joinedload(InventoryCount.user),
+            joinedload(InventoryCount.entered_unit),
+        )
+        .order_by(InventoryCount.item_id, InventoryCount.created_at.desc())
+        .all()
+    )
+
+    entries_by_item = defaultdict(list)
+    for e in entries:
+        entries_by_item[e.item_id].append(e)
+
+    item_rows      = []
+    last_modified  = None
+    total_revisions = 0
+
+    for item in items:
+        item_entries   = entries_by_item.get(item.id, [])
+        active_entries = [e for e in item_entries if e.status == 'active']
+        latest         = active_entries[0] if active_entries else None
+        total_qty      = sum(e.quantity for e in active_entries)
+
+        for e in item_entries:
+            ts = e.updated_at or e.created_at
+            if ts and (last_modified is None or ts > last_modified):
+                last_modified = ts
+
+        total_revisions += len(item_entries)
+
+        item_rows.append({
+            'item':          item,
+            'has_count':     bool(active_entries),
+            'latest':        latest,
+            'total_qty':     total_qty,
+            'entry_count':   len(item_entries),
+            'active_count':  len(active_entries),
+            'all_entries':   item_entries,
+        })
+
+    counted = sum(1 for r in item_rows if r['has_count'])
+
+    return render_template(
+        'admin/_dept_report.html',
+        inv_session=inv_session,
+        dept=dept,
+        item_rows=item_rows,
+        total_items=len(items),
+        counted_items=counted,
+        missing_items=len(items) - counted,
+        last_modified=last_modified,
+        total_revisions=total_revisions,
+        can_edit=current_user.is_manager,
+    )
+
+
+# ── Withdraw a count entry ────────────────────────────────────────────────────
+
+@admin_bp.route('/inv-sessions/<int:session_id>/counts/<int:entry_id>/withdraw',
+                methods=['POST'])
+@admin_required
+def inv_count_withdraw(session_id, entry_id):
+    InventorySession.query.get_or_404(session_id)
+    entry = InventoryCount.query.filter_by(
+        id=entry_id, session_id=session_id
+    ).first_or_404()
+
+    if entry.status == 'withdrawn':
+        return jsonify({'ok': False, 'error': 'هذا الإدخال مسحوب بالفعل'}), 422
+
+    data   = request.get_json(silent=True) or {}
+    reason = data.get('reason', '').strip()
+    if not reason:
+        return jsonify({'ok': False, 'error': 'سبب السحب مطلوب'}), 422
+
+    # Count revisions for this item in this session so we can number them
+    rev_no = (
+        SessionAuditLog.query
+        .filter_by(session_id=session_id, item_id=entry.item_id)
+        .count()
+    ) + 1
+
+    entry.status = 'withdrawn'
+
+    db.session.add(SessionAuditLog(
+        session_id=session_id,
+        item_id=entry.item_id,
+        changed_by=current_user.id,
+        field_changed='status',
+        old_value=str(entry.quantity),
+        new_value='withdrawn',
+        reason=reason,
+        action_type='withdrawal',
+        revision_number=rev_no,
+    ))
+    db.session.commit()
+
+    return jsonify({'ok': True, 'message': 'تم سحب الإدخال بنجاح'})
+
+
+# ── Submit a corrected count (creates new revision, withdraws old entries) ────
+
+@admin_bp.route('/inv-sessions/<int:session_id>/items/<int:item_id>/correct',
+                methods=['POST'])
+@admin_required
+def inv_count_correct(session_id, item_id):
+    inv_session = InventorySession.query.get_or_404(session_id)
+    item        = Item.query.get_or_404(item_id)
+
+    data   = request.get_json(silent=True) or {}
+    reason = data.get('reason', '').strip()
+    try:
+        qty = float(data['quantity'])
+        if qty < 0:
+            raise ValueError
+    except (KeyError, TypeError, ValueError):
+        return jsonify({'ok': False, 'error': 'الكمية غير صحيحة'}), 422
+
+    if not reason:
+        return jsonify({'ok': False, 'error': 'سبب التصحيح مطلوب'}), 422
+
+    # Withdraw all current active entries for this item
+    old_entries = (
+        InventoryCount.query
+        .filter_by(session_id=session_id, item_id=item_id)
+        .filter(InventoryCount.status == 'active')
+        .all()
+    )
+    old_total = sum(e.quantity for e in old_entries)
+    for e in old_entries:
+        e.status = 'withdrawn'
+
+    rev_no = (
+        SessionAuditLog.query
+        .filter_by(session_id=session_id, item_id=item_id)
+        .count()
+    ) + 1
+
+    # Insert corrected entry
+    new_entry = InventoryCount(
+        item_id=item_id,
+        session_id=session_id,
+        quantity=qty,
+        entered_quantity=qty,
+        entered_unit_id=item.effective_base_unit_id,
+        count_date=inv_session.count_date,
+        month=inv_session.count_date.month,
+        year=inv_session.count_date.year,
+        user_id=current_user.id,
+        notes=f'تصحيح — {reason}',
+        status='active',
+    )
+    db.session.add(new_entry)
+
+    db.session.add(SessionAuditLog(
+        session_id=session_id,
+        item_id=item_id,
+        changed_by=current_user.id,
+        field_changed='quantity',
+        old_value=str(old_total),
+        new_value=str(qty),
+        reason=reason,
+        action_type='correction',
+        revision_number=rev_no,
+    ))
+    db.session.commit()
+
+    return jsonify({
+        'ok':          True,
+        'message':     'تم حفظ التصحيح بنجاح',
+        'new_quantity': qty,
+    })
