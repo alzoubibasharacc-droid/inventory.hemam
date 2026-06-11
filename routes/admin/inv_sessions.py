@@ -109,18 +109,25 @@ def inv_sessions_kanban():
         _active_q = _active_q.filter(InventorySession.branch_id == current_user.branch_id)
     _active_ids_q = _active_q.with_entities(InventorySession.id)
 
-    # Sessions with at least one count entry
-    _sessions_with_counts = db.session.query(InventoryCount.session_id).distinct()
+    # Sessions with at least one active count entry
+    _sessions_with_counts = (
+        db.session.query(InventoryCount.session_id)
+        .filter(InventoryCount.status == 'active')
+        .distinct()
+    )
     alert_no_counts = _active_q.filter(
         ~InventorySession.id.in_(_sessions_with_counts)
     ).count()
 
     alert_overdue = _active_q.filter(InventorySession.count_date < today).count()
 
-    # Items in active session departments that have no count entry in any active session
+    # Items in active session departments that have no active count entry
     _counted_items_q = (
         db.session.query(InventoryCount.item_id)
-        .filter(InventoryCount.session_id.in_(_active_ids_q))
+        .filter(
+            InventoryCount.session_id.in_(_active_ids_q),
+            InventoryCount.status == 'active',
+        )
         .distinct()
     )
     alert_uncounted_items = (
@@ -281,7 +288,13 @@ def inv_sessions_list():
             func.count(InventoryCount.id).label('count_records'),
         )
         .join(Branch, InventorySession.branch_id == Branch.id)
-        .outerjoin(InventoryCount, InventoryCount.session_id == InventorySession.id)
+        .outerjoin(
+            InventoryCount,
+            db.and_(
+                InventoryCount.session_id == InventorySession.id,
+                InventoryCount.status == 'active',
+            ),
+        )
         .group_by(InventorySession.id, Branch.id)
         .order_by(Branch.name_ar, InventorySession.count_date.desc())
         .all()
@@ -404,7 +417,9 @@ def inv_session_create():
 @admin_required
 def inv_session_detail(session_id):
     inv_session = InventorySession.query.get_or_404(session_id)
-    count_records = InventoryCount.query.filter_by(session_id=session_id).count()
+    count_records = InventoryCount.query.filter_by(session_id=session_id).filter(
+        InventoryCount.status == 'active'
+    ).count()
     return render_template(
         'admin/inv_session_detail.html',
         inv_session=inv_session,
@@ -592,7 +607,9 @@ def inv_session_control(session_id):
         .scalar()
     ) or 0
 
-    total_entries    = InventoryCount.query.filter_by(session_id=session_id).count()
+    total_entries    = InventoryCount.query.filter_by(session_id=session_id).filter(
+        InventoryCount.status == 'active'
+    ).count()
     total_corrections = SessionAuditLog.query.filter_by(session_id=session_id).count()
     completion_pct   = int(counted_items / total_items * 100) if total_items else 0
 

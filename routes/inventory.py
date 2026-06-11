@@ -65,7 +65,10 @@ def dashboard():
             counts_q = (
                 db.session.query(func.count(distinct(InventoryCount.item_id)))
                 .join(Item, Item.id == InventoryCount.item_id)
-                .filter(InventoryCount.session_id == active_session.id)
+                .filter(
+                    InventoryCount.session_id == active_session.id,
+                    InventoryCount.status == 'active',
+                )
             )
             if session_dept_ids:
                 counts_q = counts_q.filter(Item.department_id.in_(session_dept_ids))
@@ -147,6 +150,7 @@ def session_list():
             .join(Item)
             .filter(
                 InventoryCount.session_id == session.id,
+                InventoryCount.status == 'active',
                 Item.department_id == current_user.department_id,
             )
             .scalar() or 0
@@ -239,7 +243,10 @@ def count():
         counts_q = (
             db.session.query(func.count(distinct(InventoryCount.item_id)))
             .join(Item, Item.id == InventoryCount.item_id)
-            .filter(InventoryCount.session_id == inv_session.id)
+            .filter(
+                InventoryCount.session_id == inv_session.id,
+                InventoryCount.status == 'active',
+            )
         )
         if sd_dept_ids and not scope_dept:
             counts_q = counts_q.filter(Item.department_id.in_(sd_dept_ids))
@@ -253,7 +260,10 @@ def count():
     if inv_session:
         recent_q = (
             InventoryCount.query.join(Item).join(Department)
-            .filter(InventoryCount.session_id == inv_session.id)
+            .filter(
+                InventoryCount.session_id == inv_session.id,
+                InventoryCount.status == 'active',
+            )
         )
         if scope_dept:
             recent_q = recent_q.filter(Item.department_id == scope_dept)
@@ -326,6 +336,7 @@ def count_search():
                 .filter(
                     InventoryCount.item_id.in_(item_ids),
                     InventoryCount.session_id == search_session.id,
+                    InventoryCount.status == 'active',
                 ).distinct().all()
             )
             counted_ids = {r[0] for r in rows}
@@ -428,6 +439,14 @@ def count_entry():
     multiplier    = item.get_multiplier(int(unit_id))
     base_quantity = entered_qty * multiplier
 
+    # Replace logic: withdraw all existing active entries for this item in this session
+    # so that the new submission is the sole effective count (not an accumulation).
+    InventoryCount.query.filter(
+        InventoryCount.item_id    == item.id,
+        InventoryCount.session_id == inv_session.id,
+        InventoryCount.status     == 'active',
+    ).update({'status': 'withdrawn'}, synchronize_session=False)
+
     entry = InventoryCount(
         item_id          = item.id,
         session_id       = inv_session.id,
@@ -469,10 +488,11 @@ def count_entry():
 
     db.session.commit()
 
-    # Aggregate total for this item within the session (primary grouping: session_id)
+    # Aggregate total for this item within the session — active entries only
     all_entries = InventoryCount.query.filter(
         InventoryCount.item_id    == item.id,
         InventoryCount.session_id == inv_session.id,
+        InventoryCount.status     == 'active',
     ).all()
     total_base = sum(e.quantity for e in all_entries)
 
@@ -552,6 +572,7 @@ def delete_entry(entry_id):
             remaining = InventoryCount.query.filter(
                 InventoryCount.item_id    == item.id,
                 InventoryCount.session_id == entry_session_id,
+                InventoryCount.status     == 'active',
             ).all()
         else:
             # Pre-migration records may have session_id = NULL (imported before
@@ -560,6 +581,7 @@ def delete_entry(entry_id):
             remaining = InventoryCount.query.filter(
                 InventoryCount.item_id    == item.id,
                 InventoryCount.count_date == count_date,
+                InventoryCount.status     == 'active',
             ).all()
         total_base = sum(e.quantity for e in remaining)
         return jsonify({
@@ -584,6 +606,9 @@ def edit_entry(entry_id):
 
     if entry.user_id != current_user.id and not current_user.is_manager:
         return jsonify({'ok': False, 'error': 'لا صلاحية'}), 403
+
+    if entry.status == 'withdrawn':
+        return jsonify({'ok': False, 'error': 'لا يمكن تعديل إدخال مسحوب'}), 422
 
     data    = request.get_json(silent=True) or {}
     qty_raw = data.get('qty')
@@ -748,13 +773,14 @@ def guided_count_items():
             'items': [],
         })
 
-    # Load all existing counts for this session in one query — newest last
+    # Load active counts for this session in one query — newest last
     item_ids = [i.id for i in items]
     all_counts = (
         InventoryCount.query
         .filter(
             InventoryCount.session_id == inv_session.id,
             InventoryCount.item_id.in_(item_ids),
+            InventoryCount.status == 'active',
         )
         .order_by(InventoryCount.created_at.asc())
         .all()

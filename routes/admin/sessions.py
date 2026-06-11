@@ -269,6 +269,7 @@ def edit_count(session_id, item_id):
     latest_entry = (
         InventoryCount.query
         .filter_by(session_id=session_id, item_id=item_id)
+        .filter(InventoryCount.status == 'active')
         .order_by(InventoryCount.created_at.desc())
         .first()
     )

@@ -48,6 +48,7 @@ def _build_entry_query(branch_id, dept_id, user_id, date_from, date_to, session_
         InventoryCount.query
         .join(Item, InventoryCount.item_id == Item.id)
         .join(Department, Item.department_id == Department.id)
+        .filter(InventoryCount.status == 'active')
         .options(
             joinedload(InventoryCount.item).options(
                 joinedload(Item.department).joinedload(Department.branch),
@@ -70,6 +71,7 @@ def _item_totals_sql(branch_id, dept_id, user_id, date_from, date_to, session_id
         )
         .join(Item, InventoryCount.item_id == Item.id)
         .join(Department, Item.department_id == Department.id)
+        .filter(InventoryCount.status == 'active')
         .group_by(InventoryCount.item_id)
     )
     q = _base_filters(q, branch_id, dept_id, user_id, date_from, date_to, session_id)
