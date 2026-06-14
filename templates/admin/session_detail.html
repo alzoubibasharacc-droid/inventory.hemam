@@ -116,6 +116,37 @@
 .audit-table { font-size: 0.8rem; }
 .audit-table th { font-size: 0.72rem; color: var(--brand-olive); }
 
+/* ── KPI slicer cards ───────────────────────────────────────────────────── */
+.kpi-card {
+  border-radius: 14px; padding: 14px 18px; background: #fff;
+  box-shadow: 0 1px 6px rgba(0,0,0,.07);
+  display: flex; align-items: center; gap: 12px;
+}
+.kpi-icon {
+  width: 42px; height: 42px; border-radius: 10px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: 1.25rem;
+}
+.kpi-value { font-size: 1.5rem; font-weight: 800; line-height: 1.1; }
+.kpi-label { font-size: 0.72rem; color: #888; margin-top: 2px; }
+.kpi-card--link {
+  cursor: pointer; user-select: none;
+  transition: transform .15s, box-shadow .15s;
+}
+.kpi-card--link:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(0,0,0,.13);
+}
+.kpi-card--active {
+  box-shadow: 0 0 0 2.5px var(--brand-olive), 0 4px 14px rgba(0,0,0,.1) !important;
+  transform: translateY(-1px);
+}
+/* ── Filter indicator banner ─────────────────────────────────────────────── */
+.filter-banner {
+  display: flex; align-items: center; gap: 12px;
+  background: #f8f9fa; border: 1px solid #dee2e6;
+  border-radius: 10px; padding: 9px 16px;
+}
+
 @media print {
     .no-print { display: none !important; }
     .item-row { padding: 7px 14px; }
@@ -202,6 +233,76 @@
     <div class="ph-stats">
       <span>{{ counted_items }} صنف مُجرَّد من أصل {{ total_items }}</span>
       <span class="fw-bold">{{ pct }}%</span>
+    </div>
+  </div>
+
+  <!-- ── KPI Slicer Cards ──────────────────────────────────────────────────── -->
+  {% set uncounted_items = total_items - counted_items %}
+  <div class="row g-3 mb-3 no-print" id="kpiStrip">
+
+    <div class="col-6 col-md-3">
+      <div class="kpi-card kpi-card--link kpi-card--active" id="kpi-all"
+           onclick="setKpiFilter('all')" title="عرض جميع الأصناف">
+        <div class="kpi-icon" style="background:rgba(75,89,71,.1);">
+          <i class="bi bi-box-seam" style="color:var(--brand-olive);"></i>
+        </div>
+        <div>
+          <div class="kpi-value" style="color:var(--brand-olive);">{{ total_items }}</div>
+          <div class="kpi-label">إجمالي الأصناف</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-md-3">
+      <div class="kpi-card kpi-card--link" id="kpi-counted"
+           onclick="setKpiFilter('counted')" title="عرض الأصناف المجرودة فقط">
+        <div class="kpi-icon" style="background:rgba(25,135,84,.1);">
+          <i class="bi bi-check2-circle" style="color:#198754; font-size:1.35rem;"></i>
+        </div>
+        <div>
+          <div class="kpi-value" style="color:#198754;">{{ counted_items }}</div>
+          <div class="kpi-label">أصناف مجرودة</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-md-3">
+      <div class="kpi-card kpi-card--link" id="kpi-uncounted"
+           onclick="setKpiFilter('uncounted')" title="عرض الأصناف غير المجرودة فقط">
+        <div class="kpi-icon" style="background:rgba(220,53,69,.1);">
+          <i class="bi bi-hourglass-split" style="color:#dc3545; font-size:1.3rem;"></i>
+        </div>
+        <div>
+          <div class="kpi-value" style="color:#dc3545;">{{ uncounted_items }}</div>
+          <div class="kpi-label">أصناف متبقية</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-md-3">
+      <div class="kpi-card" title="نسبة الإنجاز — للعرض فقط">
+        <div class="kpi-icon" style="background:rgba(13,202,240,.1);">
+          <i class="bi bi-pie-chart-fill" style="color:#0dcaf0; font-size:1.2rem;"></i>
+        </div>
+        <div>
+          <div class="kpi-value" style="color:#0dcaf0;">{{ pct }}%</div>
+          <div class="kpi-label">نسبة الإنجاز</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Active Filter Indicator ───────────────────────────────────────────── -->
+  <div id="filterIndicator" class="d-none mb-3 no-print">
+    <div class="filter-banner">
+      <i class="bi bi-funnel-fill text-muted flex-shrink-0"></i>
+      <span id="filterLabel" class="small fw-semibold text-muted"></span>
+      <span id="filterCountBadge" class="badge"
+            style="background:var(--brand-olive); color:#fff;"></span>
+      <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="setKpiFilter('all')">
+        <i class="bi bi-x-circle me-1"></i>إزالة الفلتر
+      </button>
     </div>
   </div>
 
@@ -427,6 +528,61 @@
 
 
 {% block scripts %}
+<script>
+// ── KPI slicer filter ────────────────────────────────────────────────────────
+let _kpiFilter = 'all';
+
+function setKpiFilter(filter) {
+  // Clicking the active filter (not 'all') toggles it off
+  if (filter !== 'all' && filter === _kpiFilter) {
+    filter = 'all';
+  }
+  _kpiFilter = filter;
+
+  // Highlight the active card
+  ['all', 'counted', 'uncounted'].forEach(key => {
+    const card = document.getElementById('kpi-' + key);
+    if (card) card.classList.toggle('kpi-card--active', key === filter);
+  });
+
+  // Count visible items while filtering rows
+  let visibleCounted = 0, visibleUncounted = 0;
+
+  document.querySelectorAll('.dept-card').forEach(deptCard => {
+    let deptVisible = 0;
+    deptCard.querySelectorAll('.item-row').forEach(row => {
+      const isCounted = row.classList.contains('counted');
+      const show =
+        filter === 'all' ||
+        (filter === 'counted'   && isCounted) ||
+        (filter === 'uncounted' && !isCounted);
+      row.style.display = show ? '' : 'none';
+      if (show) {
+        deptVisible++;
+        if (isCounted) visibleCounted++; else visibleUncounted++;
+      }
+    });
+    deptCard.style.display = deptVisible > 0 ? '' : 'none';
+  });
+
+  // Update filter indicator banner
+  const indicator = document.getElementById('filterIndicator');
+  const label     = document.getElementById('filterLabel');
+  const badge     = document.getElementById('filterCountBadge');
+
+  if (filter === 'all') {
+    indicator.classList.add('d-none');
+  } else {
+    indicator.classList.remove('d-none');
+    const count = filter === 'counted' ? visibleCounted : visibleUncounted;
+    label.textContent = filter === 'counted'
+      ? 'عرض: الأصناف المجرودة'
+      : 'عرض: الأصناف المتبقية';
+    badge.textContent = count;
+  }
+}
+</script>
+
 {% if can_edit %}
 <script>
 const SESSION_ID = {{ inv_session.id }};
