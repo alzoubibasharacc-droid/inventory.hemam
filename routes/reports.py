@@ -236,6 +236,7 @@ def index():
     branch_id     = request.args.get('branch_id',  type=int)
     dept_id       = request.args.get('dept_id',    type=int)
     session_id    = request.args.get('session_id', type=int)
+    filter_type   = request.args.get('filter',     '')
 
     # Block employees from manually accessing outside their assigned scope
     if not current_user.is_manager:
@@ -349,6 +350,15 @@ def index():
                     'is_counted':    False,
                 })
 
+    # Apply drill-down filter from analytics page
+    if filter_type in ('remaining', 'counted'):
+        want_counted = filter_type == 'counted'
+        grouped = {
+            dept: [row for row in rows if row['is_counted'] == want_counted]
+            for dept, rows in grouped.items()
+        }
+        grouped = {dept: rows for dept, rows in grouped.items() if rows}
+
     # Build inv_sessions list for the filter dropdown (scoped for employees)
     inv_sessions_q = (
         InventorySession.query
@@ -374,6 +384,7 @@ def index():
         active_session=active_session,
         date_from=date_from_str,
         date_to=date_to_str,
+        filter_type=filter_type,
         now=now,
     )
 

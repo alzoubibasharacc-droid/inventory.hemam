@@ -1,0 +1,239 @@
+{% extends 'base.html' %}
+{% block title %}السجلات المسحوبة — همم{% endblock %}
+
+{%- macro fmtnum(n) -%}
+  {%- if not n -%}0{%- elif n == n | int -%}{{ n | int }}{%- else -%}{{ n | round(3) }}{%- endif -%}
+{%- endmacro -%}
+
+{% block extra_css %}
+<style>
+.wdr-table th {
+  font-size: .73rem; font-weight: 700; white-space: nowrap;
+  color: var(--brand-olive); padding: 9px 12px;
+}
+.wdr-table td { padding: 8px 12px; font-size: .85rem; vertical-align: middle; }
+.wdr-table tbody tr:hover { background: rgba(220,53,69,.04); }
+.wdr-badge {
+  font-size: .68rem; font-weight: 700; border-radius: 50px;
+  padding: 2px 9px; background: rgba(220,53,69,.12);
+  color: #b02a37; border: 1px solid rgba(220,53,69,.3);
+}
+.filter-bar-sticky {
+  position: sticky; top: 56px; z-index: 100;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 px-lg-4">
+
+  <!-- ── Page Header ──────────────────────────────────────────────────────── -->
+  <div class="d-flex align-items-start justify-content-between mb-4 flex-wrap gap-3">
+    <div class="d-flex align-items-center gap-3">
+      <div class="section-icon"><i class="bi bi-archive"></i></div>
+      <div>
+        <h4 class="mb-1">السجلات المسحوبة</h4>
+        <p class="text-muted mb-0 small">
+          إدخالات تم استبدالها بالإدخال الأحدث — للتدقيق فقط، لا تظهر في التقارير أو الحسابات.
+        </p>
+      </div>
+    </div>
+    <a href="{{ url_for('analytics.index',
+                        session_id=selected_session or '',
+                        branch_id=selected_branch or '',
+                        dept_id=selected_dept or '',
+                        date_from=date_from,
+                        date_to=date_to) }}"
+       class="btn btn-outline-secondary btn-sm no-print">
+      <i class="bi bi-arrow-right me-1"></i>العودة للتحليل
+    </a>
+  </div>
+
+  <!-- ── Sticky Filter Bar ──────────────────────────────────────────────── -->
+  <div class="filter-bar-sticky mb-3 no-print">
+    <div class="card border-0" style="box-shadow:0 2px 10px rgba(0,0,0,.09);">
+      <div class="card-body py-2 px-3">
+        <form method="GET" class="row g-2 align-items-end">
+          <input type="hidden" name="filter" value="withdrawn">
+
+          {% if current_user.is_admin %}
+          <div class="col-12 col-sm-4 col-md-2">
+            <label class="form-label small mb-1">الفرع</label>
+            <select name="branch_id" class="form-select form-select-sm"
+                    onchange="this.form.submit()">
+              <option value="">جميع الفروع</option>
+              {% for b in branches %}
+              <option value="{{ b.id }}"
+                      {% if b.id == selected_branch %}selected{% endif %}>{{ b.name_ar }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          {% endif %}
+
+          <div class="col-12 col-sm-4 col-md-2">
+            <label class="form-label small mb-1">القسم</label>
+            <select name="dept_id" class="form-select form-select-sm">
+              <option value="">جميع الأقسام</option>
+              {% for d in departments %}
+              <option value="{{ d.id }}"
+                      {% if d.id == selected_dept %}selected{% endif %}>{{ d.name_ar }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          {% if not selected_session %}
+          <div class="col-6 col-sm-3 col-md-2">
+            <label class="form-label small mb-1">من تاريخ</label>
+            <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+          </div>
+          <div class="col-6 col-sm-3 col-md-2">
+            <label class="form-label small mb-1">إلى تاريخ</label>
+            <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+          </div>
+          {% else %}
+          <input type="hidden" name="session_id" value="{{ selected_session }}">
+          {% endif %}
+
+          <div class="col-6 col-sm-2 col-md-1">
+            <button type="submit" class="btn btn-primary btn-sm w-100">
+              <i class="bi bi-funnel"></i>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Session / Scope Banner ─────────────────────────────────────────── -->
+  {% if active_session %}
+  <div class="alert alert-secondary d-flex align-items-center gap-3 py-2 mb-3">
+    <i class="bi bi-calendar-check flex-shrink-0"></i>
+    <div>
+      <strong>{{ active_session.name }}</strong>
+      <span class="text-muted small ms-2">
+        {{ active_session.branch.name_ar if active_session.branch else '' }}
+        · {{ active_session.count_date }}
+      </span>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ── Summary KPI ────────────────────────────────────────────────────── -->
+  <div class="d-flex align-items-center gap-3 mb-3">
+    <span class="badge rounded-pill py-2 px-3 fs-6"
+          style="background:rgba(220,53,69,.12); color:#b02a37; border:1px solid rgba(220,53,69,.3);">
+      <i class="bi bi-archive me-1"></i>
+      {{ entries | length }} سجل مسحوب
+    </span>
+    <span class="text-muted small">
+      <i class="bi bi-info-circle me-1"></i>
+      هذه السجلات لا تؤثر على أي تقرير أو حساب — تُعرض للتدقيق فقط.
+    </span>
+  </div>
+
+  <!-- ── Empty state ────────────────────────────────────────────────────── -->
+  {% if not entries %}
+  <div class="card border-0 shadow-sm">
+    <div class="card-body text-center py-5">
+      <i class="bi bi-archive fs-1 d-block mb-3 text-muted"></i>
+      <h5 class="fw-bold text-muted">لا توجد سجلات مسحوبة</h5>
+      <p class="text-muted mb-0">لم يتم العثور على إدخالات مسحوبة في النطاق المحدد.</p>
+    </div>
+  </div>
+
+  {% else %}
+
+  <!-- ── Withdrawn entries table ─────────────────────────────────────────── -->
+  <div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 wdr-table">
+        <thead class="table-light">
+          <tr>
+            <th>الصنف</th>
+            <th class="d-none d-sm-table-cell">القسم / الفرع</th>
+            <th class="text-center">الكمية</th>
+            <th class="text-center d-none d-md-table-cell">الوحدة</th>
+            <th class="text-center d-none d-lg-table-cell">تاريخ الجرد</th>
+            <th class="text-center">وقت الإدخال</th>
+            <th class="text-center d-none d-md-table-cell">المدخِل</th>
+            <th class="text-center">الحالة</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set ns = namespace(prev_item_id=None) %}
+          {% for entry in entries %}
+          {% set is_new_item = (entry.item_id != ns.prev_item_id) %}
+          {% set ns.prev_item_id = entry.item_id %}
+          <tr{% if is_new_item %} style="border-top:2px solid #dee2e6;"{% endif %}>
+
+            <td>
+              {% if entry.item.item_code %}
+              <span class="badge me-1"
+                    style="background:var(--brand-olive); font-family:monospace; font-size:.6rem;">
+                {{ entry.item.item_code }}
+              </span>
+              {% endif %}
+              <span class="fw-semibold" style="color:#1a2e1a;">{{ entry.item.name_ar }}</span>
+              {% if entry.item.packaging_note %}
+              <div class="text-muted" style="font-size:.7rem; margin-top:1px;">
+                <i class="bi bi-tag me-1" style="color:var(--brand-orange);"></i>{{ entry.item.packaging_note }}
+              </div>
+              {% endif %}
+            </td>
+
+            <td class="d-none d-sm-table-cell text-muted" style="font-size:.8rem;">
+              {{ entry.item.department.name_ar if entry.item.department else '—' }}
+              {% if entry.item.department and entry.item.department.branch %}
+              <div style="font-size:.7rem; color:#adb5bd;">{{ entry.item.department.branch.name_ar }}</div>
+              {% endif %}
+            </td>
+
+            <td class="text-center fw-semibold" style="color:#dc3545;">
+              {{ fmtnum(entry.quantity) }}
+            </td>
+
+            <td class="text-center text-muted d-none d-md-table-cell" style="font-size:.8rem;">
+              {{ entry.entered_unit.name_ar if entry.entered_unit else
+                 (entry.item.effective_base_unit.name_ar if entry.item.effective_base_unit else '—') }}
+            </td>
+
+            <td class="text-center text-muted d-none d-lg-table-cell" style="font-size:.8rem;">
+              {{ entry.count_date.strftime('%Y-%m-%d') if entry.count_date else '—' }}
+            </td>
+
+            <td class="text-center text-muted" style="font-size:.8rem;">
+              {{ entry.created_at.strftime('%Y-%m-%d %H:%M') if entry.created_at else '—' }}
+            </td>
+
+            <td class="text-center text-muted d-none d-md-table-cell" style="font-size:.8rem;">
+              {{ entry.user.full_name if entry.user else '—' }}
+            </td>
+
+            <td class="text-center">
+              <span class="wdr-badge">
+                <i class="bi bi-archive me-1"></i>مسحوب
+              </span>
+            </td>
+
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr style="background:rgba(220,53,69,.05); font-weight:700;">
+            <td colspan="2" class="text-end" style="color:#b02a37;">
+              المجموع ({{ entries | length }} إدخال)
+            </td>
+            <td class="text-center" style="color:#b02a37;">
+              {{ fmtnum(entries | sum(attribute='quantity')) }}
+            </td>
+            <td colspan="5"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+
+  {% endif %}
+
+</div>
+{% endblock %}

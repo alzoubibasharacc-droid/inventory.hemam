@@ -1,7 +1,8 @@
 from flask import Blueprint, render_template, request, flash, redirect, url_for, send_file, jsonify
 from flask_login import login_required, current_user
 from sqlalchemy import func, and_
-from models import db, Branch, Department, Item, InventoryCount, SessionAuditLog
+from sqlalchemy.orm import joinedload
+from models import db, Branch, Department, Item, InventoryCount, InventorySession, SessionAuditLog
 from datetime import datetime, date
 import calendar
 from utils.constants import now_jordan
@@ -56,6 +57,29 @@ def _parse_filters():
         date_to_str   = date_to.isoformat()
 
     return branch_id, dept_id, date_from, date_to, date_from_str, date_to_str, session_id
+
+
+# ── Withdrawn count (same scope as analytics, but status='withdrawn') ─────────
+
+def _withdrawn_count(branch_id, dept_id, date_from, date_to, session_id):
+    q = (
+        db.session.query(func.count(InventoryCount.id))
+        .join(Item,       InventoryCount.item_id      == Item.id)
+        .join(Department, Item.department_id           == Department.id)
+        .filter(InventoryCount.status == 'withdrawn')
+    )
+    if session_id:
+        q = q.filter(InventoryCount.session_id == session_id)
+    else:
+        q = q.filter(
+            InventoryCount.count_date >= date_from,
+            InventoryCount.count_date <= date_to,
+        )
+    if branch_id:
+        q = q.filter(Department.branch_id == branch_id)
+    if dept_id:
+        q = q.filter(Item.department_id == dept_id)
+    return q.scalar() or 0
 
 
 # ── Core analytics SQL ─────────────────────────────────────────────────────────
@@ -463,12 +487,16 @@ def index():
         Department.query.order_by(Department.name_ar).all()
     )
 
+    active_filter = request.args.get('filter', '')
+
     raw_rows = _analytics_data(branch_id, dept_id, date_from, date_to, session_id)
     groups, increases, decreases, unchanged, needs_review_count, modified_count = _process_rows(raw_rows)
 
-    counted_items = increases + decreases + unchanged
-    changes_count = increases + decreases
-    counted_clean = counted_items - needs_review_count - modified_count
+    counted_items     = increases + decreases + unchanged
+    changes_count     = increases + decreases
+    counted_clean     = counted_items - needs_review_count - modified_count
+    total_entry_count = sum(row['entry_count'] for g in groups for row in g['rows'])
+    withdrawn_count   = _withdrawn_count(branch_id, dept_id, date_from, date_to, session_id)
 
     # Total active items in scope (for uncounted KPI)
     scope_q = Item.query.filter_by(is_active=True)
@@ -494,6 +522,9 @@ def index():
         needs_review_count=needs_review_count,
         modified_count=modified_count,
         counted_clean=counted_clean,
+        total_entry_count=total_entry_count,
+        withdrawn_count=withdrawn_count,
+        active_filter=active_filter,
         branches=branches,
         departments=departments,
         selected_branch=branch_id,
@@ -579,6 +610,68 @@ def export_pdf():
         date_to=date_to_str,
         branch_label=branch_label,
         dept_label=dept_label,
+        now=now_jordan(),
+    )
+
+
+@analytics_bp.route('/withdrawn')
+@login_required
+def withdrawn_view():
+    """Audit view — lists all withdrawn InventoryCount records in the current scope."""
+    if not current_user.is_manager:
+        flash('هذه الصفحة للمدراء فقط', 'warning')
+        return redirect(url_for('inventory.dashboard'))
+
+    branch_id, dept_id, date_from, date_to, date_from_str, date_to_str, session_id = _parse_filters()
+    if not current_user.is_admin and current_user.branch_id:
+        branch_id = current_user.branch_id
+
+    q = (
+        InventoryCount.query
+        .join(Item,       InventoryCount.item_id      == Item.id)
+        .join(Department, Item.department_id           == Department.id)
+        .filter(InventoryCount.status == 'withdrawn')
+        .options(
+            joinedload(InventoryCount.item)
+                .joinedload(Item.department)
+                .joinedload(Department.branch),
+            joinedload(InventoryCount.user),
+            joinedload(InventoryCount.entered_unit),
+        )
+    )
+    if session_id:
+        q = q.filter(InventoryCount.session_id == session_id)
+    else:
+        if date_from:
+            q = q.filter(InventoryCount.count_date >= date_from)
+        if date_to:
+            q = q.filter(InventoryCount.count_date <= date_to)
+    if branch_id:
+        q = q.filter(Department.branch_id == branch_id)
+    if dept_id:
+        q = q.filter(Item.department_id == dept_id)
+
+    entries = q.order_by(InventoryCount.item_id, InventoryCount.created_at.desc()).all()
+
+    active_session = InventorySession.query.get(session_id) if session_id else None
+
+    branches = Branch.query.order_by(Branch.name_ar).all()
+    departments = (
+        Department.query.filter_by(branch_id=branch_id)
+        if branch_id else Department.query
+    ).order_by(Department.name_ar).all()
+
+    return render_template(
+        'inventory/analytics_withdrawn.html',
+        entries=entries,
+        active_session=active_session,
+        branches=branches,
+        departments=departments,
+        selected_branch=branch_id,
+        selected_dept=dept_id,
+        selected_session=session_id,
+        date_from=date_from_str,
+        date_to=date_to_str,
         now=now_jordan(),
     )
 

@@ -130,6 +130,41 @@
     </div>
     {% endif %}
 
+    <!-- Filter type banner (drill-down from analytics) -->
+    {% if filter_type == 'remaining' %}
+    <div class="alert alert-secondary d-flex align-items-center gap-3 mb-4 no-print py-2">
+        <i class="bi bi-funnel-fill flex-shrink-0" style="color:#6c757d;"></i>
+        <div class="flex-grow-1">
+            <strong>فلتر نشط:</strong> عرض الأصناف <strong>غير المجرودة</strong> فقط
+        </div>
+        <a href="{{ url_for('reports.index',
+                            session_id=selected_session or '',
+                            branch_id=selected_branch or '',
+                            dept_id=selected_dept or '',
+                            date_from=date_from,
+                            date_to=date_to) }}"
+           class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-x-circle me-1"></i>إلغاء الفلتر
+        </a>
+    </div>
+    {% elif filter_type == 'counted' %}
+    <div class="alert alert-success d-flex align-items-center gap-3 mb-4 no-print py-2">
+        <i class="bi bi-funnel-fill flex-shrink-0" style="color:#198754;"></i>
+        <div class="flex-grow-1">
+            <strong>فلتر نشط:</strong> عرض الأصناف <strong>المجرودة</strong> فقط
+        </div>
+        <a href="{{ url_for('reports.index',
+                            session_id=selected_session or '',
+                            branch_id=selected_branch or '',
+                            dept_id=selected_dept or '',
+                            date_from=date_from,
+                            date_to=date_to) }}"
+           class="btn btn-sm btn-outline-success">
+            <i class="bi bi-x-circle me-1"></i>إلغاء الفلتر
+        </a>
+    </div>
+    {% endif %}
+
     <!-- Print header -->
     <div class="d-none d-print-block mb-4 text-center">
         <img src="{{ url_for('static', filename='images/logo.svg') }}" alt="همم" style="height:80px;">

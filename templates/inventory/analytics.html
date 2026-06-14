@@ -21,6 +21,15 @@
 }
 .kpi-value { font-size: 1.6rem; font-weight: 800; line-height: 1.1; }
 .kpi-label { font-size: 0.73rem; color: #888; margin-top: 2px; }
+.kpi-card--link {
+  cursor: pointer;
+  transition: transform .15s, box-shadow .15s;
+  user-select: none;
+}
+.kpi-card--link:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(0,0,0,.13);
+}
 
 /* ── Sticky filter bar ──────────────────────────────────────────────────── */
 .filter-bar-sticky {
@@ -184,7 +193,7 @@
   <div class="row g-3 mb-3">
 
     <div class="col-6 col-lg">
-      <div class="kpi-card">
+      <div class="kpi-card kpi-card--link" onclick="drillDown('all_report')" title="عرض كل الأصناف في التقرير">
         <div class="kpi-icon" style="background:rgba(75,89,71,.1);">
           <i class="bi bi-box-seam" style="color:var(--brand-olive);"></i>
         </div>
@@ -196,7 +205,8 @@
     </div>
 
     <div class="col-6 col-lg">
-      <div class="kpi-card" style="border-right:4px solid #198754;">
+      <div class="kpi-card kpi-card--link" style="border-right:4px solid #198754;"
+           onclick="drillDown('all')" title="عرض الأصناف المجرودة">
         <div class="kpi-icon" style="background:rgba(25,135,84,.1);">
           <i class="bi bi-check2-circle" style="color:#198754; font-size:1.4rem;"></i>
         </div>
@@ -208,7 +218,8 @@
     </div>
 
     <div class="col-6 col-lg">
-      <div class="kpi-card" style="border-right:4px solid #6c757d;">
+      <div class="kpi-card kpi-card--link" style="border-right:4px solid #6c757d;"
+           onclick="drillDown('remaining')" title="عرض الأصناف غير المجرودة في التقرير">
         <div class="kpi-icon" style="background:rgba(108,117,125,.1);">
           <i class="bi bi-hourglass-split" style="color:#6c757d; font-size:1.3rem;"></i>
         </div>
@@ -220,7 +231,8 @@
     </div>
 
     <div class="col-6 col-lg">
-      <div class="kpi-card" style="border-right:4px solid var(--brand-orange);">
+      <div class="kpi-card kpi-card--link" style="border-right:4px solid var(--brand-orange);"
+           onclick="drillDown('changed')" title="عرض الأصناف ذات التغيير فقط">
         <div class="kpi-icon" style="background:rgba(242,135,5,.1);">
           <i class="bi bi-arrow-left-right" style="color:var(--brand-orange); font-size:1.3rem;"></i>
         </div>
@@ -232,13 +244,72 @@
     </div>
 
     <div class="col-6 col-lg">
-      <div class="kpi-card" style="border-right:4px solid #ffc107;">
+      <div class="kpi-card kpi-card--link" style="border-right:4px solid #ffc107;"
+           onclick="drillDown('needs_review')" title="عرض الأصناف التي تحتاج مراجعة">
         <div class="kpi-icon" style="background:rgba(255,193,7,.12);">
           <i class="bi bi-exclamation-triangle-fill" style="color:#e0a800; font-size:1.3rem;"></i>
         </div>
         <div>
           <div class="kpi-value" style="color:#e0a800;">{{ needs_review_count }}</div>
           <div class="kpi-label">تحتاج مراجعة</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── KPI Cards Row 2: Drill-down extras ──────────────────────────────── -->
+  <div class="row g-3 mb-3">
+
+    <div class="col-6 col-lg">
+      <div class="kpi-card kpi-card--link" style="border-right:4px solid #198754;"
+           onclick="drillDown('up')" title="عرض الأصناف المرتفعة فقط">
+        <div class="kpi-icon" style="background:rgba(25,135,84,.1);">
+          <i class="bi bi-arrow-up-circle-fill" style="color:#198754; font-size:1.4rem;"></i>
+        </div>
+        <div>
+          <div class="kpi-value" style="color:#198754;">{{ increases }}</div>
+          <div class="kpi-label">ارتفع</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-6 col-lg">
+      <div class="kpi-card kpi-card--link" style="border-right:4px solid #dc3545;"
+           onclick="drillDown('down')" title="عرض الأصناف المنخفضة فقط">
+        <div class="kpi-icon" style="background:rgba(220,53,69,.1);">
+          <i class="bi bi-arrow-down-circle-fill" style="color:#dc3545; font-size:1.4rem;"></i>
+        </div>
+        <div>
+          <div class="kpi-value" style="color:#dc3545;">{{ decreases }}</div>
+          <div class="kpi-label">انخفض</div>
+        </div>
+      </div>
+    </div>
+
+    {% if withdrawn_count > 0 %}
+    <div class="col-6 col-lg">
+      <div class="kpi-card kpi-card--link" style="border-right:4px solid #6c757d;"
+           onclick="drillDown('withdrawn')" title="عرض السجلات المسحوبة للتدقيق">
+        <div class="kpi-icon" style="background:rgba(108,117,125,.1);">
+          <i class="bi bi-archive-fill" style="color:#6c757d; font-size:1.3rem;"></i>
+        </div>
+        <div>
+          <div class="kpi-value" style="color:#6c757d;">{{ withdrawn_count }}</div>
+          <div class="kpi-label">مسحوب (للتدقيق)</div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="col-6 col-lg">
+      <div class="kpi-card" style="border-right:4px solid #0dcaf0;">
+        <div class="kpi-icon" style="background:rgba(13,202,240,.1);">
+          <i class="bi bi-list-ol" style="color:#0dcaf0; font-size:1.3rem;"></i>
+        </div>
+        <div>
+          <div class="kpi-value" style="color:#0dcaf0;">{{ total_entry_count }}</div>
+          <div class="kpi-label">إجمالي الإدخالات</div>
         </div>
       </div>
     </div>
@@ -585,8 +656,54 @@
 const FILTER_DATE_FROM = "{{ date_from }}";
 const FILTER_DATE_TO   = "{{ date_to }}";
 const FILTER_SESSION   = "{{ selected_session or '' }}";
+const ACTIVE_FILTER    = "{{ active_filter }}";
 
 let activeFilter = 'all';
+
+// ── KPI card drill-down navigation ───────────────────────────────────────
+function drillDown(target) {
+  const sp = new URLSearchParams(window.location.search);
+  const sessionId = sp.get('session_id') || '';
+  const branchId  = sp.get('branch_id')  || '';
+  const deptId    = sp.get('dept_id')    || '';
+  const dateFrom  = sp.get('date_from')  || '';
+  const dateTo    = sp.get('date_to')    || '';
+
+  function buildParams(extra) {
+    const p = new URLSearchParams();
+    if (sessionId) p.set('session_id', sessionId);
+    if (branchId)  p.set('branch_id',  branchId);
+    if (deptId)    p.set('dept_id',     deptId);
+    if (dateFrom)  p.set('date_from',   dateFrom);
+    if (dateTo)    p.set('date_to',     dateTo);
+    Object.entries(extra || {}).forEach(([k, v]) => { if (v) p.set(k, v); });
+    return p.toString();
+  }
+
+  if (target === 'remaining') {
+    window.location.href = "{{ url_for('reports.index') }}" + '?' + buildParams({filter: 'remaining'});
+    return;
+  }
+  if (target === 'all_report') {
+    window.location.href = "{{ url_for('reports.index') }}" + '?' + buildParams({});
+    return;
+  }
+  if (target === 'withdrawn') {
+    window.location.href = "{{ url_for('analytics.withdrawn_view') }}" + '?' + buildParams({});
+    return;
+  }
+
+  // Client-side: activate corresponding quick-filter chip
+  const chip = document.querySelector('.qf-chip[data-filter="' + target + '"]');
+  if (chip) {
+    document.querySelectorAll('.qf-chip').forEach(b => b.classList.remove('active'));
+    chip.classList.add('active');
+    activeFilter = target;
+    applyFilters();
+    const firstGroup = document.querySelector('.dept-group');
+    if (firstGroup) firstGroup.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
 
 // ── Quick filter chips ───────────────────────────────────────────────────
 document.querySelectorAll('.qf-chip').forEach(btn => {
@@ -597,6 +714,17 @@ document.querySelectorAll('.qf-chip').forEach(btn => {
     applyFilters();
   });
 });
+
+// Auto-activate chip from URL ?filter= param
+if (ACTIVE_FILTER && ACTIVE_FILTER !== 'all') {
+  const chip = document.querySelector('.qf-chip[data-filter="' + ACTIVE_FILTER + '"]');
+  if (chip) {
+    document.querySelectorAll('.qf-chip').forEach(b => b.classList.remove('active'));
+    chip.classList.add('active');
+    activeFilter = ACTIVE_FILTER;
+    applyFilters();
+  }
+}
 
 // ── Search input (client-side, instant) ──────────────────────────────────
 const searchInput = document.getElementById('searchInput');
