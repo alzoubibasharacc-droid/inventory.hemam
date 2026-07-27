@@ -43,17 +43,6 @@
   const progressText   = $('progressText');
   const progressPct    = $('progressPct');
 
-  const entryQty2        = $('entryQty2');
-  const entryQtyDisplay2 = $('entryQtyDisplay2');
-  const qtyStepper2      = $('qtyStepper2');
-  const qtyBtnPlus2      = $('qtyBtnPlus2');
-  const qtyBtnMinus2     = $('qtyBtnMinus2');
-  const entryUnit2       = $('entryUnit2');
-  const entry2Section    = $('entry2Section');
-  const addQty2Wrap      = $('addQty2Wrap');
-  const addQty2Btn       = $('addQty2Btn');
-  const removeQty2Btn    = $('removeQty2Btn');
-
   if (!searchInput) return;  // no-branch state for non-admin users
 
   /* ── Stepper ────────────────────────────────────────────────────────────── */
@@ -69,16 +58,6 @@
   }
 
   function stepperGetValue() { return parseFloat(entryQty.value) || 0; }
-
-  function stepperSetValue2(val) {
-    const n = Math.max(0, val);
-    const display = String(n);
-    entryQty2.value = display;
-    entryQtyDisplay2.textContent = display === '0' ? '0' : display;
-    entryQtyDisplay2.classList.toggle('has-value', parseFloat(display) > 0);
-    qtyStepper2.classList.remove('is-invalid');
-  }
-  function stepperGetValue2() { return parseFloat(entryQty2.value) || 0; }
 
   let holdTimer = null, holdInterval = null;
 
@@ -100,16 +79,6 @@
 
   entryQtyDisplay.addEventListener('click', () => openNumpad(1));
 
-  qtyBtnPlus2.addEventListener('click',        () => stepperSetValue2(stepperGetValue2() + 1));
-  qtyBtnMinus2.addEventListener('click',       () => stepperSetValue2(Math.max(0, stepperGetValue2() - 1)));
-  qtyBtnPlus2.addEventListener('pointerdown',  () => startHold(1,  stepperGetValue2, stepperSetValue2));
-  qtyBtnMinus2.addEventListener('pointerdown', () => startHold(-1, stepperGetValue2, stepperSetValue2));
-  ['pointerup','pointercancel','pointerleave'].forEach(ev => {
-    qtyBtnPlus2.addEventListener(ev,  clearHold);
-    qtyBtnMinus2.addEventListener(ev, clearHold);
-  });
-  entryQtyDisplay2.addEventListener('click', () => openNumpad(2));
-
   /* ── Numpad ─────────────────────────────────────────────────────────────── */
   const npOverlay = $('cntNumpadOverlay');
   const npSheet   = $('cntNumpadSheet');
@@ -117,9 +86,9 @@
   const npClose   = $('cntNpClose');
   const npConfirm = $('cntNpConfirm');
 
-  function openNumpad(target) {
-    np.target = target || 1;
-    const cur = np.target === 2 ? stepperGetValue2() : stepperGetValue();
+  function openNumpad() {
+    np.target = 1;
+    const cur = stepperGetValue();
     np.display    = cur > 0 ? fmtNum(cur) : '0';
     np.isFirstKey = true;
     np.hasDecimal = np.display.includes('.');
@@ -160,24 +129,13 @@
 
   function confirmNumpad() {
     const val = parseFloat(np.display) || 0;
-    if (np.target === 2) stepperSetValue2(val);
-    else stepperSetValue(val);
+    stepperSetValue(val);
     closeNumpad();
   }
 
   npOverlay.addEventListener('click', closeNumpad);
   npClose.addEventListener('click',   closeNumpad);
   npConfirm.addEventListener('click', confirmNumpad);
-
-  addQty2Btn.addEventListener('click', () => {
-    addQty2Wrap.style.display   = 'none';
-    entry2Section.style.display = 'block';
-  });
-  removeQty2Btn.addEventListener('click', () => {
-    entry2Section.style.display = 'none';
-    addQty2Wrap.style.display   = 'block';
-    stepperSetValue2(0);
-  });
 
   document.querySelectorAll('#cntNumpadSheet .cnt-np-btn').forEach(btn => {
     btn.addEventListener('click', () => numpadPress(btn.dataset.k));
@@ -315,19 +273,14 @@
     entryAlready.style.display = item.already_counted ? 'inline-block' : 'none';
 
     entryUnit.innerHTML = '';
-    entryUnit2.innerHTML = '';
     (item.allowed_units || []).forEach(u => {
       const opt = document.createElement('option');
       opt.value       = u.id;
       opt.textContent = u.name;
       entryUnit.appendChild(opt);
-      entryUnit2.appendChild(opt.cloneNode(true));
     });
 
     stepperSetValue(0);
-    stepperSetValue2(0);
-    entry2Section.style.display = 'none';
-    addQty2Wrap.style.display   = 'block';
     entryNotes.value = '';
     qtyStepper.classList.remove('is-invalid');
     entryNotes.classList.remove('is-invalid');
@@ -378,17 +331,12 @@
     saveBtn.disabled  = true;
     saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري الحفظ...';
 
-    const qty2Visible = entry2Section && entry2Section.style.display !== 'none';
-    const qty2Val = qty2Visible ? (parseFloat(entryQty2.value) || 0) : 0;
-    const unit2Id = qty2Visible ? parseInt(entryUnit2.value) : null;
-
     const body = {
       item_id: STATE.selectedItem.id,
       qty:     parseFloat(qty),
       unit_id: parseInt(entryUnit.value),
       notes:   notes,
     };
-    if (qty2Val > 0 && unit2Id) { body.qty_2 = qty2Val; body.unit_id_2 = unit2Id; }
 
     try {
       const res = await fetch('/inventory/count/entry', {
