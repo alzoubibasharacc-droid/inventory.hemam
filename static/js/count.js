@@ -207,7 +207,7 @@
         ? `<span style="font-size:0.7rem;font-family:monospace;color:#888;margin-right:6px;">${escHtml(item.item_code)}</span>`
         : '';
       const countedBadge = item.already_counted
-        ? `<span class="result-counted-badge">✓ مجرود</span>`
+        ? `<span class="result-counted-badge">✓ مجرود — ${fmtNum(item.total_qty)} ${escHtml(item.base_unit)}</span>`
         : '';
       const noteHtml = item.packaging_note
         ? `<div class="result-note"><i class="bi bi-tag me-1"></i>${escHtml(item.packaging_note)}</div>`
@@ -270,7 +270,13 @@
       entryItemCode.style.display = 'none';
     }
 
-    entryAlready.style.display = item.already_counted ? 'inline-block' : 'none';
+    if (item.already_counted) {
+      entryAlready.innerHTML =
+        `<i class="bi bi-check2-circle me-1"></i>الإجمالي الحالي: ${fmtNum(item.total_qty)} ${escHtml(item.base_unit)} — يمكنك إضافة إدخال جديد`;
+      entryAlready.style.display = 'inline-block';
+    } else {
+      entryAlready.style.display = 'none';
+    }
 
     entryUnit.innerHTML = '';
     (item.allowed_units || []).forEach(u => {
@@ -347,7 +353,10 @@
       const data = await res.json();
 
       if (data.ok) {
-        showToast(`${data.item_name} — ${fmtNum(data.entered_qty)} ${data.entered_unit}`, 'success');
+        const totalNote = data.entry_count > 1
+          ? ` — الإجمالي الآن: ${fmtNum(data.total_base)} ${data.base_unit}`
+          : '';
+        showToast(`${data.item_name} — ${fmtNum(data.entered_qty)} ${data.entered_unit}${totalNote}`, 'success');
         prependRecentEntry(data);
         if (data.entry_2) prependRecentEntry(data.entry_2);
         if (data.entry_count === 1) {
@@ -389,9 +398,9 @@
     div.dataset.allowedUnits  = JSON.stringify(data.allowed_units || []);
 
     const editBtn = `<button class="btn-edit-entry" title="تعديل"><i class="bi bi-pencil-fill"></i></button>`;
-    const delBtn  = STATE.isAdmin
-      ? `<button class="btn-delete-entry" title="حذف"><i class="bi bi-x-lg"></i></button>`
-      : '';
+    // This entry was just created by the current user, so they own it and may
+    // always withdraw it (same owner-or-manager rule the server enforces).
+    const withdrawBtn = `<button class="btn-withdraw-entry" title="سحب"><i class="bi bi-dash-circle"></i></button>`;
 
     const notesHtml = data.notes
       ? `<span class="text-muted d-block text-truncate entry-notes-meta" style="max-width:220px;">· ${escHtml(data.notes)}</span>`
@@ -407,12 +416,12 @@
             ${notesHtml}
           </div>
         </div>
-        <div class="d-flex gap-1">${editBtn}${delBtn}</div>
+        <div class="d-flex gap-1">${editBtn}${withdrawBtn}</div>
       </div>
     `;
 
     div.querySelector('.btn-edit-entry').addEventListener('click', () => showEditForm(div));
-    div.querySelector('.btn-delete-entry')?.addEventListener('click', () => deleteEntry(data.entry_id, div));
+    div.querySelector('.btn-withdraw-entry')?.addEventListener('click', () => withdrawEntry(data.entry_id, div));
 
     recentList.prepend(div);
   }
@@ -534,7 +543,10 @@
 
         editForm.style.display = 'none';
         display.style.display  = '';
-        showToast(`تم تعديل ${data.item_name}`, 'info');
+        const totalNote = data.entry_count > 1
+          ? ` — الإجمالي الآن: ${fmtNum(data.total_base)} ${data.base_unit}`
+          : '';
+        showToast(`تم تعديل ${data.item_name}${totalNote}`, 'info');
       } else {
         errEl.textContent   = data.error || 'خطأ في الحفظ';
         errEl.style.display = 'block';
@@ -548,11 +560,11 @@
     }
   }
 
-  /* ── Delete entry ───────────────────────────────────────────────────────── */
-  async function deleteEntry(entryId, cardEl) {
-    if (!confirm('حذف هذا الإدخال؟')) return;
+  /* ── Withdraw entry (soft — kept for audit, never hard-deleted) ─────────── */
+  async function withdrawEntry(entryId, cardEl) {
+    if (!confirm('سحب هذا الإدخال؟')) return;
     try {
-      const res  = await fetch(`/inventory/count/delete-entry/${entryId}`, {
+      const res  = await fetch(`/inventory/count/withdraw-entry/${entryId}`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
       });
@@ -561,20 +573,26 @@
         cardEl.style.opacity    = '0';
         cardEl.style.transition = 'opacity .2s';
         setTimeout(() => cardEl.remove(), 200);
-        showToast('تم حذف الإدخال', 'info');
+        // If this was the item's last active entry, it drops out of the
+        // counted set — reflect that in the progress bar immediately.
+        if (data.entry_count === 0 && STATE.countedItems > 0) {
+          STATE.countedItems--;
+          renderProgress();
+        }
+        showToast('تم سحب الإدخال', 'info');
       } else {
-        showToast(data.error || 'خطأ في الحذف', 'danger');
+        showToast(data.error || 'خطأ في السحب', 'danger');
       }
     } catch (_) {
-      showToast('خطأ في الحذف', 'danger');
+      showToast('خطأ في السحب', 'danger');
     }
   }
 
   /* Wire up buttons on server-rendered entries */
   document.querySelectorAll('.recent-entry[data-entry-id]').forEach(card => {
     card.querySelector('.btn-edit-entry')?.addEventListener('click', () => showEditForm(card));
-    card.querySelector('.btn-delete-entry')?.addEventListener('click', function () {
-      deleteEntry(this.dataset.entryId, card);
+    card.querySelector('.btn-withdraw-entry')?.addEventListener('click', function () {
+      withdrawEntry(this.dataset.entryId, card);
     });
   });
 

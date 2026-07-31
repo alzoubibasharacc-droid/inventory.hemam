@@ -325,7 +325,7 @@
 .recent-item-name { font-weight:600; font-size:0.95rem; color:#1a2e1a; }
 .recent-meta { font-size:0.8rem; color:#888; margin-top:2px; }
 .recent-qty { font-weight:700; color:var(--brand-orange); font-size:0.95rem; }
-.btn-delete-entry {
+.btn-withdraw-entry {
     color:#ccc;
     border:none;
     background:none;
@@ -334,7 +334,7 @@
     transition:color .15s, background .15s;
     font-size:1rem;
 }
-.btn-delete-entry:hover { color:#dc3545; background:rgba(220,53,69,0.08); }
+.btn-withdraw-entry:hover { color:#dc3545; background:rgba(220,53,69,0.08); }
 .btn-edit-entry {
     color:#bbb;
     border:none;
@@ -601,10 +601,8 @@
                 <button class="btn-edit-entry" data-entry-id="{{ entry.id }}" title="تعديل">
                   <i class="bi bi-pencil-fill"></i>
                 </button>
-                {% endif %}
-                {% if current_user.is_admin %}
-                <button class="btn-delete-entry" data-entry-id="{{ entry.id }}" title="حذف">
-                  <i class="bi bi-x-lg"></i>
+                <button class="btn-withdraw-entry" data-entry-id="{{ entry.id }}" title="سحب">
+                  <i class="bi bi-dash-circle"></i>
                 </button>
                 {% endif %}
               </div>

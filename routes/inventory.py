@@ -314,7 +314,10 @@ def count_search():
 
     items = items_q.order_by(Item.name_ar).limit(20).all()
 
-    counted_ids = set()
+    # {item_id: total_active_quantity} — SUM, never a single "latest" row.
+    # An item may have several independent active entries (different shelves/
+    # locations); already_counted + total must reflect all of them combined.
+    item_totals = {}
     if items:
         item_ids = [i.id for i in items]
         # Use get_active_session (status='active' only) rather than
@@ -332,14 +335,19 @@ def count_search():
 
         if search_session:
             rows = (
-                db.session.query(InventoryCount.item_id)
+                db.session.query(
+                    InventoryCount.item_id,
+                    func.sum(InventoryCount.quantity),
+                )
                 .filter(
                     InventoryCount.item_id.in_(item_ids),
                     InventoryCount.session_id == search_session.id,
                     InventoryCount.status == 'active',
-                ).distinct().all()
+                )
+                .group_by(InventoryCount.item_id)
+                .all()
             )
-            counted_ids = {r[0] for r in rows}
+            item_totals = {r[0]: (r[1] or 0.0) for r in rows}
 
     result = []
     for item in items:
@@ -358,7 +366,8 @@ def count_search():
             'dept':            item.department.name_ar,
             'packaging_note':  item.packaging_note or '',
             'item_code':       item.item_code if current_user.is_manager else None,
-            'already_counted': item.id in counted_ids,
+            'already_counted': item.id in item_totals,
+            'total_qty':       item_totals.get(item.id, 0.0),
             'allowed_units':   allowed_units,
             'base_unit':       item.effective_base_unit.name_ar,
         })
@@ -439,14 +448,11 @@ def count_entry():
     multiplier    = item.get_multiplier(int(unit_id))
     base_quantity = entered_qty * multiplier
 
-    # Replace logic: withdraw all existing active entries for this item in this session
-    # so that the new submission is the sole effective count (not an accumulation).
-    InventoryCount.query.filter(
-        InventoryCount.item_id    == item.id,
-        InventoryCount.session_id == inv_session.id,
-        InventoryCount.status     == 'active',
-    ).update({'status': 'withdrawn'}, synchronize_session=False)
-
+    # Additive logic: the same item may be counted more than once in the same
+    # session (e.g. found on two different shelves) — every submission creates
+    # its own independent active record. Prior active entries for this item are
+    # NEVER withdrawn or replaced here; the item's true total is always
+    # SUM(quantity) over all active entries (computed below), not "the last one".
     entry = InventoryCount(
         item_id          = item.id,
         session_id       = inv_session.id,
@@ -458,6 +464,7 @@ def count_entry():
         year             = year,
         user_id          = current_user.id,
         notes            = notes or None,
+        source           = 'manual',
     )
     db.session.add(entry)
 
@@ -483,6 +490,7 @@ def count_entry():
                 year             = year,
                 user_id          = current_user.id,
                 notes            = notes or None,
+                source           = 'manual',
             )
             db.session.add(entry2)
 
@@ -545,55 +553,97 @@ def count_entry():
     })
 
 
-# ── delete a single count entry ───────────────────────────────────────────────
+# ── shared security gate for edit/withdraw on a single count record ──────────
 
-@inventory_bp.route('/count/delete-entry/<int:entry_id>', methods=['POST'])
+def _authorize_entry_mutation(entry):
+    """
+    Never trust entry_id alone. Before an edit or withdrawal is applied,
+    re-validate: ownership (or manager/admin override), branch/department
+    scope, and that the owning session still accepts changes from this role.
+    Returns a (json_response, status_code) tuple to abort with, or None if
+    the action is allowed.
+    """
+    if entry.user_id != current_user.id and not current_user.is_manager:
+        return jsonify({'ok': False, 'error': 'لا صلاحية'}), 403
+
+    item = entry.item
+    if not current_user.is_manager:
+        if current_user.branch_id and item.department.branch_id != current_user.branch_id:
+            return jsonify({'ok': False, 'error': 'وصول غير مصرح به'}), 403
+        if current_user.department_id and item.department_id != current_user.department_id:
+            return jsonify({'ok': False, 'error': 'وصول غير مصرح به'}), 403
+
+    # Non-admins (employees + managers) may only mutate entries while their
+    # session is active — mirrors the rule enforced on new-entry creation.
+    # Admins retain the ability to correct records in any session state.
+    inv_session = entry.session
+    if not current_user.is_admin and inv_session and inv_session.status != 'active':
+        return jsonify({
+            'ok':   False,
+            'error': 'جلسة الجرد غير نشطة حالياً. تواصل مع المدير.',
+        }), 409
+
+    return None
+
+
+def _active_totals_for_item(item_id, session_id):
+    """(total_quantity, entry_count) over ACTIVE entries only — never 'latest'."""
+    active = InventoryCount.query.filter(
+        InventoryCount.item_id    == item_id,
+        InventoryCount.session_id == session_id,
+        InventoryCount.status     == 'active',
+    ).all()
+    return sum(e.quantity for e in active), len(active)
+
+
+# ── withdraw a single count entry ─────────────────────────────────────────────
+
+@inventory_bp.route('/count/withdraw-entry/<int:entry_id>', methods=['POST'])
 @login_required
-def delete_entry(entry_id):
+def withdraw_entry(entry_id):
+    """
+    Soft-withdraws exactly the record identified by entry_id. Never touches
+    any other record for the item — withdrawn rows are kept (status='withdrawn')
+    for audit, never hard-deleted.
+    """
     entry = InventoryCount.query.get_or_404(entry_id)
 
-    if not current_user.is_admin:
+    denied = _authorize_entry_mutation(entry)
+    if denied:
+        response, code = denied
         if request.is_json:
-            return jsonify({'ok': False, 'error': 'الحذف للمدير فقط'}), 403
-        flash('الحذف متاح للمدير فقط', 'danger')
+            return response, code
+        flash(response.get_json().get('error', 'لا صلاحية'), 'danger')
+        return redirect(url_for('inventory.count'))
+
+    if entry.status == 'withdrawn':
+        msg = 'هذا الإدخال مسحوب بالفعل'
+        if request.is_json:
+            return jsonify({'ok': False, 'error': msg}), 422
+        flash(msg, 'warning')
         return redirect(url_for('inventory.count'))
 
     item             = entry.item
     dept             = item.department
     entry_session_id = entry.session_id
-    entry_session    = entry.session          # capture before delete
-    count_date       = entry.count_date       # kept for legacy redirect
 
-    db.session.delete(entry)
+    entry.status     = 'withdrawn'
+    entry.updated_at = now_jordan()
     db.session.commit()
 
     if request.is_json:
-        if entry_session_id is not None:
-            remaining = InventoryCount.query.filter(
-                InventoryCount.item_id    == item.id,
-                InventoryCount.session_id == entry_session_id,
-                InventoryCount.status     == 'active',
-            ).all()
-        else:
-            # Pre-migration records may have session_id = NULL (imported before
-            # the session workflow existed). Scope by count_date from the DB
-            # record — not a cookie — as a one-time backward-compat guard.
-            remaining = InventoryCount.query.filter(
-                InventoryCount.item_id    == item.id,
-                InventoryCount.count_date == count_date,
-                InventoryCount.status     == 'active',
-            ).all()
-        total_base = sum(e.quantity for e in remaining)
+        total_base, entry_count = _active_totals_for_item(item.id, entry_session_id)
+        entry_session = entry.session
         return jsonify({
             'ok':           True,
             'total_base':   total_base,
-            'entry_count':  len(remaining),
+            'entry_count':  entry_count,
             'session_id':   entry_session_id,
             'session_name': entry_session.name         if entry_session else None,
             'session_type': entry_session.session_type if entry_session else None,
         })
 
-    flash('تم حذف الإدخال', 'info')
+    flash('تم سحب الإدخال', 'info')
     return redirect(url_for('inventory.count', branch_id=dept.branch_id))
 
 
@@ -604,8 +654,9 @@ def delete_entry(entry_id):
 def edit_entry(entry_id):
     entry = InventoryCount.query.get_or_404(entry_id)
 
-    if entry.user_id != current_user.id and not current_user.is_manager:
-        return jsonify({'ok': False, 'error': 'لا صلاحية'}), 403
+    denied = _authorize_entry_mutation(entry)
+    if denied:
+        return denied
 
     if entry.status == 'withdrawn':
         return jsonify({'ok': False, 'error': 'لا يمكن تعديل إدخال مسحوب'}), 422
@@ -632,6 +683,9 @@ def edit_entry(entry_id):
     multiplier    = item.get_multiplier(int(unit_id))
     base_quantity = entered_qty * multiplier
 
+    # This mutates ONLY the exact record the employee selected (entry_id from
+    # the URL) — never "the latest entry for this item". Other active records
+    # for the same item/session are untouched.
     entry.quantity         = base_quantity
     entry.entered_quantity = entered_qty
     entry.entered_unit_id  = int(unit_id)
@@ -639,6 +693,7 @@ def edit_entry(entry_id):
     entry.updated_at       = now_jordan()
     db.session.commit()
 
+    total_base, entry_count = _active_totals_for_item(item.id, entry.session_id)
     entered_unit = Unit.query.get(int(unit_id))
     return jsonify({
         'ok':           True,
@@ -650,6 +705,9 @@ def edit_entry(entry_id):
         'entered_unit': entered_unit.name_ar if entered_unit else '',
         'item_name':    item.name_ar,
         'notes':        notes,
+        'total_base':   total_base,
+        'entry_count':  entry_count,
+        'base_unit':    item.effective_base_unit.name_ar,
     })
 
 
@@ -773,7 +831,10 @@ def guided_count_items():
             'items': [],
         })
 
-    # Load active counts for this session in one query — newest last
+    # Load ALL active counts (any source/workflow) for this session in one query.
+    # is_counted / total_qty must reflect every active entry regardless of who
+    # or which screen created it — a manual entry alone must still mark the
+    # item "counted" here, and its quantity must be part of the combined total.
     item_ids = [i.id for i in items]
     all_counts = (
         InventoryCount.query
@@ -786,13 +847,19 @@ def guided_count_items():
         .all()
     )
 
-    # Build {item_id: {unit_id: latest_InventoryCount}} — newer entries overwrite older
-    last_counts = {}
+    counted_item_ids = set()
+    total_qty_by_item = {}
+    # Guided mode's own per-unit editable value — seeded ONLY from entries this
+    # same guided workflow previously wrote (source='guided'). Never seeded from
+    # 'manual' entries: otherwise re-saving here would duplicate a manual
+    # location's quantity as an extra guided row, double-counting the item.
+    guided_last = {}
     for c in all_counts:
-        uid = c.entered_unit_id or 0
-        last_counts.setdefault(c.item_id, {})[uid] = c
-
-    counted_item_ids = set(last_counts.keys())
+        counted_item_ids.add(c.item_id)
+        total_qty_by_item[c.item_id] = total_qty_by_item.get(c.item_id, 0.0) + c.quantity
+        if c.source == 'guided':
+            uid = c.entered_unit_id or 0
+            guided_last.setdefault(c.item_id, {})[uid] = c
 
     result = []
     for item in items:
@@ -809,9 +876,9 @@ def guided_count_items():
                 'multiplier': 1.0,
             }]
 
-        item_last = last_counts.get(item.id, {})
+        item_guided = guided_last.get(item.id, {})
         for u in units_list:
-            lc = item_last.get(u['unit_id'])
+            lc = item_guided.get(u['unit_id'])
             if lc:
                 u['last_qty'] = lc.entered_quantity
                 u['last_at'] = (
@@ -831,6 +898,10 @@ def guided_count_items():
             'dept': item.department.name_ar if item.department else None,
             'packaging_note': item.packaging_note or None,
             'is_counted': item.id in counted_item_ids,
+            # Combined total across ALL sources (manual + guided) — shown as a
+            # read-only reference so guided mode never hides manual-count data.
+            'total_qty': total_qty_by_item.get(item.id, 0.0),
+            'base_unit': item.effective_base_unit.name_ar if item.effective_base_unit else '',
             'units': units_list,
         })
 
@@ -899,11 +970,16 @@ def guided_count_save():
         if qty > 0:
             entries_to_create.append({'unit_id': uid, 'qty': qty})
 
-    # Replace: remove all previous entries for this item in this session
+    # Replace ONLY this workflow's own previous entries (source='guided') for
+    # this item+session — soft-withdrawn, never hard-deleted, so the audit
+    # trail is preserved. Manual-count entries (source='manual') for the same
+    # item are never touched, deleted, or hidden by this route.
     InventoryCount.query.filter(
         InventoryCount.item_id    == item_id,
         InventoryCount.session_id == session_id,
-    ).delete(synchronize_session=False)
+        InventoryCount.status     == 'active',
+        InventoryCount.source     == 'guided',
+    ).update({'status': 'withdrawn', 'updated_at': now_jordan()}, synchronize_session=False)
 
     count_date = inv_session.count_date
     for e in entries_to_create:
@@ -919,14 +995,18 @@ def guided_count_save():
             year             = count_date.year,
             user_id          = current_user.id,
             notes            = 'جرد سريع',
+            source           = 'guided',
         ))
 
     db.session.commit()
 
+    total_base, _entry_count = _active_totals_for_item(item.id, inv_session.id)
+
     return jsonify({
         'ok':         True,
         'item_id':    item_id,
-        'is_counted': len(entries_to_create) > 0,
+        'is_counted': total_base > 0,
+        'total_qty':  total_base,
     })
 
 

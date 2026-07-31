@@ -13,6 +13,8 @@ Cumulative changes applied:
   v8  session_id NOT NULL at DB level (PostgreSQL); application-layer guard for SQLite
   v9  session_departments join table; backfill baseline sessions with all branch departments
   v10 session_audit_log table for admin corrections on count quantities
+  v13 inventory_counts.source column ('manual' | 'guided' | 'correction') so each
+      counting workflow's replace logic only ever touches rows it created itself
 
 Run after pulling a new version:
     python migrate.py
@@ -871,6 +873,29 @@ def run_v12(conn):
     print(f'  + session_items contains {n} rows after backfill')
 
 
+def run_v13(conn):
+    """
+    v13: inventory_counts.source column.
+
+    Distinguishes which counting workflow wrote a row ('manual' | 'guided' |
+    'correction') so that each workflow's own "replace my previous entry"
+    logic can never withdraw or delete another workflow's rows. All existing
+    rows predate this distinction and are backfilled as 'manual' (the
+    conservative default — nothing about them is auto-replaced going forward
+    except by the workflow that explicitly matches).
+    """
+    if not column_exists(conn, 'inventory_counts', 'source'):
+        conn.execute(db.text(
+            "ALTER TABLE inventory_counts ADD COLUMN source VARCHAR(20) NOT NULL DEFAULT 'manual'"
+        ))
+        conn.execute(db.text(
+            "UPDATE inventory_counts SET source = 'manual' WHERE source IS NULL"
+        ))
+        print("  + inventory_counts.source  (all existing rows set to 'manual')")
+    else:
+        print('  = inventory_counts.source already present')
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def run():
@@ -913,6 +938,9 @@ def run():
 
             print('\n-- v12 (session_items: immutable item snapshot per session) --')
             run_v12(conn)
+
+            print('\n-- v13 (inventory_counts.source: manual/guided/correction) --')
+            run_v13(conn)
 
             trans.commit()
             print('\nMigration complete.\n')

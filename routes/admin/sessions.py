@@ -269,19 +269,40 @@ def edit_count(session_id, item_id):
     if current_user.is_admin and inv_session.status == 'completed' and not reason:
         return jsonify({'ok': False, 'error': 'سبب التعديل مطلوب للجلسات المكتملة'}), 400
 
-    latest_entry = (
+    active_entries = (
         InventoryCount.query
         .filter_by(session_id=session_id, item_id=item_id)
         .filter(InventoryCount.status == 'active')
-        .order_by(InventoryCount.created_at.desc())
-        .first()
+        .all()
     )
 
-    if not latest_entry:
+    if not active_entries:
         return jsonify({'ok': False, 'error': 'لا يوجد إدخال سابق لهذا الصنف في هذه الجلسة'}), 404
 
-    old_qty = latest_entry.quantity
-    latest_entry.quantity = new_qty
+    # This screen shows and edits a single TOTAL per item, not individual
+    # location records — so "editing" here means: withdraw every active entry
+    # (there may be several, e.g. counted on more than one shelf) and record
+    # ONE new corrected total. This never guesses at a "latest" row to mutate
+    # in place, which previously left entered_quantity/entered_unit_id stale
+    # and picked an arbitrary record once multiple active entries existed.
+    old_total = sum(e.quantity for e in active_entries)
+    for e in active_entries:
+        e.status = 'withdrawn'
+
+    corrected_entry = InventoryCount(
+        item_id          = item_id,
+        session_id       = session_id,
+        quantity         = new_qty,
+        entered_quantity = new_qty,
+        entered_unit_id  = item.effective_base_unit_id,
+        count_date       = inv_session.count_date,
+        month            = inv_session.count_date.month,
+        year             = inv_session.count_date.year,
+        user_id          = current_user.id,
+        notes            = f'تعديل الكمية — {reason}' if reason else 'تعديل الكمية (لوحة التتبع)',
+        source           = 'correction',
+    )
+    db.session.add(corrected_entry)
 
     if current_user.is_admin and inv_session.status == 'completed':
         db.session.add(SessionAuditLog(
@@ -289,7 +310,7 @@ def edit_count(session_id, item_id):
             item_id=item_id,
             changed_by=current_user.id,
             field_changed='quantity',
-            old_value=str(old_qty),
+            old_value=str(old_total),
             new_value=str(new_qty),
             reason=reason or None,
         ))
@@ -300,17 +321,10 @@ def edit_count(session_id, item_id):
     if item.effective_base_unit:
         unit_name = item.effective_base_unit.name_ar
 
-    active_after = InventoryCount.query.filter(
-        InventoryCount.session_id == session_id,
-        InventoryCount.item_id    == item_id,
-        InventoryCount.status     == 'active',
-    ).all()
-    new_total = sum(e.quantity for e in active_after)
-
     return jsonify({
         'ok':          True,
         'new_quantity': new_qty,
-        'new_total':   new_total,
+        'new_total':   new_qty,
         'unit':        unit_name,
         'item_name':   item.name_ar,
         'logged':      current_user.is_admin and inv_session.status == 'completed',

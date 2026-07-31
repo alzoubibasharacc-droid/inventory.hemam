@@ -213,6 +213,7 @@
                   <th>بواسطة</th>
                   <th>وقت الإدخال</th>
                   <th>ملاحظات</th>
+                  {% if can_edit %}<th>الإجراءات</th>{% endif %}
                 </tr>
               </thead>
               <tbody>
@@ -248,6 +249,23 @@
                   <td class="text-muted fst-italic" style="max-width:200px; word-break:break-word;">
                     {{ entry.notes or '—' }}
                   </td>
+                  {% if can_edit %}
+                  <td>
+                    {% if entry.status == 'active' %}
+                    {# Withdraws exactly THIS record — independent of any other
+                       active entry the same item may have (different shelf/location). #}
+                    <button class="btn btn-outline-danger btn-sm py-0 px-2"
+                            style="font-size:.68rem;"
+                            onclick="openWithdrawModal(
+                              {{ entry.id }},
+                              '{{ row.item.name_ar | replace("'","\\'") }}',
+                              {{ '%g' | format(entry.quantity) }}
+                            )">
+                      <i class="bi bi-dash-circle me-1"></i>سحب
+                    </button>
+                    {% endif %}
+                  </td>
+                  {% endif %}
                 </tr>
                 {% endfor %}
               </tbody>

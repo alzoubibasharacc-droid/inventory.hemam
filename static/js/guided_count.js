@@ -70,6 +70,7 @@
       itemName:      document.getElementById('gc-item-name'),
       itemMeta:      document.getElementById('gc-item-meta'),
       packagingNote: document.getElementById('gc-packaging-note'),
+      combinedTotal: document.getElementById('gc-combined-total'),
       itemPosition:  document.getElementById('gc-item-position'),
       mapWrap:       document.getElementById('gc-map-wrap'),
       mapTrack:      document.getElementById('gc-map-track'),
@@ -212,6 +213,8 @@
       E.packagingNote.style.display  = 'none';
     }
 
+    renderCombinedTotal(item);
+
     // Position
     E.itemPosition.textContent = `${S.currentIdx + 1} من ${S.items.length}`;
 
@@ -235,6 +238,19 @@
     }
 
     E.scroll.scrollTop = 0;
+  }
+
+  /* Combined total across ALL sources (manual + guided) — read-only reference
+     so this screen never hides quantity recorded elsewhere (e.g. the manual
+     counting page) for the same item. */
+  function renderCombinedTotal(item) {
+    if (item.total_qty > 0) {
+      E.combinedTotal.textContent =
+        `الإجمالي المسجل حالياً (كل المصادر): ${fmt(item.total_qty)} ${item.base_unit || ''}`;
+      E.combinedTotal.style.display = 'flex';
+    } else {
+      E.combinedTotal.style.display = 'none';
+    }
   }
 
   /* ══════════════════════════════════════════════════════════════════════ */
@@ -366,7 +382,9 @@
       const res  = await fetch(API_SAVE, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ item_id: item.id, session_id: S.session.id, entries }),
+        // NOTE: server reads this list under the key "units" (matches the
+        // field name the GET /guided/items endpoint uses for the same data).
+        body:    JSON.stringify({ item_id: item.id, session_id: S.session.id, units: entries }),
       });
       const data = await res.json();
 
@@ -374,10 +392,12 @@
         S.savedValues[item.id] = { ...vals };
         if (data.is_counted) S.countedSet.add(item.id);
         else                 S.countedSet.delete(item.id);
+        item.total_qty = data.total_qty ?? item.total_qty;
 
         renderProgress();
         patchUnits(item.id);
         updateMapDots();
+        renderCombinedTotal(item);
 
         if (!silent) {
           _flashSaveOk();

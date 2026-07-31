@@ -336,7 +336,10 @@ class SessionItem(db.Model):
 
 class InventoryCount(db.Model):
     """
-    Each row is ONE count entry (employees may add multiple per item per month).
+    Each row is ONE physical count entry. An item may have MULTIPLE active
+    rows in the same session at once (e.g. counted on shelf A and shelf B) —
+    the item's true total is always SUM(quantity) WHERE status='active', never
+    a single "latest" row. Creating a new count never withdraws prior rows.
     quantity          → always stored in base units (after conversion).
     entered_quantity  → what the employee typed (preserved for audit).
     entered_unit_id   → which unit the employee selected.
@@ -345,6 +348,10 @@ class InventoryCount(db.Model):
                         and database levels.
     count_date/month/year → kept for backward compatibility; session_id is the
                             primary grouping key going forward.
+    source            → 'manual' | 'guided' | 'correction'. Distinguishes which
+                        workflow wrote the row so each workflow's "replace my
+                        previous entry" behaviour only ever touches its own
+                        rows and never withdraws another workflow's data.
     """
     __tablename__ = 'inventory_counts'
 
@@ -372,6 +379,9 @@ class InventoryCount(db.Model):
 
     # active | withdrawn — withdrawn entries are kept for audit; never deleted
     status = db.Column(db.String(20), nullable=False, default='active')
+
+    # manual | guided | correction — see class docstring
+    source = db.Column(db.String(20), nullable=False, default='manual')
 
     user = db.relationship('User', backref='counts')
     entered_unit = db.relationship('Unit', foreign_keys=[entered_unit_id])
