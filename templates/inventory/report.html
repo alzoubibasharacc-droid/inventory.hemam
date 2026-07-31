@@ -216,7 +216,7 @@
                 <small class="text-muted d-block" style="font-size:.68rem;">{{ row.item.packaging_note }}</small>
                 {% endif %}
               </td>
-              <td class="qty-cell">{{ row.latest.quantity }}</td>
+              <td class="qty-cell">{{ row.total_qty | int if row.total_qty == row.total_qty | int else '%.3g' | format(row.total_qty) }}</td>
               <td class="who-cell">{{ row.latest.user.full_name }}</td>
               <td class="when-cell">{{ row.latest.count_date.strftime('%Y-%m-%d') }}</td>
             </tr>

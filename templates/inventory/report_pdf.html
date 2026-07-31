@@ -224,7 +224,7 @@ body {
             {% if row.item.item_code %}<span class="item-code">{{ row.item.item_code }}</span>{% endif %}
             {{ row.item.name_ar }}
           </td>
-          <td class="qty-val">{{ row.latest.quantity }}</td>
+          <td class="qty-val">{{ row.total_qty | int if row.total_qty == row.total_qty | int else '%.3g' | format(row.total_qty) }}</td>
           <td class="who-val">{{ row.latest.user.full_name }}</td>
           <td class="when-val">{{ row.latest.count_date.strftime('%Y-%m-%d') }}</td>
         </tr>

@@ -163,8 +163,10 @@ def session_detail(session_id):
 
     item_latest = {}
     item_count  = {}
+    item_totals = {}
     for entry in all_entries:
-        item_count[entry.item_id] = item_count.get(entry.item_id, 0) + 1
+        item_count[entry.item_id]  = item_count.get(entry.item_id, 0) + 1
+        item_totals[entry.item_id] = item_totals.get(entry.item_id, 0.0) + entry.quantity
         if entry.item_id not in item_latest:
             item_latest[entry.item_id] = entry
 
@@ -190,6 +192,7 @@ def session_detail(session_id):
             'item':        item,
             'is_counted':  is_counted,
             'latest':      latest,
+            'total_qty':   item_totals.get(item.id, 0.0),
             'entry_count': item_count.get(item.id, 0),
         })
 
@@ -297,9 +300,17 @@ def edit_count(session_id, item_id):
     if item.effective_base_unit:
         unit_name = item.effective_base_unit.name_ar
 
+    active_after = InventoryCount.query.filter(
+        InventoryCount.session_id == session_id,
+        InventoryCount.item_id    == item_id,
+        InventoryCount.status     == 'active',
+    ).all()
+    new_total = sum(e.quantity for e in active_after)
+
     return jsonify({
         'ok':          True,
         'new_quantity': new_qty,
+        'new_total':   new_total,
         'unit':        unit_name,
         'item_name':   item.name_ar,
         'logged':      current_user.is_admin and inv_session.status == 'completed',

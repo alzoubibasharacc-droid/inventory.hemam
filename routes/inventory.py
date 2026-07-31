@@ -993,6 +993,7 @@ def _build_report_data(session_id, scope_branch, scope_dept):
         .join(Item, InventoryCount.item_id == Item.id)
         .filter(
             InventoryCount.session_id == session_id,
+            InventoryCount.status == 'active',
             Item.department_id.in_(dept_ids),
         )
         .order_by(InventoryCount.created_at.desc())
@@ -1000,7 +1001,9 @@ def _build_report_data(session_id, scope_branch, scope_dept):
     )
 
     item_latest = {}
+    item_totals = {}
     for entry in all_entries:
+        item_totals[entry.item_id] = item_totals.get(entry.item_id, 0.0) + entry.quantity
         if entry.item_id not in item_latest:
             item_latest[entry.item_id] = entry
 
@@ -1028,7 +1031,11 @@ def _build_report_data(session_id, scope_branch, scope_dept):
         dept_map[dept.id]['total'] += 1
         if is_counted:
             dept_map[dept.id]['count_count'] += 1
-            dept_map[dept.id]['counted'].append({'item': item, 'latest': latest})
+            dept_map[dept.id]['counted'].append({
+                'item':      item,
+                'latest':    latest,
+                'total_qty': item_totals.get(item.id, 0.0),
+            })
         else:
             dept_map[dept.id]['uncounted'].append({'item': item})
 

@@ -342,9 +342,9 @@
           </div>
 
           {% if row.is_counted %}
-          <div class="qty-display" data-qty="{{ row.latest.quantity }}">
-            {{ row.latest.quantity | int if row.latest.quantity == row.latest.quantity | int
-               else '%.2f' | format(row.latest.quantity) }}
+          <div class="qty-display" data-qty="{{ row.total_qty }}">
+            {{ row.total_qty | int if row.total_qty == row.total_qty | int
+               else '%.2f' | format(row.total_qty) }}
             <span style="font-weight:400; font-size:.7rem; color:#888;">
               {{ row.item.effective_base_unit.name_ar if row.item.effective_base_unit else '' }}
             </span>
@@ -650,11 +650,11 @@ async function submitEdit() {
         const row    = document.querySelector(`.item-row[data-item-id="${_currentItemId}"]`);
         const qtyEl  = row?.querySelector('.qty-display');
         if (qtyEl) {
-            const displayQty = Number.isInteger(data.new_quantity)
-                ? data.new_quantity
-                : data.new_quantity.toFixed(2);
+            const total = data.new_total ?? data.new_quantity;
+            const displayQty = Number.isInteger(total) ? total : total.toFixed(2);
             qtyEl.innerHTML = `${displayQty} <span style="font-weight:400;font-size:.7rem;color:#888;">${data.unit}</span>`;
-            // Also update the edit button's data-qty
+            qtyEl.dataset.qty = total;
+            // Keep edit button pre-filled with the edited entry's quantity (not the total)
             const editBtn = row.querySelector('.btn-edit-count');
             if (editBtn) editBtn.dataset.qty = data.new_quantity;
         }
