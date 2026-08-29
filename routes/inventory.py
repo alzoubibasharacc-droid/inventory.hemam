@@ -380,11 +380,12 @@ def count_search():
 @inventory_bp.route('/count/entry', methods=['POST'])
 @login_required
 def count_entry():
-    data    = request.get_json(silent=True) or {}
-    item_id = data.get('item_id')
-    qty_raw = data.get('qty')
-    unit_id = data.get('unit_id')
-    notes   = (data.get('notes') or '').strip()
+    data     = request.get_json(silent=True) or {}
+    item_id  = data.get('item_id')
+    qty_raw  = data.get('qty')
+    unit_id  = data.get('unit_id')
+    notes    = (data.get('notes') or '').strip()
+    no_stock = bool(data.get('no_stock'))
 
     if not all([item_id, qty_raw is not None, unit_id]):
         return jsonify({'ok': False, 'error': 'بيانات ناقصة'}), 400
@@ -397,7 +398,13 @@ def count_entry():
     except (ValueError, TypeError):
         return jsonify({'ok': False, 'error': 'الكمية غير صالحة'}), 400
 
-    if entered_qty <= 0:
+    # "لا يوجد" is an explicit confirmation that the item was physically
+    # checked and found empty — always saves as exactly 0 regardless of
+    # whatever the (client-disabled) quantity field still holds. Without the
+    # flag, behavior is unchanged: 0 and below are rejected.
+    if no_stock:
+        entered_qty = 0.0
+    elif entered_qty <= 0:
         return jsonify({'ok': False, 'error': 'الكمية يجب أن تكون أكبر من صفر'}), 400
 
     item = Item.query.get(item_id)
@@ -661,10 +668,11 @@ def edit_entry(entry_id):
     if entry.status == 'withdrawn':
         return jsonify({'ok': False, 'error': 'لا يمكن تعديل إدخال مسحوب'}), 422
 
-    data    = request.get_json(silent=True) or {}
-    qty_raw = data.get('qty')
-    unit_id = data.get('unit_id')
-    notes   = (data.get('notes') or '').strip()
+    data     = request.get_json(silent=True) or {}
+    qty_raw  = data.get('qty')
+    unit_id  = data.get('unit_id')
+    notes    = (data.get('notes') or '').strip()
+    no_stock = bool(data.get('no_stock'))
 
     if not notes:
         return jsonify({'ok': False, 'error': 'الملاحظة مطلوبة'}), 400
@@ -676,7 +684,9 @@ def edit_entry(entry_id):
     except (ValueError, TypeError):
         return jsonify({'ok': False, 'error': 'الكمية غير صالحة'}), 400
 
-    if entered_qty <= 0:
+    if no_stock:
+        entered_qty = 0.0
+    elif entered_qty <= 0:
         return jsonify({'ok': False, 'error': 'الكمية يجب أن تكون أكبر من صفر'}), 400
 
     item          = entry.item
@@ -890,6 +900,13 @@ def guided_count_items():
                 u['last_at'] = None
                 u['current_value'] = 0
 
+        # A prior guided-workflow save is a "no stock" confirmation iff it left
+        # exactly one active guided row for this item and its quantity is
+        # exactly 0 — the only shape that can occur, since a normal save never
+        # writes a zero-quantity row (see the no_stock branch in guided_count_save).
+        guided_rows   = list(item_guided.values())
+        item_no_stock = len(guided_rows) == 1 and guided_rows[0].entered_quantity == 0
+
         result.append({
             'id': item.id,
             'name': item.name_ar,
@@ -903,6 +920,7 @@ def guided_count_items():
             'total_qty': total_qty_by_item.get(item.id, 0.0),
             'base_unit': item.effective_base_unit.name_ar if item.effective_base_unit else '',
             'units': units_list,
+            'no_stock': item_no_stock,
         })
 
     return jsonify({
@@ -927,6 +945,7 @@ def guided_count_save():
     item_id    = data.get('item_id')
     session_id = data.get('session_id')
     units_data = data.get('units', [])
+    no_stock   = bool(data.get('no_stock'))
 
     if not item_id or not session_id:
         return jsonify({'ok': False, 'error': 'بيانات ناقصة'}), 400
@@ -954,21 +973,27 @@ def guided_count_save():
         if current_user.department_id and current_user.department_id not in allowed:
             return jsonify({'ok': False, 'error': 'قسمك غير مشمول في جلسة الجرد'}), 403
 
-    valid_unit_ids = {c.unit_id for c in item.conversions} or {item.effective_base_unit_id}
-
     entries_to_create = []
-    for u in units_data:
-        uid = u.get('unit_id')
-        if uid not in valid_unit_ids:
-            return jsonify({'ok': False, 'error': f'وحدة غير صالحة: {uid}'}), 400
-        try:
-            qty = float(u.get('qty', 0))
-        except (ValueError, TypeError):
-            qty = 0
-        if qty < 0:
-            return jsonify({'ok': False, 'error': 'الكمية لا يمكن أن تكون سالبة'}), 400
-        if qty > 0:
-            entries_to_create.append({'unit_id': uid, 'qty': qty})
+    if no_stock:
+        # Explicit "physically checked, nothing there" confirmation — one
+        # authoritative zero-quantity record in the item's base unit. Any
+        # per-unit values submitted alongside no_stock are ignored: a
+        # confirmed-zero item has no meaningful per-unit breakdown.
+        entries_to_create.append({'unit_id': item.effective_base_unit_id, 'qty': 0.0})
+    else:
+        valid_unit_ids = {c.unit_id for c in item.conversions} or {item.effective_base_unit_id}
+        for u in units_data:
+            uid = u.get('unit_id')
+            if uid not in valid_unit_ids:
+                return jsonify({'ok': False, 'error': f'وحدة غير صالحة: {uid}'}), 400
+            try:
+                qty = float(u.get('qty', 0))
+            except (ValueError, TypeError):
+                qty = 0
+            if qty < 0:
+                return jsonify({'ok': False, 'error': 'الكمية لا يمكن أن تكون سالبة'}), 400
+            if qty > 0:
+                entries_to_create.append({'unit_id': uid, 'qty': qty})
 
     # Replace ONLY this workflow's own previous entries (source='guided') for
     # this item+session — soft-withdrawn, never hard-deleted, so the audit
@@ -980,6 +1005,8 @@ def guided_count_save():
         InventoryCount.status     == 'active',
         InventoryCount.source     == 'guided',
     ).update({'status': 'withdrawn', 'updated_at': now_jordan()}, synchronize_session=False)
+
+    entry_notes = 'لا يوجد — تم التحقق فعلياً' if no_stock else 'جرد سريع'
 
     count_date = inv_session.count_date
     for e in entries_to_create:
@@ -994,19 +1021,23 @@ def guided_count_save():
             month            = count_date.month,
             year             = count_date.year,
             user_id          = current_user.id,
-            notes            = 'جرد سريع',
+            notes            = entry_notes,
             source           = 'guided',
         ))
 
     db.session.commit()
 
-    total_base, _entry_count = _active_totals_for_item(item.id, inv_session.id)
+    # is_counted must reflect "at least one active entry exists", never
+    # "the total is a positive number" — a confirmed-zero entry (entry_count=1,
+    # total_base=0) is a completed count, not an absence of one.
+    total_base, entry_count = _active_totals_for_item(item.id, inv_session.id)
 
     return jsonify({
         'ok':         True,
         'item_id':    item_id,
-        'is_counted': total_base > 0,
+        'is_counted': entry_count > 0,
         'total_qty':  total_base,
+        'no_stock':   no_stock,
     })
 
 

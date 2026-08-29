@@ -238,6 +238,26 @@ main.container-fluid { padding: 0 !important; }
   margin: 2px 2px 8px;
 }
 
+/* ── No-stock ("لا يوجد") toggle ────────────────────────────────────────── */
+.gc-no-stock-row {
+  background: #fff;
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.06);
+}
+.gc-no-stock-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.gc-no-stock-toggle input { width: 2.3em; height: 1.25em; cursor: pointer; accent-color: #dc3545; }
+.gc-no-stock-toggle span { font-weight: 600; font-size: 0.9rem; color: #6c757d; }
+.gc-no-stock-toggle input:checked ~ span { color: #dc3545; }
+#gc-units.gc-units-disabled { opacity: 0.4; pointer-events: none; }
+
 /* ── Unit stepper cards ─────────────────────────────────────────────────── */
 .gc-unit-card {
   background: #fff;
@@ -599,6 +619,13 @@ main.container-fluid { padding: 0 !important; }
         <div id="gc-map-wrap">
           <div id="gc-map-track"></div>
         </div>
+      </div>
+
+      <div class="gc-no-stock-row">
+        <label class="gc-no-stock-toggle">
+          <input type="checkbox" id="gc-no-stock-check">
+          <span><i class="bi bi-slash-circle me-1"></i>لا يوجد — تم التحقق والكمية صفر</span>
+        </label>
       </div>
 
       <div class="gc-section-label">الكميات</div>

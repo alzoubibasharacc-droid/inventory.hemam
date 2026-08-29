@@ -719,6 +719,14 @@ def item_history(item_id):
 
     unit_name = item.effective_base_unit.name_ar if item.effective_base_unit else ''
 
+    # Official quantity = SUM of active entries in this same scope (session or
+    # date range) — the same rule Reports and every other total in the app
+    # use. None (not 0) when there are no active entries at all, so the
+    # frontend can still tell "never counted here" apart from "counted, and
+    # the confirmed total is zero" — mirrors Item's own SUM(active) contract.
+    active_entries = [e for e in entries if e.status == 'active']
+    official_qty = sum(e.quantity for e in active_entries) if active_entries else None
+
     return jsonify({
         'item': {
             'id':             item.id,
@@ -728,10 +736,11 @@ def item_history(item_id):
             'packaging_note': item.packaging_note or '',
             'min_stock':      float(item.effective_minimum_stock or 0),
         },
+        'official_qty': official_qty,
         'entries': [{
             'id':               e.id,
             'quantity':         float(e.quantity or 0),
-            'entered_quantity': float(e.entered_quantity) if e.entered_quantity else None,
+            'entered_quantity': float(e.entered_quantity) if e.entered_quantity is not None else None,
             'entered_unit':     e.entered_unit.name_ar if e.entered_unit else '',
             'user_name':        e.user.full_name if e.user else '—',
             'count_date':       e.count_date.isoformat() if e.count_date else '',

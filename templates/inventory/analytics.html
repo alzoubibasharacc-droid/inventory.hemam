@@ -830,10 +830,17 @@ function renderDrawer(data) {
   // Split active vs historical
   const active    = entries.filter(e => e.status === 'active');
   const withdrawn = entries.filter(e => e.status === 'withdrawn');
-  const official  = active[active.length - 1];  // latest active = official count
+  const official  = active[active.length - 1];  // latest active entry — used below only for
+                                                 // "who/when" display and timeline highlighting,
+                                                 // never for the quantity (see official_qty).
   const firstActive = active[0];
 
-  const officialQty = official   ? official.quantity   : null;
+  // The official quantity is the SUM of all active entries in this same
+  // scope — exactly what Reports totals for this item — not any single
+  // entry's value. Computed server-side (same rule as _active_totals_for_item
+  // / _item_totals_sql) so this drawer can never drift from Reports again.
+  // null (not 0) when there are no active entries at all.
+  const officialQty = data.official_qty;
   const firstQty    = firstActive ? firstActive.quantity : null;
   const diff        = (officialQty !== null && firstQty !== null) ? (officialQty - firstQty) : null;
 
@@ -960,7 +967,7 @@ function renderDrawer(data) {
                         :               'bi-check-circle';
 
       let qtyDisplay = `${fmtq(e.quantity)} ${item.unit}`;
-      if (e.entered_quantity && e.entered_unit) {
+      if (e.entered_quantity != null && e.entered_unit) {
         qtyDisplay += ` <span style="color:#adb5bd;font-size:.7rem;font-weight:400;">(${fmtq(e.entered_quantity)} ${e.entered_unit})</span>`;
       }
 

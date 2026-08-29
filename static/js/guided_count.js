@@ -38,6 +38,8 @@
 
     values:      {},   // { [itemId]: { [unitId]: number } }
     savedValues: {},   // { [itemId]: { [unitId]: number } }
+    noStock:      {},  // { [itemId]: boolean } — local "لا يوجد" selection
+    savedNoStock: {},  // { [itemId]: boolean } — last value committed to the server
     countedSet:  new Set(),
   };
 
@@ -75,6 +77,7 @@
       mapWrap:       document.getElementById('gc-map-wrap'),
       mapTrack:      document.getElementById('gc-map-track'),
       units:         document.getElementById('gc-units'),
+      noStockCheck:  document.getElementById('gc-no-stock-check'),
       btnPrev:       document.getElementById('gc-btn-prev'),
       btnSave:       document.getElementById('gc-btn-save'),
       btnNext:       document.getElementById('gc-btn-next'),
@@ -123,6 +126,8 @@
           S.values[item.id][u.unit_id]      = q;
           S.savedValues[item.id][u.unit_id] = q;
         }
+        S.noStock[item.id]      = !!item.no_stock;
+        S.savedNoStock[item.id] = !!item.no_stock;
         if (item.is_counted) S.countedSet.add(item.id);
       }
 
@@ -140,8 +145,11 @@
     const saved  = S.savedValues[itemId] || {};
     const item   = S.items.find(i => i.id === itemId);
     if (!item) return 'not_counted';
-    for (const u of item.units) {
-      if ((cur[u.unit_id] || 0) !== (saved[u.unit_id] || 0)) return 'modified';
+    if (!!S.noStock[itemId] !== !!S.savedNoStock[itemId]) return 'modified';
+    if (!S.noStock[itemId]) {
+      for (const u of item.units) {
+        if ((cur[u.unit_id] || 0) !== (saved[u.unit_id] || 0)) return 'modified';
+      }
     }
     return S.countedSet.has(itemId) ? 'counted' : 'not_counted';
   }
@@ -223,6 +231,10 @@
     E.btnNext.disabled = S.currentIdx === S.items.length - 1;
     _updateSaveBtn();
 
+    // No-stock toggle
+    E.noStockCheck.checked = !!S.noStock[item.id];
+    E.units.classList.toggle('gc-units-disabled', !!S.noStock[item.id]);
+
     // Units
     renderUnits(item);
 
@@ -242,9 +254,11 @@
 
   /* Combined total across ALL sources (manual + guided) — read-only reference
      so this screen never hides quantity recorded elsewhere (e.g. the manual
-     counting page) for the same item. */
+     counting page) for the same item. Shown whenever the item has been
+     counted at all — including a confirmed zero, which is a real completed
+     count and must not look identical to "nothing recorded yet". */
   function renderCombinedTotal(item) {
-    if (item.total_qty > 0) {
+    if (S.countedSet.has(item.id)) {
       E.combinedTotal.textContent =
         `الإجمالي المسجل حالياً (كل المصادر): ${fmt(item.total_qty)} ${item.base_unit || ''}`;
       E.combinedTotal.style.display = 'flex';
@@ -367,8 +381,9 @@
     const item = S.items[S.currentIdx];
     if (!item || S.isSaving) return false;
 
+    const noStock = !!S.noStock[item.id];
     const vals    = S.values[item.id] || {};
-    const entries = item.units
+    const entries = noStock ? [] : item.units
       .filter(u => (vals[u.unit_id] || 0) > 0)
       .map(u => ({ unit_id: u.unit_id, qty: vals[u.unit_id] }));
 
@@ -384,12 +399,15 @@
         headers: { 'Content-Type': 'application/json' },
         // NOTE: server reads this list under the key "units" (matches the
         // field name the GET /guided/items endpoint uses for the same data).
-        body:    JSON.stringify({ item_id: item.id, session_id: S.session.id, units: entries }),
+        body:    JSON.stringify({
+          item_id: item.id, session_id: S.session.id, units: entries, no_stock: noStock,
+        }),
       });
       const data = await res.json();
 
       if (data.ok) {
-        S.savedValues[item.id] = { ...vals };
+        S.savedValues[item.id]  = { ...vals };
+        S.savedNoStock[item.id] = noStock;
         if (data.is_counted) S.countedSet.add(item.id);
         else                 S.countedSet.delete(item.id);
         item.total_qty = data.total_qty ?? item.total_qty;
@@ -483,6 +501,7 @@
   }
 
   function _step(itemId, unitId, delta) {
+    if (S.noStock[itemId]) return;
     if (!S.values[itemId]) S.values[itemId] = {};
     S.values[itemId][unitId] = Math.max(0, (S.values[itemId][unitId] || 0) + delta);
     patchUnits(itemId);
@@ -504,6 +523,7 @@
   /*  NUMPAD                                                                */
   /* ══════════════════════════════════════════════════════════════════════ */
   function openNumpad(itemId, unitId) {
+    if (S.noStock[itemId]) return;
     const item = S.items.find(i => i.id === itemId);
     const unit = item?.units.find(u => u.unit_id === unitId);
     const cur  = (S.values[itemId] || {})[unitId] || 0;
@@ -581,6 +601,15 @@
     E.btnNext.addEventListener('click', () => navigateTo(S.currentIdx + 1,  1));
     E.btnSave.addEventListener('click', () => saveCurrentItem(false));
     E.fastBtn.addEventListener('click', toggleFastMode);
+
+    // No-stock toggle
+    E.noStockCheck.addEventListener('change', function () {
+      const item = S.items[S.currentIdx];
+      if (!item) return;
+      S.noStock[item.id] = this.checked;
+      E.units.classList.toggle('gc-units-disabled', this.checked);
+      patchUnits(item.id);
+    });
 
     // Numpad
     E.npOverlay.addEventListener('click', closeNumpad);

@@ -236,7 +236,7 @@
                     <span class="text-muted fw-normal">
                       {{ row.item.effective_base_unit.name_ar if row.item.effective_base_unit else '' }}
                     </span>
-                    {% if entry.entered_quantity and entry.entered_unit %}
+                    {% if entry.entered_quantity is not none and entry.entered_unit %}
                     <span class="text-muted" style="font-size:.68rem;">
                       ({{ '%g' | format(entry.entered_quantity) }} {{ entry.entered_unit.name_ar }})
                     </span>

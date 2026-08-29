@@ -198,6 +198,18 @@
 }
 @media (max-width:576px) { .qty-stepper { height:76px; } .qty-val-display { font-size:2rem; } }
 
+.qty-stepper.is-disabled { opacity:0.4; pointer-events:none; }
+.no-stock-check { padding-right:2.8em; }
+.no-stock-check .form-check-input { width:2.4em; height:1.3em; cursor:pointer; }
+.no-stock-check .form-check-input:checked { background-color:#dc3545; border-color:#dc3545; }
+.no-stock-check .form-check-label { cursor:pointer; color:#6c757d; font-size:0.92rem; }
+.no-stock-check .form-check-input:checked ~ .form-check-label { color:#dc3545; }
+.recent-qty.zero-qty { color:#dc3545 !important; }
+.no-stock-badge {
+    background:rgba(220,53,69,0.1); color:#dc3545; border:1px solid rgba(220,53,69,0.3);
+    font-size:0.68rem; border-radius:20px; padding:2px 8px; margin-right:6px; vertical-align:middle;
+}
+
 /* Numpad overlay + sheet */
 .cnt-np-overlay {
     position:fixed; inset:0;
@@ -575,11 +587,13 @@
                 <div class="recent-item-name text-truncate">
                   {{ entry.item.name_ar }}
                 </div>
+                {% set eq = entry.entered_quantity if entry.entered_quantity is not none else entry.quantity %}
                 <div class="recent-meta">
-                  <span class="recent-qty">
-                    {{ entry.entered_quantity | int
-                       if entry.entered_quantity and entry.entered_quantity == entry.entered_quantity | int
-                       else (entry.entered_quantity or entry.quantity) }}
+                  {% if eq == 0 %}
+                  <span class="no-stock-badge"><i class="bi bi-slash-circle"></i> لا يوجد</span>
+                  {% endif %}
+                  <span class="recent-qty{{ ' zero-qty' if eq == 0 else '' }}">
+                    {{ eq | int if eq == eq | int else eq }}
                     {{ entry.entered_unit.name_ar
                        if entry.entered_unit
                        else entry.item.effective_base_unit.name_ar }}
@@ -656,6 +670,13 @@
             <button class="qty-btn" type="button" id="qtyBtnPlus">+</button>
           </div>
           <input type="hidden" id="entryQty" value="0">
+
+          <div class="form-check form-switch mt-2 no-stock-check">
+            <input class="form-check-input" type="checkbox" id="noStockCheck" role="switch">
+            <label class="form-check-label fw-semibold" for="noStockCheck">
+              <i class="bi bi-slash-circle me-1"></i>لا يوجد — تم التحقق والكمية صفر
+            </label>
+          </div>
         </div>
 
         <!-- Unit -->

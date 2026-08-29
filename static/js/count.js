@@ -36,6 +36,7 @@
   const entryNotes     = $('entryNotes');
   const saveBtn        = $('saveBtn');
   const cancelBtn      = $('cancelBtn');
+  const noStockCheck   = $('noStockCheck');
   const recentList     = $('recentList');
   const recentCard     = $('recentCard');
   const emptyState     = $('emptyState');
@@ -77,7 +78,19 @@
     qtyBtnMinus.addEventListener(ev, clearHold);
   });
 
-  entryQtyDisplay.addEventListener('click', () => openNumpad(1));
+  entryQtyDisplay.addEventListener('click', () => { if (!noStockCheck.checked) openNumpad(1); });
+
+  /* ── No-stock toggle ("لا يوجد") ────────────────────────────────────────── */
+  noStockCheck.addEventListener('change', function () {
+    if (this.checked) {
+      stepperSetValue(0);
+      qtyStepper.classList.add('is-disabled');
+      qtyStepper.classList.remove('is-invalid');
+      if (!entryNotes.value.trim()) entryNotes.value = 'لا يوجد';
+    } else {
+      qtyStepper.classList.remove('is-disabled');
+    }
+  });
 
   /* ── Numpad ─────────────────────────────────────────────────────────────── */
   const npOverlay = $('cntNumpadOverlay');
@@ -288,7 +301,8 @@
 
     stepperSetValue(0);
     entryNotes.value = '';
-    qtyStepper.classList.remove('is-invalid');
+    noStockCheck.checked = false;
+    qtyStepper.classList.remove('is-invalid', 'is-disabled');
     entryNotes.classList.remove('is-invalid');
     const errEl = $('entryError');
     if (errEl) errEl.style.display = 'none';
@@ -317,8 +331,9 @@
   async function saveEntry() {
     if (!STATE.selectedItem) return;
 
+    const noStock = noStockCheck.checked;
     const qty = entryQty.value;
-    if (!qty || isNaN(parseFloat(qty)) || parseFloat(qty) <= 0) {
+    if (!noStock && (!qty || isNaN(parseFloat(qty)) || parseFloat(qty) <= 0)) {
       qtyStepper.classList.add('is-invalid');
       openNumpad();
       return;
@@ -338,10 +353,11 @@
     saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري الحفظ...';
 
     const body = {
-      item_id: STATE.selectedItem.id,
-      qty:     parseFloat(qty),
-      unit_id: parseInt(entryUnit.value),
-      notes:   notes,
+      item_id:  STATE.selectedItem.id,
+      qty:      noStock ? 0 : parseFloat(qty),
+      unit_id:  parseInt(entryUnit.value),
+      notes:    notes,
+      no_stock: noStock,
     };
 
     try {
@@ -405,13 +421,18 @@
     const notesHtml = data.notes
       ? `<span class="text-muted d-block text-truncate entry-notes-meta" style="max-width:220px;">· ${escHtml(data.notes)}</span>`
       : '';
+    const isZero = data.entered_qty === 0;
+    const noStockBadge = isZero
+      ? `<span class="no-stock-badge"><i class="bi bi-slash-circle"></i> لا يوجد</span>`
+      : '';
 
     div.innerHTML = `
       <div class="entry-display d-flex align-items-center gap-2">
         <div class="flex-grow-1 min-w-0">
           <div class="recent-item-name text-truncate">${escHtml(data.item_name)}</div>
           <div class="recent-meta">
-            <span class="recent-qty">${fmtNum(data.entered_qty)} ${escHtml(data.entered_unit)}</span>
+            ${noStockBadge}
+            <span class="recent-qty${isZero ? ' zero-qty' : ''}">${fmtNum(data.entered_qty)} ${escHtml(data.entered_unit)}</span>
             <span class="text-muted">· ${escHtml(data.time)}</span>
             ${notesHtml}
           </div>
@@ -441,14 +462,22 @@
         `<option value="${u.id}" ${u.id === enteredUnitId ? 'selected' : ''}>${escHtml(u.name)}</option>`
       ).join('');
 
+      const isZero = enteredQty === 0;
+
       editForm = document.createElement('div');
       editForm.className = 'entry-edit-form';
       editForm.innerHTML = `
         <div class="d-flex gap-2 mb-2 flex-wrap">
           <input type="number" class="form-control edit-qty" value="${enteredQty}"
-                 step="any" min="0"
+                 step="any" min="0" ${isZero ? 'disabled' : ''}
                  style="max-width:110px; font-size:1.1rem; font-weight:700; color:var(--brand-green);">
           <select class="form-select edit-unit" style="flex:1; min-width:100px;">${unitOpts}</select>
+        </div>
+        <div class="form-check form-switch mb-2 no-stock-check">
+          <input class="form-check-input edit-no-stock" type="checkbox" role="switch" ${isZero ? 'checked' : ''}>
+          <label class="form-check-label fw-semibold">
+            <i class="bi bi-slash-circle me-1"></i>لا يوجد — الكمية صفر
+          </label>
         </div>
         <input type="text" class="form-control edit-notes mb-2"
                value="${escHtml(notes)}" placeholder="ملاحظة *">
@@ -463,6 +492,17 @@
         <div class="edit-error text-danger small mt-1" style="display:none;"></div>
       `;
       card.appendChild(editForm);
+
+      const editQtyInput   = editForm.querySelector('.edit-qty');
+      const editNoStockChk = editForm.querySelector('.edit-no-stock');
+      editNoStockChk.addEventListener('change', function () {
+        if (this.checked) {
+          editQtyInput.value = 0;
+          editQtyInput.disabled = true;
+        } else {
+          editQtyInput.disabled = false;
+        }
+      });
 
       editForm.querySelector('.edit-cancel-btn').addEventListener('click', () => {
         editForm.style.display = 'none';
@@ -483,6 +523,7 @@
 
   async function saveEditEntry(card, editForm) {
     const entryId = card.dataset.entryId;
+    const noStock = editForm.querySelector('.edit-no-stock').checked;
     const qtyVal  = editForm.querySelector('.edit-qty').value.trim();
     const unitId  = editForm.querySelector('.edit-unit').value;
     const notes   = editForm.querySelector('.edit-notes').value.trim();
@@ -497,8 +538,8 @@
       editForm.querySelector('.edit-notes').focus();
       return;
     }
-    const qty = parseFloat(qtyVal);
-    if (!qtyVal || isNaN(qty) || qty <= 0) {
+    const qty = noStock ? 0 : parseFloat(qtyVal);
+    if (!noStock && (!qtyVal || isNaN(qty) || qty <= 0)) {
       errEl.textContent   = 'الكمية غير صالحة';
       errEl.style.display = 'block';
       editForm.querySelector('.edit-qty').focus();
@@ -512,7 +553,7 @@
       const res  = await fetch(`/inventory/count/edit-entry/${entryId}`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ qty, unit_id: parseInt(unitId), notes }),
+        body:    JSON.stringify({ qty, unit_id: parseInt(unitId), notes, no_stock: noStock }),
       });
       const data = await res.json();
 
@@ -522,8 +563,20 @@
         card.dataset.notes         = data.notes;
 
         const display  = card.querySelector('.entry-display');
+        const isZero   = data.entered_qty === 0;
         display.querySelector('.recent-qty').textContent =
           `${fmtNum(data.entered_qty)} ${data.entered_unit}`;
+        display.querySelector('.recent-qty').classList.toggle('zero-qty', isZero);
+
+        let badge = display.querySelector('.no-stock-badge');
+        if (isZero && !badge) {
+          badge = document.createElement('span');
+          badge.className = 'no-stock-badge';
+          badge.innerHTML = '<i class="bi bi-slash-circle"></i> لا يوجد';
+          display.querySelector('.recent-meta').prepend(badge);
+        } else if (!isZero && badge) {
+          badge.remove();
+        }
 
         const notesSpan = display.querySelector('.entry-notes-meta');
         if (data.notes) {

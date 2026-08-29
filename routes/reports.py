@@ -78,6 +78,74 @@ def _item_totals_sql(branch_id, dept_id, user_id, date_from, date_to, session_id
     return {row.item_id: (row.total or 0.0) for row in q.all()}
 
 
+# ── Cross-branch department aggregation (admin-only, date-range mode only) ────
+
+def _build_department_aggregation(entries):
+    """
+    Group already-fetched, already-filtered active InventoryCount rows by
+    (logical department, item name, base unit) instead of by branch-specific
+    item_id — i.e. the same item name inside the same department "type"
+    (Kitchen, Warehouse, ...) is combined into one result regardless of which
+    branch it was counted in.
+
+    Department rows are per-branch and never created/edited outside seed.py,
+    so Department.name_en is a stable cross-branch key. Item rows ARE managed
+    per branch, so matching is done on Item.name_ar (the one field guaranteed
+    populated); grouping additionally includes the base unit so two branches
+    that (mis)configured the same item name in different units are never
+    silently summed together — they show as separate lines instead.
+
+    total_base / entry_count / the drill-down rows are all derived from the
+    same `entries` list, so they can never disagree with each other.
+
+    Returns dict {dept_name_ar: [row, ...]} ordered by first appearance.
+    """
+    buckets = {}
+    order = []
+    for entry in entries:
+        item = entry.item
+        dept = item.department
+        unit = item.effective_base_unit
+        key = (dept.name_en, item.name_ar, unit.id if unit else None)
+        if key not in buckets:
+            buckets[key] = {
+                'dept_name': dept.name_ar,
+                'item_name': item.name_ar,
+                'unit': unit,
+                'entries': [],
+                'branch_names': set(),
+            }
+            order.append(key)
+        bucket = buckets[key]
+        bucket['entries'].append(entry)
+        bucket['branch_names'].add(dept.branch.name_ar)
+
+    grouped = {}
+    dept_order = []
+    for key in order:
+        b = buckets[key]
+        row = {
+            'item_name': b['item_name'],
+            'unit': b['unit'],
+            'total_base': sum(e.quantity for e in b['entries']),
+            'entries': b['entries'],
+            'entry_count': len(b['entries']),
+            'branch_names': sorted(b['branch_names']),
+        }
+        dept_name = b['dept_name']
+        if dept_name not in grouped:
+            grouped[dept_name] = []
+            dept_order.append(dept_name)
+        grouped[dept_name].append(row)
+
+    for dept_name in grouped:
+        grouped[dept_name].sort(
+            key=lambda r: (r['item_name'], r['unit'].name_ar if r['unit'] else '')
+        )
+
+    return {d: grouped[d] for d in dept_order}
+
+
 def _parse_date_range():
     """Parse date_from / date_to from request args. Defaults to current month."""
     now = now_jordan()
@@ -237,6 +305,15 @@ def index():
     dept_id       = request.args.get('dept_id',    type=int)
     session_id    = request.args.get('session_id', type=int)
     filter_type   = request.args.get('filter',     '')
+    group_by      = request.args.get('group_by',   'branch')
+    logical_dept  = request.args.get('logical_dept', '').strip()
+
+    # Cross-branch "item + department" aggregation only makes sense when
+    # scanning a date range across every branch — a session is always tied
+    # to a single branch, and only admins can see more than their own branch
+    # in this report to begin with (enforced further below).
+    if group_by != 'department' or session_id or not current_user.is_admin:
+        group_by = 'branch'
 
     # Block employees from manually accessing outside their assigned scope
     if not current_user.is_manager:
@@ -270,6 +347,19 @@ def index():
     if not current_user.is_manager and current_user.department_id:
         dept_id = current_user.department_id
 
+    logical_departments = []
+    if group_by == 'department':
+        # Branch is not a valid filter axis here — the whole point is to merge
+        # across branches — and dept_id (a specific per-branch Department.id)
+        # is meaningless too; logical_dept (a Department.name_en) replaces it.
+        branch_id = None
+        dept_id   = None
+        logical_departments = [
+            {'name_en': r[0], 'name_ar': r[1]}
+            for r in db.session.query(Department.name_en, Department.name_ar)
+                .distinct().order_by(Department.name_ar).all()
+        ]
+
     if not current_user.is_manager and current_user.branch_id:
         branches    = [current_user.branch]
         departments = (
@@ -283,81 +373,91 @@ def index():
     # Resolve session object for display (None when filtering by date range)
     active_session = InventorySession.query.get(session_id) if session_id else None
 
-    totals = _item_totals_sql(branch_id, dept_id, None, date_from, date_to, session_id)
-
     all_entries = (
         _build_entry_query(branch_id, dept_id, None, date_from, date_to, session_id)
         .order_by(Department.name_ar, Item.name_ar, InventoryCount.created_at)
         .all()
     )
 
-    dept_order = []
-    item_agg   = {}
-    for entry in all_entries:
-        dept_name = entry.item.department.name_ar
-        if dept_name not in dept_order:
-            dept_order.append(dept_name)
-        iid = entry.item_id
-        if iid not in item_agg:
-            tb = totals.get(iid, 0.0)
-            ms = entry.item.effective_minimum_stock
-            item_agg[iid] = {
-                'item':           entry.item,
-                'total_base':     tb,
-                'entries':        [],
-                'dept':           dept_name,
-                'minimum_stock':  ms,
-                'low_stock':      ms > 0 and tb < ms,
-                'is_counted':     True,
-            }
-        item_agg[iid]['entries'].append(entry)
+    if group_by == 'department':
+        # Cross-branch view: total_base / entry_count / drill-down rows are all
+        # derived from this one already-filtered `all_entries` list inside
+        # _build_department_aggregation — never a second, independently
+        # computed sum — so the three can never disagree with each other.
+        if logical_dept:
+            all_entries = [e for e in all_entries if e.item.department.name_en == logical_dept]
+        grouped = _build_department_aggregation(all_entries)
 
-    grouped = {d: [] for d in dept_order}
-    for agg in item_agg.values():
-        grouped[agg['dept']].append(agg)
+    else:
+        totals = _item_totals_sql(branch_id, dept_id, None, date_from, date_to, session_id)
 
-    # Append uncounted items when a session is selected
-    if session_id and active_session:
-        dept_ids_in_scope = [
-            sd.department_id for sd in active_session.session_departments
-        ]
-        if dept_id:
-            dept_ids_in_scope = [d for d in dept_ids_in_scope if d == dept_id]
-        counted_ids = set(item_agg.keys())
-        if dept_ids_in_scope:
-            q_uncounted = (
-                db.session.query(Item, Department)
-                .join(Department, Item.department_id == Department.id)
-                .filter(
-                    Item.department_id.in_(dept_ids_in_scope),
-                    Item.is_active == True,
+        dept_order = []
+        item_agg   = {}
+        for entry in all_entries:
+            dept_name = entry.item.department.name_ar
+            if dept_name not in dept_order:
+                dept_order.append(dept_name)
+            iid = entry.item_id
+            if iid not in item_agg:
+                tb = totals.get(iid, 0.0)
+                ms = entry.item.effective_minimum_stock
+                item_agg[iid] = {
+                    'item':           entry.item,
+                    'total_base':     tb,
+                    'entries':        [],
+                    'dept':           dept_name,
+                    'minimum_stock':  ms,
+                    'low_stock':      ms > 0 and tb < ms,
+                    'is_counted':     True,
+                }
+            item_agg[iid]['entries'].append(entry)
+
+        grouped = {d: [] for d in dept_order}
+        for agg in item_agg.values():
+            grouped[agg['dept']].append(agg)
+
+        # Append uncounted items when a session is selected
+        if session_id and active_session:
+            dept_ids_in_scope = [
+                sd.department_id for sd in active_session.session_departments
+            ]
+            if dept_id:
+                dept_ids_in_scope = [d for d in dept_ids_in_scope if d == dept_id]
+            counted_ids = set(item_agg.keys())
+            if dept_ids_in_scope:
+                q_uncounted = (
+                    db.session.query(Item, Department)
+                    .join(Department, Item.department_id == Department.id)
+                    .filter(
+                        Item.department_id.in_(dept_ids_in_scope),
+                        Item.is_active == True,
+                    )
+                    .order_by(Department.name_ar, Item.name_ar)
                 )
-                .order_by(Department.name_ar, Item.name_ar)
-            )
-            if counted_ids:
-                q_uncounted = q_uncounted.filter(~Item.id.in_(counted_ids))
-            for item, dept in q_uncounted.all():
-                dept_name = dept.name_ar
-                if dept_name not in grouped:
-                    grouped[dept_name] = []
-                grouped[dept_name].append({
-                    'item':          item,
-                    'total_base':    0,
-                    'entries':       [],
-                    'dept':          dept_name,
-                    'minimum_stock': item.effective_minimum_stock,
-                    'low_stock':     False,
-                    'is_counted':    False,
-                })
+                if counted_ids:
+                    q_uncounted = q_uncounted.filter(~Item.id.in_(counted_ids))
+                for item, dept in q_uncounted.all():
+                    dept_name = dept.name_ar
+                    if dept_name not in grouped:
+                        grouped[dept_name] = []
+                    grouped[dept_name].append({
+                        'item':          item,
+                        'total_base':    0,
+                        'entries':       [],
+                        'dept':          dept_name,
+                        'minimum_stock': item.effective_minimum_stock,
+                        'low_stock':     False,
+                        'is_counted':    False,
+                    })
 
-    # Apply drill-down filter from analytics page
-    if filter_type in ('remaining', 'counted'):
-        want_counted = filter_type == 'counted'
-        grouped = {
-            dept: [row for row in rows if row['is_counted'] == want_counted]
-            for dept, rows in grouped.items()
-        }
-        grouped = {dept: rows for dept, rows in grouped.items() if rows}
+        # Apply drill-down filter from analytics page
+        if filter_type in ('remaining', 'counted'):
+            want_counted = filter_type == 'counted'
+            grouped = {
+                dept: [row for row in rows if row['is_counted'] == want_counted]
+                for dept, rows in grouped.items()
+            }
+            grouped = {dept: rows for dept, rows in grouped.items() if rows}
 
     # Build inv_sessions list for the filter dropdown (scoped for employees)
     inv_sessions_q = (
@@ -385,6 +485,9 @@ def index():
         date_from=date_from_str,
         date_to=date_to_str,
         filter_type=filter_type,
+        group_by=group_by,
+        logical_departments=logical_departments,
+        selected_logical_dept=logical_dept,
         now=now,
     )
 
